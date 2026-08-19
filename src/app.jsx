@@ -4,7 +4,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "theme": "aurora",
   "provider": "ollama",
   "ollamaUrl": "http://localhost:11434",
-  "ollamaModel": "llama3.2"
+  "ollamaModel": "gemma4:e2b"
 }/*EDITMODE-END*/;
 
 function App() {

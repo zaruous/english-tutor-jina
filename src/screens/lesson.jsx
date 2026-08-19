@@ -456,7 +456,7 @@ function JinaSidePanel({ theme, aiConfig, onClose }) {
   React.useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages.length, loading]);
-  const modelInfo = aiConfig?.provider === 'ollama' ? aiConfig.ollamaModel : 'haiku-4-5';
+  const modelInfo = window.JINA_AI.modelLabel(aiConfig);
   return (
     <div style={{
       width: 380, flex: '0 0 auto',
@@ -671,7 +671,7 @@ function MobileJinaTab({ theme, aiConfig }) {
   React.useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages.length, loading]);
-  const modelInfo = aiConfig?.provider === 'ollama' ? aiConfig.ollamaModel : 'haiku-4-5';
+  const modelInfo = window.JINA_AI.modelLabel(aiConfig);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', padding: '14px 12px', display: 'flex', flexDirection: 'column', gap: 12 }}>

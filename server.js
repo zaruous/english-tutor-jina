@@ -27,19 +27,37 @@ http.createServer((req, res) => {
   // /config.js — .env 값을 window.JINA_CONFIG로 주입
   if (req.url === '/config.js') {
     const config = {
-      provider:    process.env.AI_PROVIDER   || 'ollama',
-      ollamaUrl:   process.env.OLLAMA_URL    || 'http://localhost:11434',
-      ollamaModel: process.env.OLLAMA_MODEL  || 'gemma4:31b-cloud',
-      claudeModel: process.env.CLAUDE_MODEL  || 'claude-haiku-4-5',
+      provider:  process.env.AI_PROVIDER || 'claude',
+      ollamaUrl: process.env.OLLAMA_URL  || 'http://localhost:11434',
+      // provider별 모델 맵 (구형 ollamaModel/claudeModel 키는 캔버스 하위호환으로 유지)
+      models: {
+        ollama: process.env.OLLAMA_MODEL || 'gemma4:e2b',
+        claude: process.env.CLAUDE_MODEL || 'claude-haiku-4-5',
+        agy:    process.env.AGY_MODEL    || 'gemini-3.7-flash-low',
+        cursor: process.env.CURSOR_MODEL || 'gpt-5',
+        codex:  process.env.CODEX_MODEL  || null,
+      },
+      ollamaModel: process.env.OLLAMA_MODEL || 'gemma4:e2b',
+      claudeModel: process.env.CLAUDE_MODEL || 'claude-haiku-4-5',
     };
     res.writeHead(200, { 'Content-Type': 'application/javascript' });
-    res.end(`window.JINA_CONFIG = ${JSON.stringify(config, null, 2)};`);
+    // apiBase: 포트만 주입 — localhost/127.0.0.1 어느 쪽으로 열어도 오리진이 일치하게
+    res.end(
+      `window.JINA_CONFIG = ${JSON.stringify(config, null, 2)};\n` +
+      `window.JINA_CONFIG.apiBase = 'http://' + location.hostname + ':${process.env.API_PORT || 3004}';`
+    );
     return;
   }
 
   // 정적 파일 서빙
   let urlPath = req.url.split('?')[0];
   if (urlPath === '/') urlPath = '/index.html';
+
+  // deny-list — .env(DB 비밀번호)·서버 코드·스크립트가 정적으로 노출되지 않게
+  const DENY = [/^\/\./, /^\/(api|db|node_modules|scripts)\//i, /\.(env|sql|mjs|log|bak)$/i];
+  if (DENY.some((re) => re.test(urlPath))) {
+    res.writeHead(403); res.end(); return;
+  }
 
   const filePath = path.join(__dirname, urlPath);
 

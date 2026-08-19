@@ -485,9 +485,7 @@ function ConversationDesktop({ theme, aiConfig }) {
     setIsNewSession(false);
   };
 
-  const modelInfo = aiConfig?.provider === 'ollama'
-    ? aiConfig.ollamaModel
-    : 'haiku-4-5';
+  const modelInfo = window.JINA_AI.modelLabel(aiConfig);
 
   return (
     <div className="jina-root" style={{

@@ -262,7 +262,7 @@ function MobileConversation({ theme, aiConfig }) {
   React.useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages.length, loading]);
-  const modelInfo = aiConfig?.provider === 'ollama' ? aiConfig.ollamaModel : 'haiku-4-5';
+  const modelInfo = window.JINA_AI.modelLabel(aiConfig);
 
   return (
     <div className="jina-root" style={{

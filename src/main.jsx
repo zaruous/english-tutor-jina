@@ -10,44 +10,7 @@ const APP_PAGES = [
   { id: 'progress',     label: '학습 통계', icon: 'Chart' },
 ];
 
-// ─────────────────────────────────────────────────────
-// 공용 모바일 하단 네비 (AppMobileNav)
-// vocabulary.jsx / progress.jsx / mobile.jsx 에서 참조
-// ─────────────────────────────────────────────────────
-function AppMobileNav({ theme, active, onNavigate }) {
-  const items = [
-    { id: 'dashboard',    label: '홈',    icon: Icons.Home },
-    { id: 'conversation', label: 'AI 회화', icon: Icons.Chat },
-    { id: 'lesson',       label: '학습',   icon: Icons.Book },
-    { id: 'vocabulary',   label: '단어장', icon: Icons.BookOpen },
-    { id: 'progress',     label: '통계',   icon: Icons.Chart },
-  ];
-  return (
-    <div style={{
-      position: 'absolute', bottom: 0, left: 0, right: 0,
-      padding: '8px 8px 22px',
-      background: theme.glassBg, backdropFilter: 'blur(20px)',
-      borderTop: `1px solid ${theme.border}`,
-      display: 'flex',
-    }}>
-      {items.map(({ id, label, icon: Ico }) => (
-        <button key={id} onClick={() => onNavigate && onNavigate(id)} style={{
-          flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
-          color: active === id ? theme.accent : theme.textDim,
-          fontSize: 9.5, fontWeight: active === id ? 700 : 400,
-          padding: '6px 4px',
-          position: 'relative',
-        }}>
-          <Ico size={21} stroke={active === id ? 2.2 : 1.5} />
-          {label}
-          {active === id && (
-            <span style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', width: 20, height: 2, borderRadius: 99, background: theme.accent }} />
-          )}
-        </button>
-      ))}
-    </div>
-  );
-}
+// AppMobileNav 는 src/shared/app-nav.jsx 로 이동 (canvas.html도 로드해야 하므로)
 
 // ─────────────────────────────────────────────────────
 // 데스크탑 상단 네비
@@ -124,7 +87,7 @@ function TopNav({ page, onNavigate, theme, onOpenSettings }) {
 // ─────────────────────────────────────────────────────
 // 설정 패널 (슬라이드 오버레이)
 // ─────────────────────────────────────────────────────
-function SettingsPanel({ theme, themeName, setThemeName, aiConfig, setAiConfig, ollamaStatus, onCheck, onClose }) {
+function SettingsPanel({ theme, themeName, setThemeName, aiConfig, setAiConfig, aiHealth, providerMeta, onCheck, onClose }) {
   const themeSwatches = {
     aurora: ['#0A0B1A', '#B794F4', '#F687B3', '#4FD1C5'],
     ivory:  ['#EFE7D3', '#B84C2E', '#2D5237', '#C9885A'],
@@ -183,23 +146,38 @@ function SettingsPanel({ theme, themeName, setThemeName, aiConfig, setAiConfig, 
             ))}
           </div>
 
-          {/* AI Provider */}
+          {/* AI Provider — /api/ai/providers 결과로 5종 렌더 */}
           <div style={{ fontSize: 11, color: theme.textDim, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 12 }}>AI 제공자</div>
-          <div style={{ display: 'flex', borderRadius: 10, background: theme.chipBg, padding: 3, marginBottom: 16 }}>
-            {['ollama', 'claude'].map((p) => (
-              <button key={p} onClick={() => setAiConfig(c => ({ ...c, provider: p }))} style={{
-                flex: 1, padding: '8px', borderRadius: 8,
-                background: aiConfig.provider === p ? theme.surface : 'transparent',
-                color: aiConfig.provider === p ? theme.text : theme.textMuted,
-                fontWeight: aiConfig.provider === p ? 700 : 500,
-                fontSize: 13,
-                boxShadow: aiConfig.provider === p ? `0 1px 4px rgba(0,0,0,0.12)` : 'none',
-                transition: 'all .15s',
-              }}>{p === 'ollama' ? 'Ollama (로컬)' : 'Claude'}</button>
-            ))}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 16 }}>
+            {(providerMeta.length ? providerMeta : Object.entries(window.JINA_AI.PROVIDER_META).map(([id, m]) => ({ id, label: m.label, models: [] }))).map((p) => {
+              const health = aiHealth.providers?.[p.id];
+              const down = health && !health.ok;
+              const active = aiConfig.provider === p.id;
+              return (
+                <button key={p.id}
+                  onClick={() => setAiConfig(c => ({ ...c, provider: p.id }))}
+                  disabled={down}
+                  title={down ? `사용 불가: ${health.detail || ''}` : undefined}
+                  style={{
+                    padding: '8px 10px', borderRadius: 8, textAlign: 'left',
+                    background: active ? theme.surface : 'transparent',
+                    border: `1.5px solid ${active ? theme.accent : theme.border}`,
+                    color: down ? theme.textDim : active ? theme.text : theme.textMuted,
+                    fontWeight: active ? 700 : 500, fontSize: 12.5,
+                    opacity: down ? 0.55 : 1, cursor: down ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 6,
+                  }}>
+                  <span style={{
+                    width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                    background: !health ? theme.textDim : health.ok ? theme.success : theme.error,
+                  }} />
+                  {p.label}
+                </button>
+              );
+            })}
           </div>
 
-          {aiConfig.provider === 'ollama' ? (
+          {aiConfig.provider === 'ollama' && (
             <React.Fragment>
               <label style={{ fontSize: 12, color: theme.textMuted, display: 'block', marginBottom: 6, fontWeight: 600 }}>Ollama URL</label>
               <input
@@ -211,52 +189,57 @@ function SettingsPanel({ theme, themeName, setThemeName, aiConfig, setAiConfig, 
                   color: theme.text, fontSize: 13, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
                 }}
               />
-              <label style={{ fontSize: 12, color: theme.textMuted, display: 'block', marginBottom: 6, fontWeight: 600 }}>모델</label>
-              <input
-                value={aiConfig.ollamaModel}
-                onChange={e => setAiConfig(c => ({ ...c, ollamaModel: e.target.value }))}
-                style={{
-                  width: '100%', padding: '9px 12px', borderRadius: 8, marginBottom: 12,
-                  background: theme.card, border: `1px solid ${theme.borderStrong}`,
-                  color: theme.text, fontSize: 13, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
-                }}
-              />
-              {/* Ollama status */}
+            </React.Fragment>
+          )}
+
+          {/* 모델 — 목록이 있으면 select, 없으면 text input */}
+          <label style={{ fontSize: 12, color: theme.textMuted, display: 'block', marginBottom: 6, fontWeight: 600 }}>모델</label>
+          {(() => {
+            const meta = providerMeta.find((p) => p.id === aiConfig.provider);
+            const models = meta?.models || [];
+            const value = aiConfig.model?.[aiConfig.provider] || meta?.defaultModel || '';
+            const setModel = (v) => setAiConfig(c => ({ ...c, model: { ...c.model, [c.provider]: v } }));
+            const inputStyle = {
+              width: '100%', padding: '9px 12px', borderRadius: 8, marginBottom: 12,
+              background: theme.card, border: `1px solid ${theme.borderStrong}`,
+              color: theme.text, fontSize: 13, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
+            };
+            return models.length > 0 ? (
+              <select value={value} onChange={e => setModel(e.target.value)} style={inputStyle}>
+                {!models.includes(value) && value && <option value={value}>{value}</option>}
+                {models.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            ) : (
+              <input value={value} onChange={e => setModel(e.target.value)} placeholder="모델 이름" style={inputStyle} />
+            );
+          })()}
+
+          {/* 상태 pill — health.providers[선택 provider] */}
+          {(() => {
+            const health = aiHealth.providers?.[aiConfig.provider];
+            return (
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 8,
                 padding: '9px 12px', borderRadius: 8, marginBottom: 8,
-                background: ollamaStatus.checking ? theme.chipBg
-                  : ollamaStatus.ok ? theme.success + '18' : theme.error + '18',
-                color: ollamaStatus.checking ? theme.textMuted
-                  : ollamaStatus.ok ? theme.success : theme.error,
+                background: aiHealth.checking ? theme.chipBg
+                  : health?.ok ? theme.success + '18' : theme.error + '18',
+                color: aiHealth.checking ? theme.textMuted
+                  : health?.ok ? theme.success : theme.error,
                 fontSize: 12, fontWeight: 600,
               }}>
                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'currentColor', flexShrink: 0,
-                  animation: ollamaStatus.checking ? 'jina-pulse 1s infinite' : 'none' }} />
+                  animation: aiHealth.checking ? 'jina-pulse 1s infinite' : 'none' }} />
                 <span style={{ flex: 1 }}>
-                  {ollamaStatus.checking ? '확인 중…'
-                    : ollamaStatus.ok ? `연결됨 · ${ollamaStatus.models.length}개 모델`
-                    : `연결 실패 — ${ollamaStatus.error || ''}`}
+                  {aiHealth.checking ? '확인 중…'
+                    : health?.ok ? '연결됨'
+                    : `연결 실패 — ${health?.detail || '상태 미확인'}`}
                 </span>
                 <button onClick={onCheck} style={{ fontSize: 10, padding: '3px 7px', borderRadius: 5, background: 'rgba(0,0,0,0.1)', color: 'inherit', fontWeight: 700 }}>
                   ↻
                 </button>
               </div>
-              {!ollamaStatus.ok && !ollamaStatus.checking && (
-                <div style={{ fontSize: 11, color: theme.textDim, lineHeight: 1.6, padding: '0 2px' }}>
-                  터미널에서: <code style={{ background: theme.surface, padding: '1px 5px', borderRadius: 4, fontSize: 10.5 }}>OLLAMA_ORIGINS="*" ollama serve</code>
-                </div>
-              )}
-            </React.Fragment>
-          ) : (
-            <div style={{
-              padding: '12px', borderRadius: 10,
-              background: theme.accent + '15', color: theme.accent,
-              fontSize: 12, lineHeight: 1.6,
-            }}>
-              Claude Haiku 4.5 — 이 환경 내장 API 사용 (별도 키 불필요)
-            </div>
-          )}
+            );
+          })()}
 
           {/* Canvas link */}
           <div style={{ marginTop: 28, paddingTop: 20, borderTop: `1px solid ${theme.border}` }}>
@@ -278,13 +261,13 @@ function JinaApp() {
   const [page, setPage] = React.useState('dashboard');
   const [themeName, setThemeName] = React.useState('aurora');
   const [aiConfig, setAiConfig] = React.useState({
-    provider:    window.JINA_CONFIG?.provider    || 'ollama',
-    ollamaUrl:   window.JINA_CONFIG?.ollamaUrl   || 'http://localhost:11434',
-    ollamaModel: window.JINA_CONFIG?.ollamaModel || 'gemma4:31b-cloud',
-    claudeModel: window.JINA_CONFIG?.claudeModel || 'claude-haiku-4-5',
+    provider: window.JINA_CONFIG?.provider || 'claude',
+    ollamaUrl: window.JINA_CONFIG?.ollamaUrl || 'http://localhost:11434',
+    model: { ...(window.JINA_CONFIG?.models || {}) }, // provider별 모델 맵
   });
   const [showSettings, setShowSettings] = React.useState(false);
-  const [ollamaStatus, setOllamaStatus] = React.useState({ checking: false, ok: null, models: [], error: null });
+  const [aiHealth, setAiHealth] = React.useState({ checking: false, providers: {} });
+  const [providerMeta, setProviderMeta] = React.useState([]);
   const [isMobile, setIsMobile] = React.useState(window.innerWidth < 768);
 
   React.useEffect(() => {
@@ -300,13 +283,24 @@ function JinaApp() {
     window.dispatchEvent(new CustomEvent('jina-theme-change', { detail: { theme: themeName } }));
   }, [themeName]);
 
-  const checkOllama = React.useCallback(async () => {
-    setOllamaStatus(s => ({ ...s, checking: true, error: null }));
-    const res = await window.JINA_AI.pingOllama(aiConfig.ollamaUrl);
-    setOllamaStatus({ checking: false, ok: res.ok, models: res.models || [], error: res.error || null });
-  }, [aiConfig.ollamaUrl]);
+  const checkHealth = React.useCallback(async (force = true) => {
+    setAiHealth(s => ({ ...s, checking: true }));
+    const res = await window.JINA_AI.checkHealth({ force });
+    setAiHealth({ checking: false, providers: res.ok ? res.providers : {} });
+  }, []);
 
-  React.useEffect(() => { checkOllama(); }, [checkOllama]);
+  React.useEffect(() => {
+    checkHealth(false); // 부팅 시엔 서버 캐시만 읽는다
+    window.JINA_AI.listProviders().then((res) => {
+      if (res.ok) {
+        setProviderMeta(res.providers);
+        // 서버 기본 provider를 초기값으로 (config.js에 없을 때)
+        if (!window.JINA_CONFIG?.provider && res.default) {
+          setAiConfig((c) => ({ ...c, provider: res.default }));
+        }
+      }
+    });
+  }, [checkHealth]);
 
   const theme = JINA_THEMES[themeName] || JINA_THEMES.aurora;
   const commonProps = { theme, aiConfig, onNavigate: setPage };
@@ -351,13 +345,15 @@ function JinaApp() {
         />
       )}
 
-      {/* 페이지 콘텐츠 */}
+      {/* 페이지 콘텐츠 — VocabProvider가 데스크탑/모바일 단어장을 한 스토어로 묶는다 */}
       <div style={{
         flex: 1,
         overflow: 'hidden',
         position: 'relative',
       }}>
-        {renderPage()}
+        <VocabProvider>
+          {renderPage()}
+        </VocabProvider>
       </div>
 
       {/* 모바일 하단 탭 */}
@@ -375,8 +371,9 @@ function JinaApp() {
           setThemeName={setThemeName}
           aiConfig={aiConfig}
           setAiConfig={setAiConfig}
-          ollamaStatus={ollamaStatus}
-          onCheck={checkOllama}
+          aiHealth={aiHealth}
+          providerMeta={providerMeta}
+          onCheck={checkHealth}
           onClose={() => setShowSettings(false)}
         />
       )}
