@@ -49,10 +49,11 @@ function useJinaChat(initialMessages = []) {
   return { messages, loading, error, send, reset };
 }
 
-function nowHHMM() {
-  const d = new Date();
+function nowHHMM(date) {
+  const d = date ? new Date(date) : new Date();
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
+window.jinaHHMM = nowHHMM; // conversation-store 매퍼가 재사용 — 시각 포맷터 중복 구현 금지
 
 // JinaInputBar — text-input bar that calls onSend; falls back to mic mode visually
 function JinaInputBar({ theme, onSend, loading, suggestions, provider, modelInfo, compact = false }) {

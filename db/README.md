@@ -37,7 +37,9 @@ npm run db:reset -- --yes   # 이 앱의 테이블만 명시 목록으로 DROP
 -- GRANT USAGE ON SCHEMA public TO jina_app;
 -- GRANT SELECT, INSERT, UPDATE, DELETE
 --   ON public.users, public.auth_sessions, public.vocab_words,
---      public.user_vocab_cards, public.vocab_reviews TO jina_app;
+--      public.user_vocab_cards, public.vocab_reviews,
+--      public.conversation_sessions, public.conversation_messages,
+--      public.corrections TO jina_app;
 -- GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO jina_app;  -- BIGSERIAL용
 -- schema_migrations 는 마이그레이션 전용 계정만 쓰기 가능하게 분리
 ```

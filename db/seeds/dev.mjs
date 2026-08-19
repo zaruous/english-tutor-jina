@@ -74,6 +74,133 @@ try {
     );
   }
 
+  // ── 회화 시드 (docs/plan/01-conversation.md Phase C1) ─────────────────
+  // 자연키가 없어 ON CONFLICT 불가 — 제목으로 SELECT 후 없을 때만 INSERT (재실행 안전).
+  // 타임스탬프는 전부 now() 상대시각.
+  async function ensureSession({ title, scenario, status, startedAtSql, lastMessageAtSql, endedAtSql }) {
+    const { rows: [existing] } = await client.query(
+      `SELECT id FROM public.conversation_sessions WHERE user_id = $1 AND title = $2`,
+      [user.id, title],
+    );
+    if (existing) return { id: existing.id, created: false };
+    const { rows: [s] } = await client.query(
+      `INSERT INTO public.conversation_sessions
+         (user_id, title, scenario, status, started_at, last_message_at, ended_at)
+       VALUES ($1, $2, $3::jsonb, $4, ${startedAtSql}, ${lastMessageAtSql}, ${endedAtSql})
+       RETURNING id`,
+      [user.id, title, scenario ? JSON.stringify(scenario) : null, status],
+    );
+    return { id: s.id, created: true };
+  }
+
+  const s1 = await ensureSession({
+    title: '비즈니스 미팅',
+    scenario: {
+      tag: 'TOEIC SPEAKING · Q11',
+      level: '★★★☆☆',
+      title: '비즈니스 미팅 · 신규 거래처 추천',
+      description: '상사가 사무용품 신규 거래처를 추천해달라고 요청했어요. 동료에게 전화로 의견을 전달하세요.',
+    },
+    status: 'active',
+    startedAtSql: `now() - interval '2 hours'`,
+    lastMessageAtSql: `now() - interval '5 minutes'`,
+    endedAtSql: 'NULL',
+  });
+  const s2 = await ensureSession({
+    title: '카페에서 주문하기',
+    scenario: null,
+    status: 'ended',
+    startedAtSql: `now() - interval '1 day' - interval '1 hour'`,
+    lastMessageAtSql: `now() - interval '1 day'`,
+    endedAtSql: `now() - interval '1 day'`,
+  });
+
+  const CORR1 = { original: 'should to go with', corrected: 'should go with',
+    reason: 'should 뒤에는 to 없이 동사원형이 와요.', type: 'grammar' };
+  const CORR2 = { original: 'have good prices', corrected: 'offer competitive pricing',
+    reason: '비즈니스 상황에선 competitive pricing이 더 격식 있어요.', type: 'usage' };
+
+  let firstUserMsgId = null;
+  if (s1.created) {
+    // 세션 1 메시지 4개 — id 순서 = 대화 순서. created_at도 순서대로.
+    const insertMsg = async (fields, createdAtSql) => {
+      const { rows: [m] } = await client.query(
+        `INSERT INTO public.conversation_messages
+           (session_id, user_id, role, content, content_ko, corrections, scores,
+            suggestion, provider, client_request_id, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10, ${createdAtSql})
+         RETURNING id`,
+        [s1.id, user.id, fields.role, fields.content, fields.content_ko ?? null,
+         fields.corrections ? JSON.stringify(fields.corrections) : null,
+         fields.scores ? JSON.stringify(fields.scores) : null,
+         fields.suggestion ?? null, fields.provider ?? null, fields.client_request_id ?? null],
+      );
+      return m.id;
+    };
+    firstUserMsgId = await insertMsg({
+      role: 'user',
+      content: 'Hi Mark, I think we should to go with OfficeMart for our supplies. They have good prices and offer next-day delivery.',
+      client_request_id: '11111111-1111-4111-8111-111111111111', // 고정 UUID — 멱등 replay 시연용
+    }, `now() - interval '110 minutes'`);
+    await insertMsg({
+      role: 'assistant',
+      content: "Nice try! Let's polish that sentence a bit. OfficeMart sounds like a solid choice — can you tell Mark one more reason why?",
+      content_ko: '좋은 시도예요! 문장을 조금 다듬어 볼게요. 근거를 하나 더 말해볼까요?',
+      corrections: [CORR1, CORR2],
+      scores: { grammar: 74, fluency: 88, vocabulary: 81 },
+      suggestion: '근거를 한 가지 더 추가해보세요.',
+      provider: 'claude',
+    }, `now() - interval '109 minutes'`);
+    await insertMsg({
+      role: 'user',
+      content: 'Sure! They also offer next-day delivery, which saves our team a lot of time.',
+    }, `now() - interval '6 minutes'`);
+    await insertMsg({
+      role: 'assistant',
+      content: 'Excellent! That extra detail makes your recommendation much more convincing.',
+      content_ko: '훌륭해요! 추가 근거 덕분에 추천이 훨씬 설득력 있어졌어요.',
+      corrections: [],
+      scores: { grammar: 80, fluency: 90, vocabulary: 83 }, // 점수 2회 — FeedbackPane ↑델타 검증용
+      provider: 'claude',
+    }, `now() - interval '5 minutes'`);
+  }
+
+  if (s2.created) {
+    await client.query(
+      `INSERT INTO public.conversation_messages (session_id, user_id, role, content, created_at)
+       VALUES ($1, $2, 'user', 'Can I get a iced americano, please?', now() - interval '1 day' - interval '10 minutes'),
+              ($1, $2, 'assistant', 'Almost perfect! Just say "an iced americano" — iced starts with a vowel sound.', now() - interval '1 day')`,
+      [s2.id, user.id],
+    );
+  }
+
+  // corrections 3행 — due 2 + 미래 1. 재실행 안전(ON CONFLICT ... DO UPDATE로 시드값 복원).
+  // 미래 1건은 make_interval(days => $n::int) — ($n || ' days')::interval에 같은 파라미터 재사용 금지(42804).
+  const upsertCorrection = (c, { sessionId = null, messageId = null, seenCount = 1, nextReviewSql, extraParams = [] }) =>
+    client.query(
+      `INSERT INTO public.corrections
+         (user_id, session_id, message_id, original, corrected, reason, type, seen_count, next_review)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, ${nextReviewSql})
+       ON CONFLICT (user_id, dedup_key) DO UPDATE SET
+         seen_count = EXCLUDED.seen_count, next_review = EXCLUDED.next_review,
+         reason = EXCLUDED.reason, updated_at = now()`,
+      [user.id, sessionId, messageId, c.original, c.corrected, c.reason, c.type, seenCount, ...extraParams],
+    );
+  await upsertCorrection(CORR1, {
+    sessionId: s1.id, messageId: firstUserMsgId,
+    nextReviewSql: `now() - interval '1 hour'`,
+  });
+  await upsertCorrection(CORR2, {
+    sessionId: s1.id, messageId: firstUserMsgId,
+    nextReviewSql: `now()`,
+  });
+  await upsertCorrection(
+    { original: 'I go to school yesterday', corrected: 'I went to school yesterday',
+      reason: '과거의 일에는 과거 시제를 써요.', type: 'grammar' },
+    { sessionId: s1.id, seenCount: 2, extraParams: [TZ],
+      nextReviewSql: `(date_trunc('day', now() AT TIME ZONE $9) + make_interval(days => 3)) AT TIME ZONE $9` },
+  );
+
   const { rows: [counts] } = await client.query(
     `SELECT count(*) FILTER (WHERE review_count = 0)                          AS new,
             count(*) FILTER (WHERE review_count > 0 AND next_review <= now()) AS due,

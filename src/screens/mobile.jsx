@@ -257,7 +257,8 @@ function MobileDashboard({ theme, noNav = false, onNavigate }) {
 // Mobile Conversation
 // ─────────────────────────────────────────────────────
 function MobileConversation({ theme, aiConfig }) {
-  const { messages, loading, send } = useJinaChat([]);
+  // 세션 사이드바 없음 — 스토어가 가장 최근 active 세션을 자동 선택해 이어간다 (v1)
+  const { messages, loading, send, lastScored, activeSession } = useConversation();
   const scrollRef = React.useRef(null);
   React.useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -288,7 +289,7 @@ function MobileConversation({ theme, aiConfig }) {
             <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: theme.success + '22', color: theme.success, fontWeight: 700 }}>LIVE</span>
           </div>
           <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            TOEIC Speaking Q11 · 비즈니스 미팅
+            {activeSession?.title ?? '새 회화'}
           </div>
         </div>
         <button style={{ width: 32, height: 32, borderRadius: 9, color: theme.textMuted, display: 'grid', placeItems: 'center' }}>
@@ -296,112 +297,48 @@ function MobileConversation({ theme, aiConfig }) {
         </button>
       </div>
 
-      {/* Live score bar */}
-      <div style={{
-        padding: '10px 16px',
-        borderBottom: `1px solid ${theme.border}`,
-        background: theme.bgSoft,
-        display: 'flex', alignItems: 'center', gap: 10,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-          <span style={{ fontSize: 11, color: theme.textMuted }}>실시간 점수</span>
-          <span className="jina-serif" style={{ fontSize: 22, fontWeight: 500, color: theme.text, lineHeight: 1 }}>83</span>
+      {/* Live score bar — lastScored 실데이터 (없으면 숨김) */}
+      {lastScored && (
+        <div style={{
+          padding: '10px 16px',
+          borderBottom: `1px solid ${theme.border}`,
+          background: theme.bgSoft,
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+            <span style={{ fontSize: 11, color: theme.textMuted }}>실시간 점수</span>
+            <span className="jina-serif" style={{ fontSize: 22, fontWeight: 500, color: theme.text, lineHeight: 1 }}>{lastScored.average}</span>
+          </div>
+          <div style={{ flex: 1, height: 4, borderRadius: 999, background: theme.border, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${lastScored.average}%`, background: theme.accentGrad, borderRadius: 999 }} />
+          </div>
+          {lastScored.delta != null && lastScored.delta !== 0 && (
+            <span style={{
+              fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999,
+              color: lastScored.delta > 0 ? theme.success : theme.error,
+              background: (lastScored.delta > 0 ? theme.success : theme.error) + '22',
+            }}>
+              {lastScored.delta > 0 ? `↑ ${lastScored.delta}` : `↓ ${-lastScored.delta}`}
+            </span>
+          )}
         </div>
-        <div style={{ flex: 1, height: 4, borderRadius: 999, background: theme.border, overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: '83%', background: theme.accentGrad, borderRadius: 999 }} />
-        </div>
-        <span style={{ fontSize: 11, color: theme.success, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: theme.success + '22' }}>↑ 6</span>
-      </div>
+      )}
 
       {/* Messages */}
       <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', padding: '16px 14px 8px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {/* Jina */}
-        <div style={{ display: 'flex', gap: 8 }}>
-          <JinaAvatar size={28} theme={theme} />
-          <div style={{ maxWidth: '85%' }}>
-            <div style={{
-              padding: '11px 13px', borderRadius: 16, borderTopLeftRadius: 4,
-              background: theme.chipBg, border: `1px solid ${theme.border}`,
-              fontSize: 13.5, color: theme.text, lineHeight: 1.5,
-            }}>
-              Hi Sumin! Imagine your boss asked you to recommend a vendor. Tell Mark which one — and <b>why</b>.
+        {messages.length === 0 && !loading && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, paddingTop: 48, textAlign: 'center' }}>
+            <JinaAvatar size={48} theme={theme} />
+            <div className="jina-serif" style={{ fontSize: 20, fontStyle: 'italic', color: theme.text }}>새 회화를 시작해요!</div>
+            <div style={{ fontSize: 12.5, color: theme.textMuted, lineHeight: 1.6 }}>
+              Jina에게 어떤 주제로 연습하고 싶은지 말해보세요.
             </div>
-            <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4, lineHeight: 1.4, padding: '0 4px' }}>
-              상사가 거래처 추천을 요청했어요. Mark에게 어디를, 그리고 왜인지 말해보세요.
-            </div>
-          </div>
-        </div>
-
-        {/* User bubble with corrections */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <div style={{
-            maxWidth: '88%',
-            padding: '11px 13px', borderRadius: 16, borderTopRightRadius: 4,
-            background: theme.accentGradSoft,
-            border: `1px solid ${theme.border}`,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, paddingBottom: 8, borderBottom: `1px dashed ${theme.border}` }}>
-              <button style={{ width: 22, height: 22, borderRadius: '50%', background: theme.text, color: theme.bg, display: 'grid', placeItems: 'center', flex: '0 0 auto' }}>
-                <Icons.Play size={9} />
-              </button>
-              <Waveform theme={theme} height={16} bars={20} />
-              <span style={{ fontSize: 10, color: theme.textMuted, fontVariantNumeric: 'tabular-nums' }}>0:18</span>
-            </div>
-            <div style={{ fontSize: 13.5, color: theme.text, lineHeight: 1.6 }}>
-              Hi Mark, I think we{' '}
-              <span style={{ color: theme.error, textDecoration: 'line-through' }}>should to go</span>
-              {' '}<span style={{ background: theme.success + '22', color: theme.success, padding: '0 4px', borderRadius: 3, fontWeight: 600 }}>should go</span>
-              {' '}with OfficeMart. They <span style={{ borderBottom: `2px wavy ${theme.warning}` }}>have good prices</span> and offer next-day delivery.
-            </div>
-            <div style={{ display: 'flex', gap: 4, marginTop: 8, flexWrap: 'wrap' }}>
-              {[
-                { l: '발음', v: 92 }, { l: '유창성', v: 88 }, { l: '문법', v: 74, warn: true }, { l: '어휘', v: 81 },
-              ].map((s) => (
-                <div key={s.l} style={{
-                  fontSize: 10, padding: '2px 6px', borderRadius: 999,
-                  background: theme.surface, border: `1px solid ${theme.border}`,
-                  display: 'inline-flex', alignItems: 'center', gap: 3,
-                }}>
-                  <span style={{ color: theme.textMuted }}>{s.l}</span>
-                  <span style={{ color: s.warn ? theme.warning : theme.success, fontWeight: 700 }}>{s.v}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Correction card (expanded) */}
-        <div style={{
-          padding: 12, borderRadius: 14,
-          background: theme.surface, border: `1px solid ${theme.borderStrong}`,
-          marginLeft: 36,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-            <Icons.Sparkles size={13} style={{ color: theme.accent }} />
-            <span style={{ fontSize: 11, color: theme.text, fontWeight: 700, letterSpacing: '0.04em' }}>JINA의 첨삭</span>
-          </div>
-          <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 8, lineHeight: 1.5 }}>
-            <em>"have good prices"</em>를 더 비즈니스다운 표현으로 바꿔보세요.
-          </div>
-          <button style={{
-            padding: '6px 10px', borderRadius: 8,
-            background: theme.chipBg, color: theme.text, fontSize: 11.5, fontWeight: 600,
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-          }}>
-            <Icons.Sparkle size={11} style={{ color: theme.accent }} />
-            offer competitive pricing
-          </button>
-        </div>
-
-        {messages.length > 0 && (
-          <div style={{ textAlign: 'center', fontSize: 10, color: theme.accent, padding: '2px 0', fontWeight: 600 }}>
-            <span style={{ padding: '3px 10px', borderRadius: 999, background: theme.accentGradSoft }}>↓ 실제 AI 응답</span>
           </div>
         )}
         {messages.map((m, i) => (
           m.role === 'user'
-            ? <LiveUserMessage key={i} theme={theme} msg={m} compact />
-            : <LiveJinaMessage key={i} theme={theme} msg={m} compact />
+            ? <LiveUserMessage key={m.id ?? i} theme={theme} msg={m} compact />
+            : <LiveJinaMessage key={m.id ?? i} theme={theme} msg={m} compact />
         ))}
 
         {loading && (

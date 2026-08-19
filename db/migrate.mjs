@@ -20,6 +20,9 @@ const LOCK_KEY_SQL = `SELECT pg_advisory_lock(hashtext('jina_migrations'))`;
 
 // reset 이 지울 수 있는 테이블의 전체 목록 — FK 역순. 여기 없는 테이블은 절대 건드리지 않는다.
 const RESET_TABLES = [
+  'corrections',
+  'conversation_messages',
+  'conversation_sessions',
   'vocab_reviews',
   'user_vocab_cards',
   'vocab_words',

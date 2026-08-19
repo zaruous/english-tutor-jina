@@ -352,7 +352,9 @@ function JinaApp() {
         position: 'relative',
       }}>
         <VocabProvider>
-          {renderPage()}
+          <ConversationProvider>
+            {renderPage()}
+          </ConversationProvider>
         </VocabProvider>
       </div>
 
