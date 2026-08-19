@@ -64,6 +64,15 @@
 >   `word_key` 생성 컬럼, 개인 override 컬럼 등).
 > - 회화 테이블은 기존 DB의 타 앱 테이블(`study_sessions` 등)과의 충돌을 피해
 >   `conversation_sessions`/`conversation_messages` 접두 명명을 권장 (`docs/plan/01-conversation.md`).
+> - **학습 콘텐츠는 `0005_lessons.sql`이 정본** (`docs/plan/02-lesson.md`로 구현):
+>   아래 스케치의 `lessons.id TEXT PK` / `user_id UUID` 대신 `lessons.id BIGSERIAL PK` +
+>   `slug TEXT UNIQUE`('toeic-part7-set23'), `user_id BIGINT`. `content JSONB` 한 덩어리 대신
+>   문항을 **`lesson_items` 행으로 분리** — `answer`/`explanation`을 GET 쿼리의 컬럼 나열에서
+>   아예 빼는 것이 정답 비노출의 구조적 보장이기 때문(JSONB 한 덩어리면 매 요청 jsonb 수술이
+>   필요하고 실수 한 번에 정답이 샌다). 시도 기록은 `user_lesson_attempts`
+>   (`correct_count`/`total_count`는 채점 시점의 **사실 기록**, `score`·`progress.done/total`·
+>   `attempt_count`·`best_correct`는 **저장하지 않는 파생값**), 멱등키는
+>   `client_request_id UUID` + partial unique index.
 
 ```sql
 -- 사용자
@@ -213,14 +222,29 @@ GET    /api/me/progress?period=week|month → { daily: [...], totals: {...} }
 GET    /api/me/skills            → { listening, reading, speaking, writing } (0-100)
 ```
 
-### Lessons (학습 콘텐츠)
+### Lessons (학습 콘텐츠) — **구현됨** (`api/routes/lesson.routes.js`, `docs/plan/02-lesson.md`)
 ```
-GET    /api/lessons?type=toeic_part7&difficulty=3
-GET    /api/lessons/:id
-POST   /api/lessons/:id/attempts { answers: { 1: 'B', 2: 'C', ... } }
-       → { score, correct_answers, explanations }
-GET    /api/me/lessons/recommended → 개인화 추천 (약점 기반)
+GET    /api/lessons              → { ok, lessons: [LessonSummary…], progress: { done, total } }
+                                   LessonSummary: id, slug, kind, title, subtitle, difficulty,
+                                   est_minutes, question_count, attempt_count, best_correct,
+                                   last_attempted_at   (뒤 4개는 attempts 집계 파생값)
+GET    /api/lessons/:id          → { ok, lesson: LessonDetail }
+                                   passage, questions[{n, stem, options[{id,text}]}], vocabulary,
+                                   faq, attempt_count, best_correct, question_count, next_lesson_id
+                                   ★ answer / explanation / correct 키는 응답에 존재하지 않는다
+POST   /api/lessons/:id/attempts { answers: { "1": "B", … }, client_request_id?, elapsed_ms? }
+                                 → { ok, attempt: { id, lesson_id, correct_count, total_count,
+                                                    score, created_at },
+                                      results: { "1": { your, correct, answer, explanation }, … },
+                                      progress: { done, total }, replay? }
+                                   채점은 전부 서버. 정답·해설은 이 응답에만 실린다.
+                                   answers 키는 문항 position 집합과 정확히 일치해야 한다(아니면 400).
+                                   같은 client_request_id 재전송 → 새 행 없이 replay:true.
+GET    /api/lessons/recommended  → 후속 (미구현). 구현 시 라우터 등록순 first-match이므로
+                                   반드시 /api/lessons/:id 보다 먼저 등록할 것.
 ```
+모든 라우트는 `requireUser`. 비GET은 `X-Requested-With` 필수, 캔버스(`X-Jina-Mode: canvas`)는
+`READONLY` 403 — 전역 미들웨어가 처리한다.
 
 ### Conversation (AI 회화)
 ```

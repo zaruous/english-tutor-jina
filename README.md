@@ -187,9 +187,9 @@ launchctl setenv OLLAMA_ORIGINS "*"
 - [ ] **DB 스키마** (구현된 것은 체크, 명명은 실제 마이그레이션 기준):
   - [x] `users` / `auth_sessions` — 인증 (`db/migrations/0001_auth.sql`)
   - [x] `vocab_words` / `user_vocab_cards` / `vocab_reviews` — 단어장 + SRS (`0002_vocab.sql`)
-  - [ ] `lessons` / `lesson_items` / `user_lesson_attempts` — 콘텐츠 (`docs/plan/02-lesson.md`)
-  - [ ] `conversation_sessions` / `conversation_messages` — 회화 (`docs/plan/01-conversation.md`)
-  - [ ] `corrections` — 누적 첨삭 기록 (SRS 복습용)
+  - [x] `lessons` / `lesson_items` / `user_lesson_attempts` — 콘텐츠 + 서버 채점 (`0005_lessons.sql`, `0006_lessons_seed.sql`)
+  - [x] `conversation_sessions` / `conversation_messages` — 회화 (`0004_conversation.sql`)
+  - [x] `corrections` — 누적 첨삭 기록 (`0004_conversation.sql`)
   - [ ] `daily_progress` — 일별 학습량, 정확도, 연속 학습일
 - [x] **AI 프록시 서버** — `api/ai/` CLI 프록시 5종 (claude/agy/codex/cursor/ollama), 브라우저 직결 폐기
 - [ ] **TOEIC 점수 추정 모델** — 최근 N개 세션의 점수 가중평균 + 보정

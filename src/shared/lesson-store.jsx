@@ -246,25 +246,44 @@ const FALLBACK_KEYS = {
   },
 };
 
-function useLessonFallback() {
-  const [currentId, setCurrentId] = React.useState(1);
-  const [answersByLesson, setAnswersByLesson] = React.useState({});
-  const [resultByLesson, setResultByLesson] = React.useState({});
+// fallback 상태는 모듈 단일 인스턴스 — LessonDesktop/LessonTopBar/QuestionsColumn이
+// 각각 useLesson()을 호출하므로, 훅 로컬 state로 두면 컴포넌트마다 다른 지문을 보게 된다
+// (Provider 경로에서 Context가 하나인 것과 같은 성질을 fallback에서도 유지한다).
+const fallbackState = {
+  currentId: FALLBACK_LESSONS[0].id,
+  answersByLesson: {},
+  resultByLesson: {},
+  listeners: new Set(),
+  emit() { this.listeners.forEach((fn) => fn()); },
+};
 
+function useLessonFallback() {
+  const [, force] = React.useReducer((n) => n + 1, 0);
+  React.useEffect(() => {
+    fallbackState.listeners.add(force);
+    return () => { fallbackState.listeners.delete(force); };
+  }, [force]);
+
+  const { currentId } = fallbackState;
   const current = FALLBACK_LESSONS.find((l) => l.id === currentId) || FALLBACK_LESSONS[0];
-  const result = resultByLesson[currentId] || null;
+  const result = fallbackState.resultByLesson[currentId] || null;
 
   const setAnswer = React.useCallback((n, optionId) => {
-    setAnswersByLesson((prev) => {
-      return { ...prev, [currentId]: { ...(prev[currentId] || {}), [n]: optionId } };
-    });
-  }, [currentId]);
+    const id = fallbackState.currentId;
+    if (fallbackState.resultByLesson[id]) return; // 채점 후에는 무시
+    fallbackState.answersByLesson = {
+      ...fallbackState.answersByLesson,
+      [id]: { ...(fallbackState.answersByLesson[id] || {}), [n]: optionId },
+    };
+    fallbackState.emit();
+  }, []);
 
   // 로컬 채점 — READONLY 서버 가드와 무관하게 캔버스에서 동작
   const submit = React.useCallback(() => {
-    const lesson = FALLBACK_LESSONS.find((l) => l.id === currentId);
-    const keys = FALLBACK_KEYS[currentId] || {};
-    const answers = answersByLesson[currentId] || {};
+    const id = fallbackState.currentId;
+    const lesson = FALLBACK_LESSONS.find((l) => l.id === id);
+    const keys = FALLBACK_KEYS[id] || {};
+    const answers = fallbackState.answersByLesson[id] || {};
     const results = {};
     let correct = 0;
     for (const q of lesson.questions) {
@@ -275,38 +294,45 @@ function useLessonFallback() {
       results[String(q.n)] = { your, correct: isCorrect, answer: k.answer, explanation: k.explanation };
     }
     const attempt = {
-      id: 0, lesson_id: currentId, correct_count: correct,
+      id: 0, lesson_id: id, correct_count: correct,
       total_count: lesson.questions.length,
       score: Math.round((correct / lesson.questions.length) * 100),
       created_at: new Date().toISOString(),
     };
-    setResultByLesson((prev) => ({ ...prev, [currentId]: { attempt, results } }));
+    fallbackState.resultByLesson = { ...fallbackState.resultByLesson, [id]: { attempt, results } };
+    fallbackState.emit();
     return Promise.resolve({ ok: true, attempt, results });
-  }, [currentId, answersByLesson]);
-
-  const retake = React.useCallback(() => {
-    setAnswersByLesson((prev) => { const n = { ...prev }; delete n[currentId]; return n; });
-    setResultByLesson((prev) => { const n = { ...prev }; delete n[currentId]; return n; });
-  }, [currentId]);
-
-  const next = React.useCallback(() => {
-    setCurrentId((id) => (FALLBACK_LESSONS.find((l) => l.id === id)?.next_lesson_id) || 1);
   }, []);
 
-  const progress = React.useMemo(() => ({
-    done: Object.keys(resultByLesson).length,
-    total: FALLBACK_LESSONS.length,
-  }), [resultByLesson]);
+  const retake = React.useCallback(() => {
+    const id = fallbackState.currentId;
+    const a = { ...fallbackState.answersByLesson }; delete a[id];
+    const r = { ...fallbackState.resultByLesson }; delete r[id];
+    fallbackState.answersByLesson = a;
+    fallbackState.resultByLesson = r;
+    fallbackState.emit();
+  }, []);
+
+  const select = React.useCallback((id) => {
+    if (!id || !FALLBACK_LESSONS.some((l) => l.id === id)) return;
+    fallbackState.currentId = id;
+    fallbackState.emit();
+  }, []);
+
+  const next = React.useCallback(() => {
+    const cur = FALLBACK_LESSONS.find((l) => l.id === fallbackState.currentId);
+    select(cur?.next_lesson_id || FALLBACK_LESSONS[0].id);
+  }, [select]);
 
   return {
     lessons: FALLBACK_LESSONS.map(({ passage, questions, vocabulary, faq, ...s }) => s),
-    progress, listLoading: false, error: null,
+    progress: { done: Object.keys(fallbackState.resultByLesson).length, total: FALLBACK_LESSONS.length },
+    listLoading: false, error: null,
     currentId, current, currentLoading: false,
-    answers: answersByLesson[currentId] || {},
+    answers: fallbackState.answersByLesson[currentId] || {},
     result, grading: false,
     refresh: () => Promise.resolve({ ok: true }),
-    select: (id) => setCurrentId(id),
-    setAnswer, submit, retake, next,
+    select, setAnswer, submit, retake, next,
   };
 }
 

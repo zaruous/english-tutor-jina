@@ -26,8 +26,12 @@ function Pill({ children, theme, color, bg }) {
 }
 
 // Lesson top bar with progress + AI mode
+// 콘텐츠(title/subtitle/difficulty)는 LessonCtx(=서버 LessonDetail), 진도는 스토어 파생값.
 function LessonTopBar({ theme, askingAI, setAskingAI }) {
-  const { progress, title, subtitle } = React.useContext(LessonCtx);
+  const { title, subtitle, difficulty, est_minutes: estMinutes } = React.useContext(LessonCtx);
+  const { progress } = useLesson();
+  const stars = '★'.repeat(difficulty || 0) + '☆'.repeat(Math.max(0, 5 - (difficulty || 0)));
+  const pct = progress.total ? (progress.done / progress.total) * 100 : 0;
   return (
     <div style={{
       padding: '14px 28px',
@@ -41,7 +45,7 @@ function LessonTopBar({ theme, askingAI, setAskingAI }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
           <Pill theme={theme} color={theme.accent} bg={theme.accent + '20'}>READING · PART 7</Pill>
-          <span style={{ fontSize: 11, color: theme.textMuted }}>난이도 ★★★☆☆ · 권장 6분</span>
+          <span style={{ fontSize: 11, color: theme.textMuted }}>난이도 {stars} · 권장 {estMinutes}분</span>
         </div>
         <div style={{ fontSize: 15, color: theme.text, fontWeight: 600 }}>
           {title} <span style={{ color: theme.textMuted, fontWeight: 400 }}>· {subtitle}</span>
@@ -51,7 +55,7 @@ function LessonTopBar({ theme, askingAI, setAskingAI }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', borderRadius: 10, background: theme.chipBg }}>
         <span style={{ fontSize: 11, color: theme.textMuted }}>진도</span>
         <div style={{ width: 100, height: 6, borderRadius: 999, background: theme.border, overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${progress.done / progress.total * 100}%`, background: theme.accentGrad }} />
+          <div style={{ height: '100%', width: `${pct}%`, background: theme.accentGrad }} />
         </div>
         <span style={{ fontSize: 11, color: theme.text, fontWeight: 600 }}>{progress.done}/{progress.total}</span>
       </div>
@@ -157,7 +161,9 @@ function PassageColumn({ theme, highlighted, setHighlighted }) {
 }
 
 // Question card
-function QuestionCard({ theme, q, answer, onAnswer, revealed }) {
+// ★ 정답(correctId)/해설(explanation)은 서버 채점 응답에서만 내려온다 —
+//   q.options에는 correct 플래그가 존재하지 않는다(정답 비노출).
+function QuestionCard({ theme, q, answer, onAnswer, revealed, correctId, explanation }) {
   return (
     <div style={{
       padding: 18, borderRadius: 14,
@@ -175,8 +181,8 @@ function QuestionCard({ theme, q, answer, onAnswer, revealed }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {q.options.map((o) => {
           const isSelected = answer === o.id;
-          const showRight = revealed && o.correct;
-          const showWrong = revealed && isSelected && !o.correct;
+          const showRight = revealed && o.id === correctId;
+          const showWrong = revealed && isSelected && o.id !== correctId;
           const bg = showRight ? theme.success + '20'
             : showWrong ? theme.error + '18'
             : isSelected ? theme.chipBg : 'transparent';
@@ -205,7 +211,7 @@ function QuestionCard({ theme, q, answer, onAnswer, revealed }) {
           );
         })}
       </div>
-      {revealed && (
+      {revealed && explanation && (
         <div style={{
           marginTop: 12, padding: 12, borderRadius: 10,
           background: theme.accentGradSoft, fontSize: 12, color: theme.textMuted, lineHeight: 1.5,
@@ -214,9 +220,9 @@ function QuestionCard({ theme, q, answer, onAnswer, revealed }) {
             <Icons.Sparkles size={12} style={{ color: theme.accent }} />
             <b style={{ color: theme.text }}>Jina 해설</b>
           </div>
-          {q.n === 1 && '이메일 첫 문단의 "moving forward with the campaign as our Q3 priority"와 본문 1-3번 액션 아이템이 핵심 단서예요. 캠페인의 다음 단계를 정리한 이메일이에요.'}
-          {q.n === 2 && '"the launch date has been moved up by one week"의 move up은 "앞당기다"라는 뜻이에요. (C) one week earlier가 정답.'}
-          {q.n === 3 && 'blockers는 IT/비즈니스 영어에서 "진행을 가로막는 장애물"을 뜻해요. 가장 가까운 동의어는 obstacles.'}
+          {/* 해설은 문항 데이터(lesson_items.explanation) — q.n 하드코딩 매칭이 아니므로
+              지문이 바뀌면 해설도 따라 바뀐다 (set24가 set23 해설을 보여주던 버그 해소) */}
+          {explanation}
         </div>
       )}
     </div>
@@ -224,18 +230,18 @@ function QuestionCard({ theme, q, answer, onAnswer, revealed }) {
 }
 
 // Questions column
+// 답/채점결과는 스토어(useLesson)에 있다 — key={current.id} 리마운트에도 살아남는다.
+// 채점은 비낙관적: 정답을 클라이언트가 모르므로 서버 왕복(POST attempts) 후에만 공개된다.
 function QuestionsColumn({ theme, onNext }) {
   const lesson = React.useContext(LessonCtx);
-  const [answers, setAnswers] = React.useState({});
-  const [revealed, setRevealed] = React.useState(false);
+  const { answers, setAnswer, result, grading, submit, retake, error } = useLesson();
+  const revealed = Boolean(result);
   const onAnswer = (n, id) => {
     if (revealed) return;
-    setAnswers((a) => ({ ...a, [n]: id }));
+    setAnswer(n, id);
   };
-  const correctCount = lesson.questions.filter((q) => {
-    const a = answers[q.n];
-    return a && q.options.find((o) => o.id === a)?.correct;
-  }).length;
+  const correctCount = result?.attempt?.correct_count ?? 0;
+  const totalCount = result?.attempt?.total_count ?? lesson.questions.length;
   const allAnswered = lesson.questions.every((q) => answers[q.n]);
 
   return (
@@ -253,26 +259,38 @@ function QuestionsColumn({ theme, onNext }) {
 
       {lesson.questions.map((q) => (
         <QuestionCard key={q.n} theme={theme} q={q}
-          answer={answers[q.n]} onAnswer={onAnswer} revealed={revealed} />
+          answer={answers[q.n]} onAnswer={onAnswer} revealed={revealed}
+          correctId={result?.results?.[q.n]?.answer}
+          explanation={result?.results?.[q.n]?.explanation} />
       ))}
 
       {/* Action */}
       {!revealed ? (
-        <button onClick={() => setRevealed(true)} disabled={!allAnswered} style={{
-          padding: '14px', borderRadius: 12,
-          background: allAnswered ? theme.text : theme.chipBg,
-          color: allAnswered ? theme.bg : theme.textMuted,
-          fontSize: 14, fontWeight: 700,
-          cursor: allAnswered ? 'pointer' : 'not-allowed',
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-        }}>
-          {allAnswered ? '채점하기' : `${lesson.questions.length - Object.keys(answers).length}개 문제를 더 풀어주세요`}
-          {allAnswered && <Icons.ArrowRight size={14} />}
-        </button>
+        <React.Fragment>
+          {error && (
+            <div style={{
+              padding: '10px 12px', borderRadius: 10, fontSize: 12, lineHeight: 1.5,
+              background: theme.error + '18', border: `1px solid ${theme.error}55`, color: theme.text,
+            }}>{error}</div>
+          )}
+          <button onClick={() => submit()} disabled={!allAnswered || grading} style={{
+            padding: '14px', borderRadius: 12,
+            background: allAnswered && !grading ? theme.text : theme.chipBg,
+            color: allAnswered && !grading ? theme.bg : theme.textMuted,
+            fontSize: 14, fontWeight: 700,
+            cursor: allAnswered && !grading ? 'pointer' : 'not-allowed',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          }}>
+            {grading ? '채점 중…'
+              : allAnswered ? '채점하기'
+              : `${lesson.questions.length - Object.keys(answers).length}개 문제를 더 풀어주세요`}
+            {allAnswered && !grading && <Icons.ArrowRight size={14} />}
+          </button>
+        </React.Fragment>
       ) : (
         <div style={{
           padding: 16, borderRadius: 12,
-          background: correctCount === lesson.questions.length ? theme.success + '15' : theme.accentGradSoft,
+          background: correctCount === totalCount ? theme.success + '15' : theme.accentGradSoft,
           border: `1px solid ${theme.border}`,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -286,12 +304,12 @@ function QuestionsColumn({ theme, onNext }) {
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 2 }}>이번 세트 결과</div>
               <div className="jina-serif" style={{ fontSize: 28, color: theme.text, fontWeight: 500, lineHeight: 1 }}>
-                {correctCount} <span style={{ color: theme.textDim, fontSize: 18 }}>/ {lesson.questions.length} 정답</span>
+                {correctCount} <span style={{ color: theme.textDim, fontSize: 18 }}>/ {totalCount} 정답</span>
               </div>
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-            <button onClick={() => { setAnswers({}); setRevealed(false); }} style={{
+            <button onClick={() => retake()} style={{
               flex: 1, padding: '10px', borderRadius: 9,
               background: theme.chipBg, color: theme.text, fontSize: 12.5, fontWeight: 600,
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5,
@@ -336,6 +354,8 @@ function QuestionsColumn({ theme, onNext }) {
 
 // AI side panel (when "Jina에게 물어보기" is open)
 function JinaSidePanel({ theme, aiConfig, onClose }) {
+  const { faq } = React.useContext(LessonCtx);   // 추천 질문도 서버 콘텐츠(lessons.faq)
+  const suggestions = faq?.length ? faq : DEFAULT_FAQ;
   const { messages, loading, send } = useJinaChat([]);
   const scrollRef = React.useRef(null);
   React.useEffect(() => {
@@ -368,12 +388,7 @@ function JinaSidePanel({ theme, aiConfig, onClose }) {
               자주 묻는 질문 ↓
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {[
-                '"moved up by one week"을 한국어로 풀어주세요',
-                '이 이메일의 어조(tone)는 어떤가요?',
-                'Daniel Park이 가장 강조한 메시지는 무엇인가요?',
-                '"accommodate"가 비즈니스에서 쓰이는 다른 예시는?',
-              ].map((q, i) => (
+              {suggestions.map((q, i) => (
                 <button key={i} onClick={() => send(q)} style={{
                   padding: '10px 12px', borderRadius: 10,
                   background: theme.card, border: `1px solid ${theme.border}`,
@@ -416,15 +431,36 @@ function JinaSidePanel({ theme, aiConfig, onClose }) {
   );
 }
 
+// 로딩/에러 플레이스홀더 — current 가 없을 때도 빈 화면을 보이지 않는다.
+function LessonPlaceholder({ theme, loading, error }) {
+  return (
+    <div className="jina-root" style={{
+      width: '100%', height: '100%', background: theme.bg, color: theme.text,
+      display: 'grid', placeItems: 'center', padding: 24, textAlign: 'center',
+    }}>
+      <div style={{ maxWidth: 420 }}>
+        <div className="jina-serif" style={{ fontSize: 18, fontStyle: 'italic', marginBottom: 8 }}>
+          {loading ? '지문을 불러오는 중…' : '지문을 불러올 수 없습니다'}
+        </div>
+        {error && (
+          <div style={{ fontSize: 12.5, color: theme.textMuted, lineHeight: 1.6 }}>{error}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function LessonDesktop({ theme, aiConfig }) {
   const [askingAI, setAskingAI] = React.useState(true);
   const [highlighted, setHighlighted] = React.useState(null);
-  const [lessonIdx, setLessonIdx] = React.useState(0);
-  const currentLesson = LESSONS[lessonIdx % LESSONS.length];
+  const { current: currentLesson, currentLoading, listLoading, error, next } = useLesson();
   const onNext = () => {
-    setLessonIdx((i) => i + 1);
+    next();
     setHighlighted(null);
   };
+  if (!currentLesson) {
+    return <LessonPlaceholder theme={theme} loading={currentLoading || listLoading} error={error} />;
+  }
   return (
     <LessonCtx.Provider value={currentLesson}>
       <div className="jina-root" style={{
@@ -440,7 +476,8 @@ function LessonDesktop({ theme, aiConfig }) {
           minHeight: 0,
         }}>
           <PassageColumn theme={theme} highlighted={highlighted} setHighlighted={setHighlighted} />
-          <QuestionsColumn key={lessonIdx} theme={theme} onNext={onNext} />
+          {/* key로 리마운트해도 답/결과는 스토어에 있어 소실되지 않는다 */}
+          <QuestionsColumn key={currentLesson.id} theme={theme} onNext={onNext} />
           {askingAI && <JinaSidePanel theme={theme} aiConfig={aiConfig} onClose={() => setAskingAI(false)} />}
         </div>
       </div>
@@ -453,10 +490,12 @@ function LessonDesktop({ theme, aiConfig }) {
 // ─────────────────────────────────────────────────────
 function LessonMobile({ theme, aiConfig }) {
   const [tab, setTab] = React.useState('passage'); // passage | questions | jina
-  const [lessonIdx, setLessonIdx] = React.useState(0);
   const [highlighted, setHighlighted] = React.useState(null);
-  const currentLesson = LESSONS[lessonIdx % LESSONS.length];
-  const onNext = () => { setLessonIdx((i) => i + 1); setHighlighted(null); setTab('passage'); };
+  const { current: currentLesson, currentLoading, listLoading, error, progress, next } = useLesson();
+  const onNext = () => { next(); setHighlighted(null); setTab('passage'); };
+  if (!currentLesson) {
+    return <LessonPlaceholder theme={theme} loading={currentLoading || listLoading} error={error} />;
+  }
   return (
     <LessonCtx.Provider value={currentLesson}>
     <div className="jina-root" style={{
@@ -473,10 +512,10 @@ function LessonMobile({ theme, aiConfig }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 1 }}>
             <Pill theme={theme} color={theme.accent} bg={theme.accent + '20'}>PART 7</Pill>
-            <span style={{ fontSize: 10, color: theme.textMuted }}>4/10</span>
+            <span style={{ fontSize: 10, color: theme.textMuted }}>{progress.done}/{progress.total}</span>
           </div>
           <div style={{ fontSize: 13, color: theme.text, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            Set 23 — 비즈니스 이메일
+            {currentLesson.subtitle}
           </div>
         </div>
         <button style={{ width: 30, height: 30, borderRadius: 8, color: theme.textMuted, display: 'grid', placeItems: 'center' }}>
@@ -488,7 +527,7 @@ function LessonMobile({ theme, aiConfig }) {
       <div style={{ padding: '8px 12px', display: 'flex', gap: 6, borderBottom: `1px solid ${theme.border}`, background: theme.bgSoft }}>
         {[
           { id: 'passage', label: '지문', icon: Icons.Book },
-          { id: 'questions', label: '문제 3', icon: Icons.Target },
+          { id: 'questions', label: `문제 ${currentLesson.questions.length}`, icon: Icons.Target },
           { id: 'jina', label: 'Jina', icon: Icons.Sparkles, highlight: true },
         ].map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
@@ -538,7 +577,7 @@ function LessonMobile({ theme, aiConfig }) {
         )}
         {tab === 'questions' && (
           <div style={{ padding: 14 }}>
-            <QuestionsColumn key={lessonIdx} theme={theme} onNext={onNext} />
+            <QuestionsColumn key={currentLesson.id} theme={theme} onNext={onNext} />
           </div>
         )}
         {tab === 'jina' && (
@@ -551,6 +590,8 @@ function LessonMobile({ theme, aiConfig }) {
 }
 
 function MobileJinaTab({ theme, aiConfig }) {
+  const { faq } = React.useContext(LessonCtx);
+  const suggestions = (faq?.length ? faq : DEFAULT_FAQ).slice(0, 3);
   const { messages, loading, send } = useJinaChat([]);
   const scrollRef = React.useRef(null);
   React.useEffect(() => {
@@ -563,11 +604,7 @@ function MobileJinaTab({ theme, aiConfig }) {
         {messages.length === 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ fontSize: 11, color: theme.textDim, padding: '0 4px 4px' }}>자주 묻는 질문 ↓</div>
-            {[
-              '"moved up by one week" 한국어로?',
-              '이메일의 톤은 어떤가요?',
-              '"accommodate" 비즈니스 예시',
-            ].map((q, i) => (
+            {suggestions.map((q, i) => (
               <button key={i} onClick={() => send(q)} style={{
                 padding: '10px 12px', borderRadius: 10,
                 background: theme.card, border: `1px solid ${theme.border}`,
