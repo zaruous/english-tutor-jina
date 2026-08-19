@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jina — AI English Tutor</title>
+  <style>
+    html, body, #root { margin: 0; padding: 0; width: 100%; height: 100%; background: #f0eee9; font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; }
+    body { overflow: hidden; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <!-- Tokens, icons, shared -->
+  <script type="text/babel" src="src/shared/tokens.jsx"></script>
+  <script type="text/babel" src="src/shared/icons.jsx"></script>
+  <script type="text/babel" src="src/shared/ai-provider.jsx"></script>
+
+  <!-- Canvas shell -->
+  <script type="text/babel" src="src/canvas/design-canvas.jsx"></script>
+  <script type="text/babel" src="src/canvas/ios-frame.jsx"></script>
+  <script type="text/babel" src="src/canvas/tweaks-panel.jsx"></script>
+
+  <!-- Live chat runtime -->
+  <script type="text/babel" src="src/runtime/chat-runtime.jsx"></script>
+
+  <!-- Screens -->
+  <script type="text/babel" src="src/screens/dashboard-desktop.jsx"></script>
+  <script type="text/babel" src="src/screens/conversation-desktop.jsx"></script>
+  <script type="text/babel" src="src/screens/mobile.jsx"></script>
+  <script type="text/babel" src="src/screens/lesson.jsx"></script>
+  <script type="text/babel" src="src/screens/vocabulary.jsx"></script>
+  <script type="text/babel" src="src/screens/progress.jsx"></script>
+
+  <!-- App entry -->
+  <script type="text/babel" src="src/app.jsx"></script>
+</body>
+</html>

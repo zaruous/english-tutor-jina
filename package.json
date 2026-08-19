@@ -1,0 +1,31 @@
+{
+  "name": "jina-english-tutor",
+  "version": "0.1.0-prototype",
+  "description": "AI English Tutor for Korean learners — TOEIC/TOEFL prep with live AI conversation",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "ollama": "OLLAMA_ORIGINS=\"*\" ollama serve",
+    "ollama:pull": "ollama pull gemma4:31b-cloud",
+    "ollama:list": "ollama list"
+  },
+  "keywords": [
+    "english-learning",
+    "toeic",
+    "toefl",
+    "ai-tutor",
+    "ollama",
+    "claude",
+    "korean"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "playwright": "^1.60.0"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2"
+  }
+}

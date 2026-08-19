@@ -1,0 +1,33 @@
+# Logs and runtime files
+*.log
+.DS_Store
+.idea/
+.vscode/
+
+# Dependencies (none required for prototype, but for future)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Build outputs
+dist/
+build/
+.next/
+.cache/
+
+# Environment — 실제 접속정보. .env.example 만 추적한다
+.env*
+!.env.example
+
+# Ollama models (massive; should not be committed)
+*.gguf
+models/
+
+# User data (when backend is added)
+data/
+uploads/
+*.db
+*.sqlite
+
+# CLI provider 전용 작업 디렉터리 (Phase 3)
+.jina-agent-cwd/
