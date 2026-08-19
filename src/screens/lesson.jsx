@@ -1,133 +1,18 @@
 // lesson.jsx — TOEIC Part 7 Reading lesson page (desktop + mobile)
 // Content: a business email + 3 multiple-choice questions + AI explanation panel.
+// 콘텐츠/채점/진도의 단일 소스는 서버 (docs/plan/02-lesson.md) —
+// 데이터는 useLesson()(src/shared/lesson-store.jsx)이 GET /api/lessons/:id 로 가져오고,
+// 채점은 POST /api/lessons/:id/attempts 서버 채점. 정답/해설은 채점 응답에만 실린다.
 
-const LESSON_DATA = {
-  id: 'toeic-part7-set23',
-  title: 'TOEIC Part 7 — 단일 지문',
-  subtitle: 'Set 23 · 비즈니스 이메일',
-  progress: { done: 4, total: 10 },
-  passage: {
-    type: 'EMAIL',
-    from: 'Daniel Park <d.park@meridian-co.com>',
-    to: 'All Marketing Team',
-    cc: 'Hannah Lee, J. Whitmore',
-    date: 'Tuesday, May 26 · 09:14',
-    subject: 'Q3 Campaign Kickoff — Action Items',
-    body: [
-      "Dear team,",
-      "Thank you all for the productive workshop yesterday. As discussed, we will be moving forward with the \"Bright Mornings\" campaign as our Q3 priority. Below is a summary of the immediate next steps:",
-      "1. Hannah will finalize the creative brief by Friday, May 29.",
-      "2. James, please coordinate with the external agency to confirm the photo-shoot schedule. We are aiming for the week of June 8.",
-      "3. The media buy budget has been approved at $48,000 — a 12% increase from Q2.",
-      "I would also like to remind everyone that **the launch date has been moved up by one week** to accommodate the regional sales conference. Please update your project plans accordingly.",
-      "If you anticipate any blockers, please reach out to me directly before Thursday's stand-up. I appreciate your continued effort and flexibility.",
-      "Best regards,",
-      "Daniel Park · Marketing Director",
-    ],
-  },
-  questions: [
-    {
-      n: 1,
-      stem: 'What is the main purpose of the email?',
-      options: [
-        { id: 'A', text: 'To announce a new hire in the marketing team' },
-        { id: 'B', text: 'To outline next steps for an upcoming campaign', correct: true },
-        { id: 'C', text: 'To request approval for a budget increase' },
-        { id: 'D', text: 'To reschedule a regional sales conference' },
-      ],
-    },
-    {
-      n: 2,
-      stem: 'According to the email, what is true about the launch date?',
-      options: [
-        { id: 'A', text: 'It has been postponed by one week' },
-        { id: 'B', text: 'It is scheduled for the week of June 8' },
-        { id: 'C', text: 'It has been moved one week earlier', correct: true },
-        { id: 'D', text: 'It will be decided during Thursday\'s stand-up' },
-      ],
-    },
-    {
-      n: 3,
-      stem: 'The word "blockers" in paragraph 5 is closest in meaning to —',
-      options: [
-        { id: 'A', text: 'budget cuts' },
-        { id: 'B', text: 'obstacles', correct: true },
-        { id: 'C', text: 'colleagues' },
-        { id: 'D', text: 'deliverables' },
-      ],
-    },
-  ],
-  vocabulary: [
-    { word: 'accommodate', ipa: '/əˈkɑːmədeɪt/', pos: 'v.', meaning: '~을 수용하다, 맞추다', ex: 'to accommodate the schedule' },
-    { word: 'anticipate', ipa: '/ænˈtɪsɪpeɪt/', pos: 'v.', meaning: '예상하다, 미리 대비하다', ex: 'anticipate any blockers' },
-    { word: 'finalize', ipa: '/ˈfaɪnəlaɪz/', pos: 'v.', meaning: '최종 확정하다', ex: 'finalize the brief by Friday' },
-  ],
-};
+// 주입 시임(injection seam): Provider value = 서버 LessonDetail DTO
+const LessonCtx = React.createContext(null);
 
-const LESSON_DATA_2 = {
-  id: 'toeic-part7-set24',
-  title: 'TOEIC Part 7 — 단일 지문',
-  subtitle: 'Set 24 · 공지 및 안내문',
-  progress: { done: 5, total: 10 },
-  passage: {
-    type: 'NOTICE',
-    from: 'Facilities Management',
-    to: 'All Staff',
-    cc: '',
-    date: 'Wednesday, May 27 · 08:00',
-    subject: 'Building Maintenance — Elevator Out of Service (May 28–29)',
-    body: [
-      "Dear colleagues,",
-      "Please be advised that **Elevator B in the North Tower will be taken out of service from Thursday, May 28 (7:00 AM) through Friday, May 29 (6:00 PM)** for scheduled hydraulic maintenance.",
-      "During this period, Elevator A and the stairwells on both the East and West sides of the building will remain fully operational. We ask all staff to plan accordingly and allow extra travel time between floors.",
-      "Employees who require mobility assistance are requested to contact Facilities Management at ext. 4400 by Wednesday afternoon so that appropriate arrangements can be made.",
-      "The maintenance is expected to be completed by Friday evening. However, if additional work is required, we will provide an updated timeline no later than Friday at noon.",
-      "We apologize for the inconvenience and appreciate your patience and cooperation.",
-      "Facilities Management Team",
-    ],
-  },
-  questions: [
-    {
-      n: 1,
-      stem: 'What is the purpose of this notice?',
-      options: [
-        { id: 'A', text: 'To announce the construction of a new elevator' },
-        { id: 'B', text: 'To inform staff about temporary elevator unavailability', correct: true },
-        { id: 'C', text: 'To request volunteers for building maintenance' },
-        { id: 'D', text: 'To introduce new building safety procedures' },
-      ],
-    },
-    {
-      n: 2,
-      stem: 'According to the notice, what should employees needing assistance do?',
-      options: [
-        { id: 'A', text: 'Use the stairwells on the West side only' },
-        { id: 'B', text: 'Email the Facilities Management team' },
-        { id: 'C', text: 'Call extension 4400 by Wednesday afternoon', correct: true },
-        { id: 'D', text: 'Wait for further instructions on Friday noon' },
-      ],
-    },
-    {
-      n: 3,
-      stem: 'When will the updated timeline be provided IF additional work is needed?',
-      options: [
-        { id: 'A', text: 'By Thursday morning' },
-        { id: 'B', text: 'By Friday at noon', correct: true },
-        { id: 'C', text: 'By Friday at 6:00 PM' },
-        { id: 'D', text: 'By the following Monday' },
-      ],
-    },
-  ],
-  vocabulary: [
-    { word: 'operational', ipa: '/ˌɒpəˈreɪʃənəl/', pos: 'adj.', meaning: '운용 가능한, 작동 중인', ex: 'remain fully operational' },
-    { word: 'hydraulic', ipa: '/haɪˈdrɔːlɪk/', pos: 'adj.', meaning: '유압의, 수압을 이용한', ex: 'hydraulic maintenance' },
-    { word: 'mobility', ipa: '/moʊˈbɪlɪti/', pos: 'n.', meaning: '이동성, 운동 능력', ex: 'require mobility assistance' },
-  ],
-};
-
-const LESSONS = [LESSON_DATA, LESSON_DATA_2];
-
-const LessonCtx = React.createContext(LESSON_DATA);
+// Jina 패널 추천 질문 — lesson.faq가 비어 있을 때의 폴백
+const DEFAULT_FAQ = [
+  '이 지문을 한국어로 요약해주세요',
+  '이 지문의 핵심 표현을 알려주세요',
+  '이 지문에서 자주 나오는 TOEIC 어휘는?',
+];
 
 // Pill component
 function Pill({ children, theme, color, bg }) {

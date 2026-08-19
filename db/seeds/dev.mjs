@@ -201,6 +201,21 @@ try {
       nextReviewSql: `(date_trunc('day', now() AT TIME ZONE $9) + make_interval(days => 3)) AT TIME ZONE $9` },
   );
 
+  // ── 학습(lesson) attempt 시드 1건 (docs/plan/02-lesson.md Phase 1) ────
+  // 멱등: 고정 client_request_id + ula_reqid_uq (partial unique index라 WHERE 절까지 명시).
+  // 타임스탬프는 make_interval — ($n || ' days')::interval 텍스트 연결 금지(42804).
+  // 결과: 시드 직후 진도 = 1/2 (set23 시도됨, set24 미시도).
+  await client.query(
+    `INSERT INTO public.user_lesson_attempts
+       (user_id, lesson_id, answers, correct_count, total_count, elapsed_ms, client_request_id, created_at)
+     SELECT $1, l.id, '{"1":"B","2":"A","3":"B"}'::jsonb, 2, 3, 214000,
+            '11111111-1111-4111-8111-111111111111'::uuid,
+            now() - make_interval(days => 1)
+       FROM public.lessons l WHERE l.slug = 'toeic-part7-set23'
+     ON CONFLICT (client_request_id) WHERE client_request_id IS NOT NULL DO NOTHING`,
+    [user.id],
+  );
+
   const { rows: [counts] } = await client.query(
     `SELECT count(*) FILTER (WHERE review_count = 0)                          AS new,
             count(*) FILTER (WHERE review_count > 0 AND next_review <= now()) AS due,
