@@ -6,8 +6,15 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
+    "api": "node api/server.js",
+    "dev:all": "node scripts/dev-all.mjs",
+    "db:migrate": "node db/migrate.mjs up",
+    "db:status": "node db/migrate.mjs status",
+    "db:rollback": "node db/migrate.mjs down",
+    "db:seed": "node db/seeds/dev.mjs",
+    "db:reset": "node db/migrate.mjs reset",
     "ollama": "OLLAMA_ORIGINS=\"*\" ollama serve",
-    "ollama:pull": "ollama pull gemma4:31b-cloud",
+    "ollama:pull": "ollama pull gemma4:e2b",
     "ollama:list": "ollama list"
   },
   "keywords": [
@@ -26,6 +33,7 @@
     "playwright": "^1.60.0"
   },
   "dependencies": {
-    "dotenv": "^17.4.2"
+    "dotenv": "^17.4.2",
+    "pg": "^8.23.0"
   }
 }
