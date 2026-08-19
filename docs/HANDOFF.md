@@ -56,6 +56,15 @@
 
 ## 2. 데이터 모델 (Postgres)
 
+> ⚠️ **구현 반영 노트** (docs/PLAN-vocab-backend.md 로 구현된 부분과의 차이):
+> - `users.id`는 UUID가 아니라 **BIGSERIAL** 로 구현됨 (`db/migrations/0001_auth.sql`) —
+>   psql 디버깅 용이, user_id는 URL에 노출되지 않음. 인증 세션 테이블은 아래의 회화용
+>   `sessions`와 구분해 **`auth_sessions`** 로 명명.
+> - `vocab_words`/`user_vocab_cards`는 `0002_vocab.sql` 기준이 정본 (`vocab_reviews` 추가,
+>   `word_key` 생성 컬럼, 개인 override 컬럼 등).
+> - 회화 테이블은 기존 DB의 타 앱 테이블(`study_sessions` 등)과의 충돌을 피해
+>   `conversation_sessions`/`conversation_messages` 접두 명명을 권장 (`docs/plan/01-conversation.md`).
+
 ```sql
 -- 사용자
 CREATE TABLE users (

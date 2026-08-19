@@ -183,15 +183,15 @@ launchctl setenv OLLAMA_ORIGINS "*"
 
 ### Phase 1 — 백엔드 (4-6주)
 
-- [ ] **사용자 인증** — NextAuth / Clerk / Supabase Auth
-- [ ] **DB 스키마**:
-  - `users` — 프로필, 목표 점수, 가입일
-  - `lessons` — 콘텐츠 (지문, 문제, 어휘)
-  - `sessions` — 회화 세션 (메시지 배열, 점수, scenario_id)
-  - `corrections` — 누적 첨삭 기록 (SRS 복습용)
-  - `vocab_cards` — 사용자 단어장 (간격 반복 알고리즘)
-  - `progress` — 일별 학습량, 정확도, 연속 학습일
-- [ ] **AI 프록시 서버** — 프론트가 직접 LLM 호출하지 않고 백엔드 경유 (rate-limit / 비용 제어 / 로깅)
+- [x] **사용자 인증** — `api/` 자체 구현 (scrypt + 세션 쿠키, `docs/PLAN-vocab-backend.md` Phase 2)
+- [ ] **DB 스키마** (구현된 것은 체크, 명명은 실제 마이그레이션 기준):
+  - [x] `users` / `auth_sessions` — 인증 (`db/migrations/0001_auth.sql`)
+  - [x] `vocab_words` / `user_vocab_cards` / `vocab_reviews` — 단어장 + SRS (`0002_vocab.sql`)
+  - [ ] `lessons` / `lesson_items` / `user_lesson_attempts` — 콘텐츠 (`docs/plan/02-lesson.md`)
+  - [ ] `conversation_sessions` / `conversation_messages` — 회화 (`docs/plan/01-conversation.md`)
+  - [ ] `corrections` — 누적 첨삭 기록 (SRS 복습용)
+  - [ ] `daily_progress` — 일별 학습량, 정확도, 연속 학습일
+- [x] **AI 프록시 서버** — `api/ai/` CLI 프록시 5종 (claude/agy/codex/cursor/ollama), 브라우저 직결 폐기
 - [ ] **TOEIC 점수 추정 모델** — 최근 N개 세션의 점수 가중평균 + 보정
 
 ### Phase 2 — 음성 기능 (3-4주)
