@@ -216,6 +216,17 @@ try {
     [user.id],
   );
 
+  // ── 대시보드 목표 1행 (docs/plan/03-dashboard.md Phase 1) ────────────
+  // exam_date는 date + 정수(일) 덧셈 — 시드가 언제 돌아도 D-42가 재현된다.
+  // ($n || ' days')::interval 텍스트 연결 금지(42804): $2는 TZ 텍스트로만 쓴다.
+  await client.query(
+    `INSERT INTO public.user_goals (user_id, target_score, exam_date)
+     VALUES ($1, 900, (now() AT TIME ZONE $2)::date + 42)
+     ON CONFLICT (user_id) DO UPDATE
+       SET target_score = EXCLUDED.target_score, exam_date = EXCLUDED.exam_date, updated_at = now()`,
+    [user.id, TZ],
+  );
+
   const { rows: [counts] } = await client.query(
     `SELECT count(*) FILTER (WHERE review_count = 0)                          AS new,
             count(*) FILTER (WHERE review_count > 0 AND next_review <= now()) AS due,

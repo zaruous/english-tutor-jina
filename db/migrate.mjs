@@ -30,6 +30,7 @@ const RESET_TABLES = [
   'user_vocab_cards',
   'vocab_words',
   'auth_sessions',
+  'user_goals',
   'users',
   'schema_migrations',
 ];

@@ -4,6 +4,22 @@
 // Mobile Dashboard
 // ─────────────────────────────────────────────────────
 function MobileDashboard({ theme, noNav = false, onNavigate }) {
+  // 데스크탑(dashboard-desktop.jsx)과 같은 Context·포맷터를 쓴다 — 수치/문자열 중복 정의 금지.
+  const { dash } = useDashboard();
+  const F = window.DASH_FMT;
+  const go = (nav) => onNavigate && nav && onNavigate(nav);
+  if (!dash) {
+    return (
+      <div className="jina-root" style={{ width: '100%', height: '100%', background: theme.bg, color: theme.textMuted,
+        display: 'grid', placeItems: 'center', fontSize: 13 }}>불러오는 중…</div>
+    );
+  }
+  const goal = dash.goal;
+  const plan = dash.today_plan;
+  const corr = dash.recent_correction;
+  const goalPct = goal.target_score ? Math.min(1, (goal.predicted_score || 0) / goal.target_score) : 0;
+  const planPct = plan.total ? plan.done / plan.total : 0;
+  const currentKey = plan.items.find((it) => !it.done)?.key;
   return (
     <div className="jina-root" style={{
       width: '100%', height: '100%',
@@ -14,9 +30,9 @@ function MobileDashboard({ theme, noNav = false, onNavigate }) {
       {/* Header */}
       <div style={{ padding: '12px 20px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
-          <div style={{ fontSize: 11, color: theme.textMuted, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>5월 26일 화요일</div>
-          <div className="jina-serif" style={{ fontSize: 28, color: theme.text, fontStyle: 'italic', fontWeight: 500, lineHeight: 1.1, marginTop: 2 }}>Good morning,</div>
-          <div style={{ fontSize: 22, color: theme.text, fontWeight: 700, lineHeight: 1.2 }}>수민님</div>
+          <div style={{ fontSize: 11, color: theme.textMuted, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{F.shortDate()}</div>
+          <div className="jina-serif" style={{ fontSize: 28, color: theme.text, fontStyle: 'italic', fontWeight: 500, lineHeight: 1.1, marginTop: 2 }}>{F.greeting()},</div>
+          <div style={{ fontSize: 22, color: theme.text, fontWeight: 700, lineHeight: 1.2 }}>{dash.user.display_name}님</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button style={{
@@ -26,7 +42,7 @@ function MobileDashboard({ theme, noNav = false, onNavigate }) {
             color: theme.text, fontSize: 13, fontWeight: 600,
           }}>
             <Icons.Flame size={14} style={{ color: theme.accent2 }} />
-            24
+            {dash.stats.streak_days}
           </button>
           <button style={{ width: 36, height: 36, borderRadius: '50%', background: theme.chipBg, display: 'grid', placeItems: 'center', color: theme.text, position: 'relative' }}>
             <Icons.Bell size={16} />
@@ -97,17 +113,19 @@ function MobileDashboard({ theme, noNav = false, onNavigate }) {
                   <circle cx="38" cy="38" r="32" fill="none" stroke={theme.border} strokeWidth="6" />
                   <circle cx="38" cy="38" r="32" fill="none" stroke="url(#mgoalGrad)" strokeWidth="6"
                     strokeDasharray={2 * Math.PI * 32}
-                    strokeDashoffset={2 * Math.PI * 32 * (1 - 0.94)}
+                    strokeDashoffset={2 * Math.PI * 32 * (1 - goalPct)}
                     strokeLinecap="round" />
                 </svg>
                 <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
-                  <span className="jina-serif" style={{ fontSize: 22, color: theme.text, fontWeight: 500 }}>845</span>
+                  <span className="jina-serif" style={{ fontSize: 22, color: theme.text, fontWeight: 500 }}>{goal.predicted_score ?? '—'}</span>
                 </div>
               </div>
               <div>
                 <div style={{ fontSize: 11, color: theme.textMuted }}>목표</div>
-                <div style={{ fontSize: 18, color: theme.text, fontWeight: 700, lineHeight: 1.1 }}>900</div>
-                <div style={{ fontSize: 10.5, color: theme.success, fontWeight: 600, marginTop: 4 }}>↑ 20</div>
+                <div style={{ fontSize: 18, color: theme.text, fontWeight: 700, lineHeight: 1.1 }}>{goal.target_score}</div>
+                {goal.last_lesson_delta > 0 && (
+                  <div style={{ fontSize: 10.5, color: theme.success, fontWeight: 600, marginTop: 4 }}>↑ {goal.last_lesson_delta}</div>
+                )}
               </div>
             </div>
           </div>
@@ -115,8 +133,9 @@ function MobileDashboard({ theme, noNav = false, onNavigate }) {
           {/* Mini stats stack */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {[
-              { icon: Icons.Clock, label: '이번 주', value: '4.2h', color: theme.accent3 },
-              { icon: Icons.TrendUp, label: '정확도', value: '87%', color: theme.success },
+              { icon: Icons.Clock, label: '이번 주', value: `${F.hours(dash.stats.week_minutes)}h`, color: theme.accent3 },
+              { icon: Icons.TrendUp, label: '정확도',
+                value: dash.stats.accuracy_pct == null ? '—' : `${dash.stats.accuracy_pct}%`, color: theme.success },
             ].map((s, i) => (
               <div key={i} style={{
                 padding: 12, borderRadius: 14,
@@ -143,26 +162,27 @@ function MobileDashboard({ theme, noNav = false, onNavigate }) {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
             <div>
               <h3 style={{ fontSize: 15, color: theme.text, margin: 0, fontWeight: 700 }}>오늘의 학습</h3>
-              <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }}>2/4 완료 · 13분 남음</div>
+              <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }}>
+                {plan.done}/{plan.total} 완료 · {plan.items.filter((it) => !it.done).reduce((a, it) => a + (it.mins || 0), 0)}분 남음
+              </div>
             </div>
             <div style={{ position: 'relative', width: 32, height: 32 }}>
               <svg width="32" height="32" style={{ transform: 'rotate(-90deg)' }}>
                 <circle cx="16" cy="16" r="13" fill="none" stroke={theme.border} strokeWidth="3" />
                 <circle cx="16" cy="16" r="13" fill="none" stroke={theme.success} strokeWidth="3"
                   strokeDasharray={2 * Math.PI * 13}
-                  strokeDashoffset={2 * Math.PI * 13 * 0.5}
+                  strokeDashoffset={2 * Math.PI * 13 * (1 - planPct)}
                   strokeLinecap="round" />
               </svg>
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {[
-              { title: 'Jina와 8분 회화', sub: '비즈니스 미팅', icon: Icons.Chat, done: true, accent: theme.accent },
-              { title: 'TOEIC Part 5', sub: '20문항 · 약점 보강', icon: Icons.Bolt, done: true, accent: theme.accent3 },
-              { title: 'Shadowing — TED', sub: '"The puzzle..." 03:20', icon: Icons.Mic, current: true, accent: theme.accent2 },
-              { title: '단어 복습', sub: '12개 · SRS', icon: Icons.Book, accent: theme.warning },
-            ].map((it, i) => (
-              <div key={i} style={{
+            {plan.items.map((it) => {
+              const meta = dashPlanMeta(it.key, theme);
+              return { ...it, icon: meta.Icon, accent: meta.accent, current: it.key === currentKey };
+            }).map((it, i) => (
+              <div key={it.key || i} onClick={() => go(it.nav)} style={{
+                cursor: it.nav ? 'pointer' : 'default',
                 display: 'flex', alignItems: 'center', gap: 10,
                 padding: '8px 10px', borderRadius: 10,
                 background: it.current ? theme.chipBg : 'transparent',
@@ -191,26 +211,32 @@ function MobileDashboard({ theme, noNav = false, onNavigate }) {
           </div>
         </div>
 
-        {/* Latest correction */}
-        <div style={{
-          padding: 16, borderRadius: 18,
-          background: theme.accentGradSoft,
-          border: `1px solid ${theme.border}`,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-            <Icons.Sparkles size={14} style={{ color: theme.accent }} />
-            <span style={{ fontSize: 11.5, fontWeight: 700, color: theme.text, letterSpacing: '0.04em', textTransform: 'uppercase' }}>어제의 첨삭</span>
+        {/* Latest correction — 첨삭 기록이 없으면 카드를 숨긴다 */}
+        {corr && (
+          <div style={{
+            padding: 16, borderRadius: 18,
+            background: theme.accentGradSoft,
+            border: `1px solid ${theme.border}`,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <Icons.Sparkles size={14} style={{ color: theme.accent }} />
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: theme.text, letterSpacing: '0.04em', textTransform: 'uppercase' }}>첨삭</span>
+              <span style={{ fontSize: 10.5, color: theme.textDim, marginLeft: 'auto' }}>{F.relative(corr.created_at)}</span>
+            </div>
+            <div style={{ fontSize: 13, color: theme.textMuted, marginBottom: 6, lineHeight: 1.4, textDecoration: 'line-through' }}>
+              "{corr.original}"
+            </div>
+            <div style={{ fontSize: 14, color: theme.text, lineHeight: 1.45, fontWeight: 500 }}>
+              "<span style={{ background: theme.success + '22', color: theme.success, padding: '0 4px', borderRadius: 3, fontWeight: 700 }}>{corr.corrected}</span>"
+            </div>
+            {corr.explanation && (
+              <div style={{ fontSize: 11.5, color: theme.textMuted, marginTop: 6, lineHeight: 1.5 }}>{corr.explanation}</div>
+            )}
+            <button onClick={() => go('progress')} style={{ marginTop: 10, padding: '6px 10px', borderRadius: 8, background: theme.text, color: theme.bg, fontSize: 11.5, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              전체 {corr.total_count}개 보기 <Icons.ArrowRight size={11} />
+            </button>
           </div>
-          <div style={{ fontSize: 13, color: theme.textMuted, marginBottom: 6, lineHeight: 1.4 }}>
-            "If I <span style={{ textDecoration: 'line-through', color: theme.error }}>would have</span> known..."
-          </div>
-          <div style={{ fontSize: 14, color: theme.text, lineHeight: 1.45, fontWeight: 500 }}>
-            "If I <span style={{ background: theme.success + '22', color: theme.success, padding: '0 4px', borderRadius: 3, fontWeight: 700 }}>had known</span>..."
-          </div>
-          <button style={{ marginTop: 10, padding: '6px 10px', borderRadius: 8, background: theme.text, color: theme.bg, fontSize: 11.5, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            전체 보기 <Icons.ArrowRight size={11} />
-          </button>
-        </div>
+        )}
 
         {/* Recommended */}
         <div>
@@ -219,11 +245,8 @@ function MobileDashboard({ theme, noNav = false, onNavigate }) {
             <span style={{ fontSize: 11, color: theme.textMuted }}>전체 →</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {[
-              { tag: '시험', title: 'TOEIC Speaking Q11 — 가정법', sub: '7개 레슨 · 35분', accent: theme.accent },
-              { tag: '회화', title: '비즈니스 이메일 표현 50선', sub: '받아쓰기 포함', accent: theme.accent2 },
-            ].map((it, i) => (
-              <button key={i} style={{
+            {dash.recommendations.slice(0, 3).map((r) => ({ ...r, accent: dashRecAccent(r.tag, theme) })).map((it, i) => (
+              <button key={i} onClick={() => go(it.nav)} style={{
                 display: 'flex', alignItems: 'center', gap: 12, padding: 12, borderRadius: 14,
                 background: theme.card, border: `1px solid ${theme.border}`,
                 textAlign: 'left', width: '100%',

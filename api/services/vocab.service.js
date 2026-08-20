@@ -55,7 +55,8 @@ function toDto(row) {
   };
 }
 
-async function fetchStats(userId, client = pool) {
+// export: dashboard.service.js가 due 집계를 재구현하지 않고 이 함수를 재사용한다.
+export async function fetchStats(userId, client = pool) {
   const { rows: [stats] } = await client.query(
     `SELECT count(*) FILTER (WHERE NOT suspended AND review_count = 0)                          ::int AS new,
             count(*) FILTER (WHERE NOT suspended AND review_count > 0 AND next_review <= now()) ::int AS due,

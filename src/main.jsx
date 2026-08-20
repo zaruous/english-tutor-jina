@@ -354,7 +354,9 @@ function JinaApp() {
         <VocabProvider>
           <ConversationProvider>
             <LessonProvider>
+              <DashboardProvider>
               {renderPage()}
+              </DashboardProvider>
             </LessonProvider>
           </ConversationProvider>
         </VocabProvider>
