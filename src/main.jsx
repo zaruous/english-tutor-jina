@@ -355,7 +355,9 @@ function JinaApp() {
           <ConversationProvider>
             <LessonProvider>
               <DashboardProvider>
-              {renderPage()}
+                <ProgressProvider>
+                {renderPage()}
+                </ProgressProvider>
               </DashboardProvider>
             </LessonProvider>
           </ConversationProvider>

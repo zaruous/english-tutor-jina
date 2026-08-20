@@ -14,6 +14,7 @@ import { registerVocabRoutes } from './routes/vocab.routes.js';
 import { registerConversationRoutes } from './routes/conversation.routes.js';
 import { registerLessonRoutes } from './routes/lesson.routes.js';
 import { registerDashboardRoutes } from './routes/dashboard.routes.js';
+import { registerProgressRoutes } from './routes/progress.routes.js';
 import { warmProviderHealth } from './ai/registry.js';
 
 const router = new Router();
@@ -24,6 +25,7 @@ registerVocabRoutes(router);
 registerConversationRoutes(router);
 registerLessonRoutes(router);
 registerDashboardRoutes(router);
+registerProgressRoutes(router);
 
 const server = http.createServer(async (req, res) => {
   requestLogger(req, res);
