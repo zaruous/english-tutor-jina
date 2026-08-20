@@ -190,9 +190,13 @@ launchctl setenv OLLAMA_ORIGINS "*"
   - [x] `lessons` / `lesson_items` / `user_lesson_attempts` — 콘텐츠 + 서버 채점 (`0005_lessons.sql`, `0006_lessons_seed.sql`)
   - [x] `conversation_sessions` / `conversation_messages` — 회화 (`0004_conversation.sql`)
   - [x] `corrections` — 누적 첨삭 기록 (`0004_conversation.sql`)
-  - [ ] `daily_progress` — 일별 학습량, 정확도, 연속 학습일
+  - [x] `correction_reviews` / `user_goals` — 첨삭 SRS + 목표 (`0007_user_goals.sql`, `0008_progress.sql`)
+  - [ ] `daily_progress` — 일별 학습량/정확도/연속일수의 **적재**. v1은 저장 없이
+        `vocab_reviews`/`user_lesson_attempts`/`conversation_messages` 실시간 집계
+        (`api/services/dashboard.service.js`, `progress.service.js`) — 데이터가 커지면 후속 과제
 - [x] **AI 프록시 서버** — `api/ai/` CLI 프록시 5종 (claude/agy/codex/cursor/ollama), 브라우저 직결 폐기
-- [ ] **TOEIC 점수 추정 모델** — 최근 N개 세션의 점수 가중평균 + 보정
+- [x] **TOEIC 점수 추정 (v1)** — 레슨 정답률 기반 단일 산식 `200 + 790 × accuracy`
+      (문항 3개 미만이면 `null` + 빈 상태). 세션 가중평균·보정은 후속 과제
 
 ### Phase 2 — 음성 기능 (3-4주)
 

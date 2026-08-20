@@ -108,7 +108,15 @@ if (p.corrections_due.length > 0) {
   await desk.locator('button', { hasText: '보통' }).first().click();
   await desk.waitForTimeout(2500); // 낙관적 반영 + debounce refresh
   deskText = await desk.locator('#root').textContent();
-  check('복습한 첨삭 카드 소멸', !deskText.includes(target.original), target.original);
+  // 페이지 전체 텍스트로 판정하면 안 된다 — 첨삭 original("I go to school yesterday.")이
+  // 회화 세션 자동 제목과 같은 문자열일 수 있어 recent_sessions 쪽에 남는다.
+  // CorrectionCard의 original만 line-through로 렌더되므로(progress.jsx 단일 사용처)
+  // 그 span 목록 = 화면에 실제로 남아 있는 첨삭 카드 목록이다.
+  const shownCorrections = await desk.evaluate(() => [...document.querySelectorAll('span')]
+    .filter((el) => getComputedStyle(el).textDecorationLine === 'line-through')
+    .map((el) => el.textContent.trim()));
+  check('복습한 첨삭 카드 소멸', !shownCorrections.includes(target.original),
+    `남은 카드 ${shownCorrections.length}개`);
   check('배지 감소', deskText.includes(`${p.corrections_due.length - 1}개 대기`),
     `${p.corrections_due.length} → ${p.corrections_due.length - 1}`);
 
