@@ -198,7 +198,7 @@ function HeroCard({ theme, onNavigate }) {
             {rec ? (
               <React.Fragment>
                 오늘은 <span style={{
-                  background: theme.accentGrad,
+                  backgroundImage: theme.accentGrad,
                   WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
                   backgroundClip: 'text',
                 }}>{rec.title}</span>부터 시작해요.

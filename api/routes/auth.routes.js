@@ -42,4 +42,14 @@ export function registerAuthRoutes(router) {
     const { user } = await requireUser(req, res);
     sendJson(res, 200, { ok: true, user });
   });
+
+  // 리소스 = 나 자신. /api/auth/* 는 세션 수명주기 전용으로 남긴다.
+  // CSRF는 전역 requireCsrfHeader가 PATCH를 이미 검사한다.
+  router.patch('/api/me', async (req, res) => {
+    const { user } = await requireUser(req, res);
+    const body = await readJson(req);
+    const displayName = str(body.display_name, 'display_name', { min: 1, max: 60 });
+    const updated = await auth.updateProfile(user.id, { displayName });
+    sendJson(res, 200, { ok: true, user: updated });
+  });
 }

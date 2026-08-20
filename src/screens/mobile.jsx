@@ -79,7 +79,7 @@ function MobileDashboard({ theme, noNav = false, onNavigate }) {
               </div>
             </div>
             <div style={{ fontSize: 15, color: theme.text, lineHeight: 1.5, fontWeight: 500, marginBottom: 12 }}>
-              오늘은 <span style={{ background: theme.accentGrad, WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent', fontWeight: 700 }}>비즈니스 회의</span> 표현을 8분만 연습해볼까요?
+              오늘은 <span style={{ backgroundImage: theme.accentGrad, WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent', fontWeight: 700 }}>비즈니스 회의</span> 표현을 8분만 연습해볼까요?
             </div>
             <button style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,

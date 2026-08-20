@@ -37,6 +37,8 @@ http.createServer((req, res) => {
         cursor: process.env.CURSOR_MODEL || 'gpt-5',
         codex:  process.env.CODEX_MODEL  || null,
       },
+      // 로그인 화면의 "개발 계정으로 계속" 노출 조건 (api/config.js가 production+1을 부팅 거부)
+      devAutologin: process.env.DEV_AUTOLOGIN === '1',
       ollamaModel: process.env.OLLAMA_MODEL || 'gemma4:e2b',
       claudeModel: process.env.CLAUDE_MODEL || 'claude-haiku-4-5',
     };

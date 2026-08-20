@@ -9,7 +9,7 @@
 const JINA_API_BASE =
   window.JINA_CONFIG?.apiBase || `http://${location.hostname}:3004`;
 
-async function apiFetch(path, { method = 'GET', body, signal, timeoutMs = 180000 } = {}) {
+async function apiFetch(path, { method = 'GET', body, signal, timeoutMs = 180000, headers } = {}) {
   const readonly = Boolean(window.JINA_READONLY);
   if (readonly && method !== 'GET' && path !== '/api/ai/chat') {
     return { ok: false, code: 'READONLY', error: '캔버스에서는 저장이 비활성화되어 있습니다.' };
@@ -25,6 +25,7 @@ async function apiFetch(path, { method = 'GET', body, signal, timeoutMs = 180000
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         'X-Requested-With': 'jina',
         ...(readonly ? { 'X-Jina-Mode': 'canvas' } : {}),
+        ...(headers || {}), // 호출자 지정이 최우선 (auth-store의 X-Jina-No-Autologin)
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: merged,

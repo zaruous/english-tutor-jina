@@ -99,3 +99,16 @@ export async function devLogin({ userAgent, ip } = {}) {
   const session = await createSession(user.id, { userAgent, ip });
   return { user, ...session };
 }
+
+// 표시 이름 변경 (PATCH /api/me). 반환 모양은 resolveSession의 user DTO와 동일 —
+// 프론트 스토어가 user를 그대로 교체할 수 있다.
+export async function updateProfile(userId, { displayName }) {
+  const { rows: [user] } = await pool.query(
+    `UPDATE public.users SET display_name = $1, updated_at = now()
+      WHERE id = $2
+      RETURNING id, email, display_name, tz, is_dev`,
+    [displayName, userId],
+  );
+  if (!user) throw new HttpError(404, 'NOT_FOUND', '사용자를 찾을 수 없습니다.');
+  return user;
+}

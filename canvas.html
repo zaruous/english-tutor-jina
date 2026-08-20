@@ -22,11 +22,12 @@
   <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 
   <!-- Tokens, icons, shared -->
-  <!-- KEEP IN SYNC WITH index.html — api-client는 ai-provider 앞, vocab-store는 vocabulary 앞, conversation-store는 conversation-desktop 앞, lesson-store는 lesson 앞, dashboard-store는 dashboard-desktop/mobile 앞, progress-store는 progress 앞 -->
+  <!-- KEEP IN SYNC WITH index.html — api-client는 ai-provider 앞, vocab-store는 vocabulary 앞, conversation-store는 conversation-desktop 앞, lesson-store는 lesson 앞, dashboard-store는 dashboard-desktop/mobile 앞, progress-store는 progress 앞, auth-store는 login/main 앞, login은 main 앞 -->
   <script type="text/babel" src="src/shared/tokens.jsx"></script>
   <script type="text/babel" src="src/shared/icons.jsx"></script>
   <script type="text/babel" src="src/shared/app-nav.jsx"></script>
   <script type="text/babel" src="src/shared/api-client.jsx"></script>
+  <script type="text/babel" src="src/shared/auth-store.jsx"></script>
   <script type="text/babel" src="src/shared/ai-provider.jsx"></script>
   <script type="text/babel" src="src/shared/vocab-store.jsx"></script>
   <script type="text/babel" src="src/shared/conversation-store.jsx"></script>
@@ -49,6 +50,7 @@
   <script type="text/babel" src="src/screens/lesson.jsx"></script>
   <script type="text/babel" src="src/screens/vocabulary.jsx"></script>
   <script type="text/babel" src="src/screens/progress.jsx"></script>
+  <script type="text/babel" src="src/screens/login.jsx"></script>
 
   <!-- App entry -->
   <script type="text/babel" src="src/app.jsx"></script>
