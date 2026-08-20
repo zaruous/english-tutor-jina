@@ -220,12 +220,45 @@ try {
   // exam_date는 date + 정수(일) 덧셈 — 시드가 언제 돌아도 D-42가 재현된다.
   // ($n || ' days')::interval 텍스트 연결 금지(42804): $2는 TZ 텍스트로만 쓴다.
   await client.query(
-    `INSERT INTO public.user_goals (user_id, target_score, exam_date)
-     VALUES ($1, 900, (now() AT TIME ZONE $2)::date + 42)
+    `INSERT INTO public.user_goals (user_id, target_score, exam_date, target_test)
+     VALUES ($1, 900, (now() AT TIME ZONE $2)::date + 42, 'TOEIC')
      ON CONFLICT (user_id) DO UPDATE
-       SET target_score = EXCLUDED.target_score, exam_date = EXCLUDED.exam_date, updated_at = now()`,
+       SET target_score = EXCLUDED.target_score, exam_date = EXCLUDED.exam_date,
+           target_test = EXCLUDED.target_test, updated_at = now()`,
     [user.id, TZ],
   );
+
+  // ── 첨삭 SRS 복습 이력 1건 (docs/plan/04-progress.md Phase P1) ────────
+  // 위 corrections 시드의 "미래 next_review" 항목(I go to school yesterday)을
+  // "어제 good으로 복습된 상태"로 만든다. 복습 이력 렌더 경로 + 파생 status='learned' 검증 데이터.
+  // corrections UPDATE와 correction_reviews INSERT는 한 트랜잭션에 — fail_count <= review_count
+  // CHECK 정합 유지. 간격은 전부 make_interval (($n || ' days')::interval 금지 — 42804).
+  await client.query('BEGIN');
+  const { rows: [corr] } = await client.query(
+    `UPDATE public.corrections
+        SET review_count = GREATEST(review_count, 1), last_result = 'good',
+            last_reviewed_at = now() - interval '1 day',
+            interval_days = 3, ease_factor = 2.50,
+            next_review = (date_trunc('day', now() AT TIME ZONE $2) + make_interval(days => 2)) AT TIME ZONE $2,
+            updated_at = now()
+      WHERE user_id = $1
+        AND dedup_key = lower('I go to school yesterday') || ' → ' || lower('I went to school yesterday')
+      RETURNING id`,
+    [user.id, TZ],
+  );
+  if (corr) {
+    await client.query(
+      `INSERT INTO public.correction_reviews
+         (correction_id, user_id, result, reviewed_at, prev_interval_days, prev_ease_factor,
+          next_interval_days, next_ease_factor, next_review, elapsed_ms, client_request_id)
+       SELECT $1, $2, 'good', now() - interval '1 day', 1, 2.50, 3, 2.50,
+              (date_trunc('day', now() AT TIME ZONE $3) + make_interval(days => 2)) AT TIME ZONE $3,
+              240000, '22222222-2222-4222-8222-222222222222'::uuid
+       ON CONFLICT (client_request_id) WHERE client_request_id IS NOT NULL DO NOTHING`,
+      [corr.id, user.id, TZ],
+    );
+  }
+  await client.query('COMMIT');
 
   const { rows: [counts] } = await client.query(
     `SELECT count(*) FILTER (WHERE review_count = 0)                          AS new,

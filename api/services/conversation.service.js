@@ -23,7 +23,9 @@ const SESSION_SELECT = `
    WHERE s.user_id = $1`;
 
 // status는 CASE 별칭이라 같은 레벨 WHERE 불가 — 서브쿼리로 감싼다 (vocab과 동일).
-const CORRECTION_SELECT = `
+// export: corrections.service.js(첨삭 SRS 복습)와 progress.service.js가 status CASE/preview
+// 로직을 재정의하지 않고 이 SELECT를 재사용한다 (파생값 단일 소스).
+export const CORRECTION_SELECT = `
   SELECT c.id, c.session_id, c.message_id, c.original, c.corrected, c.reason, c.type,
          c.seen_count, c.suspended, c.created_at,
          CASE WHEN c.suspended            THEN 'suspended'
@@ -68,7 +70,7 @@ function messageDto(row) {
   };
 }
 
-function correctionDto(row) {
+export function correctionDto(row) {
   return {
     id: row.id,
     original: row.original,
@@ -284,6 +286,28 @@ export async function saveExchange(user, sessionId, { text, clientRequestId, ai 
   }
 }
 
+// export: corrections.service.js(복습 응답)와 progress.service.js가 due 집계를 재구현하지 않는다
+// (vocab.service.js의 fetchStats export와 같은 규범).
+export async function fetchCorrectionStats(userId, client = pool) {
+  const { rows: [stats] } = await client.query(
+    `SELECT count(*) FILTER (WHERE NOT suspended AND next_review <= now())::int AS due,
+            count(*) FILTER (WHERE NOT suspended)                          ::int AS total
+       FROM public.corrections WHERE user_id = $1`,
+    [userId],
+  );
+  return stats;
+}
+
+// 단건 재조회 — 복습 UPDATE 직후 서버 파생값(status/preview/next_review_in_days)을 다시 계산한다.
+export async function getCorrectionDto(user, correctionId, client = pool) {
+  const { rows: [row] } = await client.query(
+    `SELECT * FROM (${CORRECTION_SELECT}) t WHERE t.id = $3`,
+    [user.id, user.tz, correctionId],
+  );
+  if (!row) throw new HttpError(404, 'NOT_FOUND', '첨삭을 찾을 수 없습니다.');
+  return correctionDto(row);
+}
+
 export async function listCorrections(user, { due, limit = 50 } = {}) {
   const params = [user.id, user.tz];
   let sql = `${CORRECTION_SELECT}`;
@@ -291,11 +315,5 @@ export async function listCorrections(user, { due, limit = 50 } = {}) {
   params.push(limit);
   sql += ` ORDER BY c.next_review ASC, c.id ASC LIMIT $${params.length}`;
   const { rows } = await pool.query(sql, params);
-  const { rows: [stats] } = await pool.query(
-    `SELECT count(*) FILTER (WHERE NOT suspended AND next_review <= now())::int AS due,
-            count(*) FILTER (WHERE NOT suspended)                          ::int AS total
-       FROM public.corrections WHERE user_id = $1`,
-    [user.id],
-  );
-  return { corrections: rows.map(correctionDto), stats };
+  return { corrections: rows.map(correctionDto), stats: await fetchCorrectionStats(user.id) };
 }
