@@ -11,6 +11,7 @@
 // 어떤 구현 순서에서도 500이 나지 않게 to_regclass로 존재하는 블록만 UNION 한다.
 // 부재 소스의 카드는 정의된 빈 상태(null)를 내려보낸다 — null = "기록 없음", 0 = "전부 틀림".
 import { pool } from '../lib/pool.js';
+import { recommendLessons } from './lesson.service.js';
 import { fetchStats } from './vocab.service.js';
 
 // ── 테이블 존재 가드 (60초 캐시) ───────────────────────────────────────
@@ -180,22 +181,14 @@ async function fetchLastLessonScores(t, params) {
   };
 }
 
-// 추천 레슨: 미시도 → 최저 정답 순. 추천 카드와 오늘의 학습(학습 항목)의 단일 소스.
-async function fetchRecommendedLesson(t, params) {
+// 추천 레슨: lesson.service.recommendLessons 의 첫 항목 — GET /api/lessons/recommended 와 규칙 단일 소스
+// (next_in_series(순환) → not_started → retry_low_score). 추천 카드와 오늘의 학습(학습 항목)이 같은 레슨을 가리킨다.
+// published 레슨이 하나라도 있으면 항상 1건이 온다(모두 잘 풀었어도 다음 레슨으로 순환) — null 은 레슨이 없을 때만이며
+// 그때 학습 항목은 기본 문구, '시험대비' 추천은 생략.
+async function fetchRecommendedLesson(t, user) {
   if (!t.lesson) return null;
-  const { rows: [r] } = await pool.query(
-    `SELECT l.id, l.title, l.subtitle, l.est_minutes,
-            (SELECT count(*)::int FROM public.lesson_items i WHERE i.lesson_id = l.id) AS question_count
-       FROM public.lessons l
-       LEFT JOIN LATERAL (SELECT count(*)::int AS cnt, max(correct_count)::int AS best
-                            FROM public.user_lesson_attempts ua
-                           WHERE ua.user_id = $1 AND ua.lesson_id = l.id) a ON true
-      WHERE l.published
-      ORDER BY COALESCE(a.cnt, 0) ASC, a.best ASC NULLS FIRST, l.position, l.id
-      LIMIT 1`,
-    [params[0]],
-  );
-  return r || null;
+  const [rec] = await recommendLessons(user, { limit: 1 });
+  return rec || null;
 }
 
 // 오늘(유저 TZ) 활동 플래그 — today_plan의 done 판정.
@@ -270,7 +263,7 @@ export async function getDashboard(user) {
     fetchLessonAccuracy(t, params),
     fetchGoal(t, params),
     fetchLastLessonScores(t, params),
-    fetchRecommendedLesson(t, params),
+    fetchRecommendedLesson(t, user),
     fetchTodayFlags(t, params),
     fetchRecentCorrection(t, params),
     fetchStats(user.id), // vocab.service.js 재사용 — due 집계 중복 구현 금지

@@ -85,7 +85,31 @@ export const VOCAB_QUIZ_SCHEMA = {
   required: ['topic_title', 'topic_ko', 'words'],
 };
 
-export const TASK_SCHEMAS = { tutor: TUTOR_SCHEMA, vocab_entry: VOCAB_SCHEMA, vocab_quiz: VOCAB_QUIZ_SCHEMA };
+// 레슨 Jina Q&A — 서버가 조립한 학습 자료(지문 / 제출 후엔 문항+학습자 답)에 근거한 한국어 설명 + 지문 원문 인용.
+// 정답·해설은 자료에 없으므로 스키마에도 없다 (docs/plan/07-topic-sections-ai-generation-toeic.md Phase 1)
+export const LESSON_QA_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    answer: { type: 'string', description: '학습 자료에 근거한 한국어 설명' },
+    citations: {
+      type: 'array', maxItems: 3,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          quote: { type: 'string', description: '지문 원문을 글자 그대로 인용한 근거 문장/구' },
+        },
+        required: ['quote'],
+      },
+    },
+  },
+  required: ['answer', 'citations'],
+};
+
+export const TASK_SCHEMAS = {
+  tutor: TUTOR_SCHEMA, vocab_entry: VOCAB_SCHEMA, vocab_quiz: VOCAB_QUIZ_SCHEMA, lesson_qa: LESSON_QA_SCHEMA,
+};
 
 // 스키마 검증 (외부 의존성 없이 필요한 만큼만)
 export function validateAgainst(schema, value) {

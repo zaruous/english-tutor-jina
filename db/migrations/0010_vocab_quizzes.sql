@@ -1,7 +1,7 @@
 -- 0010_vocab_quizzes.sql — 단어장 '오늘의 단어' AI 퀴즈 (docs/plan/06-vocab-daily-quiz.md)
 -- 퀴즈 1행 = AI가 주제(kind/keyword)에 맞춰 만든 10단어 세트(words JSONB, 사전 정보 + 오답 보기 3개).
 -- 채점(answers/score)은 서버가 하고, 단어장 추가는 words 의 사전 정보를 그대로 vocab_words/user_vocab_cards 에
--- 넣는다(AI 재호출 없음, source='ai'). "오늘의 퀴즈" = APP_TZ 기준 오늘 만든 가장 최근 행.
+-- 넣는다(AI 재호출 없음, source='quiz'). "오늘의 퀴즈" = APP_TZ 기준 오늘 만든 가장 최근 행.
 
 CREATE TABLE IF NOT EXISTS public.vocab_quizzes (
   id           BIGSERIAL    PRIMARY KEY,

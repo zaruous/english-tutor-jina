@@ -3,6 +3,8 @@
 // 콘텐츠/채점/진도의 단일 소스는 서버 (docs/plan/02-lesson.md) —
 // 데이터는 useLesson()(src/shared/lesson-store.jsx)이 GET /api/lessons/:id 로 가져오고,
 // 채점은 POST /api/lessons/:id/attempts 서버 채점. 정답/해설은 채점 응답에만 실린다.
+// Jina 패널은 store.askLesson(POST /api/lessons/:id/qa) — 프롬프트는 서버가 조립하고 정답/해설은 보내지 않는다.
+// 레슨 목록 뷰는 lesson-list.jsx(LessonListView) — 이 파일보다 먼저 로드된다.
 
 // 주입 시임(injection seam): Provider value = 서버 LessonDetail DTO
 const LessonCtx = React.createContext(null);
@@ -27,7 +29,7 @@ function Pill({ children, theme, color, bg }) {
 
 // Lesson top bar with progress + AI mode
 // 콘텐츠(title/subtitle/difficulty)는 LessonCtx(=서버 LessonDetail), 진도는 스토어 파생값.
-function LessonTopBar({ theme, askingAI, setAskingAI, onBack }) {
+function LessonTopBar({ theme, askingAI, setAskingAI, onBack, listOpen = false, onToggleList }) {
   const { title, subtitle, difficulty, est_minutes: estMinutes } = React.useContext(LessonCtx);
   const { progress } = useLesson();
   const stars = '★'.repeat(difficulty || 0) + '☆'.repeat(Math.max(0, 5 - (difficulty || 0)));
@@ -59,6 +61,16 @@ function LessonTopBar({ theme, askingAI, setAskingAI, onBack }) {
         </div>
         <span style={{ fontSize: 11, color: theme.text, fontWeight: 600 }}>{progress.done}/{progress.total}</span>
       </div>
+      {/* 레슨 목록 토글 — 목록 뷰(lesson-list.jsx)는 lessons(LIST_SELECT)를 kind 로 필터해 보여준다 */}
+      <button type="button" data-testid="lesson-list-open" onClick={onToggleList} aria-pressed={listOpen} title="레슨 목록" style={{
+        padding: '8px 12px', borderRadius: 10,
+        background: listOpen ? theme.text : theme.chipBg,
+        color: listOpen ? theme.bg : theme.text,
+        fontSize: 12.5, fontWeight: 600,
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+      }}>
+        <Icons.Menu size={13} stroke={2.2} /> 목록
+      </button>
       <button onClick={() => setAskingAI(!askingAI)} style={{
         padding: '8px 14px', borderRadius: 10,
         background: askingAI ? theme.text : theme.accentGrad,
@@ -354,44 +366,123 @@ function QuestionsColumn({ theme, onNext }) {
   );
 }
 
-// AI side panel (when "Jina에게 물어보기" is open)
-function JinaSidePanel({ theme, aiConfig, onClose }) {
-  const { faq } = React.useContext(LessonCtx);   // 추천 질문도 서버 콘텐츠(lessons.faq)
+// ─────────────────────────────────────────────────────
+// Jina Q&A (레슨 문답) — 데스크탑 사이드패널·모바일 Jina 탭 공용
+// ─────────────────────────────────────────────────────
+// useJinaChat(회화 tutor task)이 아니라 store.askLesson(POST /api/lessons/:id/qa)을 쓴다.
+// 프롬프트(지문·문항·내가 고른 답)는 서버가 조립하고 정답/해설은 서버가 보내지 않는다(SELECT 조차 안 함).
+//  - 제출 전(attempt 없음): 지문 질문만 — 문항 칩 없음 + 안내 문구(qa-notice). 서버는 stateless.
+//  - 제출 후(attempt 있음): 문항 칩(qa-item-chip)으로 item_id 를 고르고 attempt_id 와 함께 보낸다(서버가 CLI 세션 resume).
+// 대화 상태는 컴포넌트 로컬 — 호출측이 key={lesson.id} 로 지문마다 새 대화를 만든다.
+// active: display:none 으로 숨겨진 탭(모바일)이 다시 보일 때 스크롤을 맞추기 위한 힌트.
+function LessonQaChat({ theme, aiConfig, compact = false, active = true }) {
+  const { faq, questions } = React.useContext(LessonCtx);   // 추천 질문도 서버 콘텐츠(lessons.faq)
   const suggestions = faq?.length ? faq : DEFAULT_FAQ;
-  const { messages, loading, send } = useJinaChat([]);
+  const shown = compact ? suggestions.slice(0, 3) : suggestions;
+  const { result, askLesson } = useLesson();
+  const attemptId = result?.attempt?.id || null;             // 제출 전 null → 지문 질문(stateless)
+  const [messages, setMessages] = React.useState([]);
+  const [loading, setLoading] = React.useState(false);
+  const [itemId, setItemId] = React.useState(null);          // 선택 문항(position). null = 문항 전체
+  const abortRef = React.useRef(null);
   const scrollRef = React.useRef(null);
+
+  React.useEffect(() => { setItemId(null); }, [attemptId]);  // 채점/다시 풀기 → 문항 선택 초기화
   React.useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages.length, loading]);
+    if (active && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages.length, loading, active]);
+  React.useEffect(() => () => abortRef.current?.abort(), []); // 언마운트(지문 전환·패널 닫기) 시 진행 중 요청 취소
+
+  const provider = aiConfig?.provider || 'ollama';
   const modelInfo = window.JINA_AI.modelLabel(aiConfig);
+
+  const send = async (raw) => {
+    const question = (raw || '').trim();
+    if (!question || loading) return;
+    const asked = attemptId ? itemId : null;
+    setMessages((m) => [...m, { role: 'user', content: question, itemId: asked, time: window.jinaHHMM() }]);
+    setLoading(true);
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const res = await askLesson({
+      question, attemptId, itemId: asked || undefined,
+      provider: aiConfig?.provider,
+      // 신형({model:{[provider]}})과 구형 캔버스({ollamaModel})를 모두 허용 — ai-provider.askJina 와 같은 규칙
+      model: aiConfig?.model?.[provider] ?? (provider === 'ollama' ? aiConfig?.ollamaModel : null) ?? null,
+      ollamaUrl: provider === 'ollama' ? aiConfig?.ollamaUrl : undefined, // ollama 일 때만 의미가 있다
+      signal: controller.signal,
+    });
+    abortRef.current = null;
+    setLoading(false);
+    const time = window.jinaHHMM();
+    if (res.code === 'ABORTED') {
+      setMessages((m) => [...m, { role: 'assistant', kind: 'qa-cancel', time }]);
+      return;
+    }
+    if (!res.ok) {
+      setMessages((m) => [...m, {
+        role: 'assistant', kind: 'jina-error',
+        content: res.error || '응답 실패', hint: res.hint || null, provider: res.provider || provider, time,
+      }]);
+      return;
+    }
+    setMessages((m) => [...m, {
+      role: 'assistant', kind: 'qa',
+      answer: res.answer || '(응답 없음)',
+      citations: Array.isArray(res.citations) ? res.citations.filter((c) => c && c.quote) : [],
+      citationsDropped: res.citations_dropped || 0,
+      mode: res.mode, resumed: Boolean(res.resumed), itemId: asked,
+      provider: res.provider || provider, time,
+    }]);
+  };
+  const cancel = () => abortRef.current?.abort();
+
+  const chipStyle = (on) => ({
+    padding: '5px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700,
+    background: on ? theme.accent : theme.chipBg, color: on ? '#fff' : theme.textMuted,
+    border: `1px solid ${on ? theme.accent : theme.border}`,
+  });
+
   return (
-    <div style={{
-      width: 380, flex: '0 0 auto',
-      borderLeft: `1px solid ${theme.border}`,
-      background: theme.bgSoft,
-      display: 'flex', flexDirection: 'column',
-      animation: 'jina-rise .25s ease-out',
-    }}>
-      <div style={{ padding: '14px 18px', borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <JinaAvatar size={32} pulsing theme={theme} />
-        <div style={{ flex: 1 }}>
-          <div className="jina-serif" style={{ fontSize: 15, fontStyle: 'italic', color: theme.text, fontWeight: 500 }}>Jina에게 물어보기</div>
-          <div style={{ fontSize: 10.5, color: theme.textDim }}>이 지문에 대해 무엇이든 질문하세요</div>
-        </div>
-        <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 8, color: theme.textMuted, display: 'grid', placeItems: 'center' }}>
-          <Icons.X size={14} />
-        </button>
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      {/* 모드 안내(제출 전) / 문항 칩(제출 후) — 메시지 목록 위에 고정해 스크롤 중에도 문항을 바꿀 수 있다 */}
+      <div style={{ flex: '0 0 auto', padding: compact ? '12px 12px 0' : '14px 16px 0' }}>
+        {!attemptId ? (
+          <div data-testid="qa-notice" style={{
+            display: 'flex', alignItems: 'flex-start', gap: 7,
+            padding: '9px 11px', borderRadius: 10, fontSize: 11.5, lineHeight: 1.5,
+            background: theme.accentGradSoft, border: `1px solid ${theme.border}`, color: theme.textMuted,
+          }}>
+            <Icons.Sparkle size={11} style={{ color: theme.accent, marginTop: 3, flex: '0 0 auto' }} />
+            <span>제출 전에는 지문에 대해서만 답해요 · 제출 후에는 문항별로 질문할 수 있어요</span>
+          </div>
+        ) : (
+          <div data-testid="qa-item-picker" style={{ padding: '9px 11px', borderRadius: 10, background: theme.card, border: `1px solid ${theme.border}` }}>
+            <div style={{ fontSize: 11, color: theme.textMuted, marginBottom: 7, lineHeight: 1.4 }}>
+              <b style={{ color: theme.text }}>질문할 문항</b> · 고른 문항의 선택지와 내 답을 함께 보고 답해요
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button type="button" data-testid="qa-item-all" aria-pressed={itemId === null} onClick={() => setItemId(null)} style={chipStyle(itemId === null)}>전체</button>
+              {questions.map((q) => (
+                <button key={q.n} type="button" data-testid="qa-item-chip" data-item-id={q.n} aria-pressed={itemId === q.n}
+                  onClick={() => setItemId(itemId === q.n ? null : q.n)} title={q.stem} style={chipStyle(itemId === q.n)}>
+                  Q{q.n}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
-      <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', padding: '16px 16px 4px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', padding: compact ? '12px 12px 4px' : '14px 16px 4px', display: 'flex', flexDirection: 'column', gap: compact ? 12 : 14 }}>
         {messages.length === 0 && (
           <div>
-            <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 10, lineHeight: 1.5 }}>
+            <div style={{ fontSize: compact ? 11 : 12, color: compact ? theme.textDim : theme.textMuted, marginBottom: compact ? 6 : 10, lineHeight: 1.5, padding: compact ? '0 4px' : 0 }}>
               자주 묻는 질문 ↓
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {suggestions.map((q, i) => (
-                <button key={i} onClick={() => send(q)} style={{
+              {shown.map((q, i) => (
+                <button key={i} type="button" data-testid="qa-faq" onClick={() => send(q)} style={{
                   padding: '10px 12px', borderRadius: 10,
                   background: theme.card, border: `1px solid ${theme.border}`,
                   textAlign: 'left', fontSize: 12.5, color: theme.text, lineHeight: 1.4,
@@ -404,31 +495,184 @@ function JinaSidePanel({ theme, aiConfig, onClose }) {
             </div>
           </div>
         )}
-        {messages.map((m, i) => (
-          m.role === 'user'
-            ? <LiveUserMessage key={i} theme={theme} msg={m} compact />
-            : <LiveJinaMessage key={i} theme={theme} msg={m} compact />
-        ))}
+
+        {messages.map((m, i) => {
+          if (m.role === 'user') return <QaUserMessage key={i} theme={theme} msg={m} />;
+          if (m.kind === 'jina-error') return <div key={i} data-testid="qa-error"><LiveJinaMessage theme={theme} msg={m} compact /></div>;
+          if (m.kind === 'qa-cancel') {
+            return <div key={i} style={{ fontSize: 11, color: theme.textDim, textAlign: 'center', padding: '2px 0' }}>질문을 취소했어요 · {m.time}</div>;
+          }
+          return <QaAnswerMessage key={i} theme={theme} msg={m} />;
+        })}
+
         {loading && (
-          <div style={{ display: 'flex', gap: 8 }}>
-            <JinaAvatar size={28} pulsing theme={theme} />
-            <div style={{ padding: '10px 14px', borderRadius: 14, background: theme.chipBg, border: `1px solid ${theme.border}`, display: 'inline-flex', gap: 4, alignSelf: 'flex-start' }}>
+          <div data-testid="qa-loading" style={{ display: 'flex', gap: 8 }}>
+            <JinaAvatar size={compact ? 26 : 28} pulsing theme={theme} />
+            <div style={{ padding: compact ? '8px 12px' : '10px 14px', borderRadius: 14, background: theme.chipBg, border: `1px solid ${theme.border}`, display: 'inline-flex', gap: 4, alignSelf: 'flex-start' }}>
               {[0, 1, 2].map((i) => (
-                <span key={i} style={{ width: 5, height: 5, borderRadius: '50%', background: theme.textMuted, animation: `jina-pulse 1.2s ease-in-out ${i * 0.15}s infinite` }} />
+                <span key={i} style={{ width: compact ? 4 : 5, height: compact ? 4 : 5, borderRadius: '50%', background: theme.textMuted, animation: `jina-pulse 1.2s ease-in-out ${i * 0.15}s infinite` }} />
               ))}
             </div>
           </div>
         )}
       </div>
 
-      <JinaInputBar
-        theme={theme}
-        onSend={send}
-        loading={loading}
-        provider={aiConfig?.provider || 'ollama'}
-        modelInfo={modelInfo}
-        compact
+      <LessonQaInput
+        theme={theme} onSend={send} onCancel={cancel} loading={loading}
+        provider={provider} modelInfo={modelInfo}
+        itemId={attemptId ? itemId : null} compact={compact}
       />
+    </div>
+  );
+}
+
+// 내 질문 말풍선 — 문항을 골라 물었으면 위에 Q{n} 표식
+function QaUserMessage({ theme, msg }) {
+  return (
+    <div>
+      {msg.itemId && (
+        <div style={{ textAlign: 'right', fontSize: 10.5, color: theme.accent, fontWeight: 700, marginBottom: 4, paddingRight: 36 }}>Q{msg.itemId} 문항에 대해</div>
+      )}
+      <LiveUserMessage theme={theme} msg={msg} compact />
+    </div>
+  );
+}
+
+// Jina 답변 말풍선 — answer(한국어 설명) + citations(지문 원문 인용, 서버가 부분문자열 검증한 것만)
+function QaAnswerMessage({ theme, msg }) {
+  const label = (window.JINA_AI.PROVIDER_META[msg.provider]?.label || msg.provider || '').toUpperCase();
+  const scope = msg.mode === 'post_submit' ? (msg.itemId ? `Q${msg.itemId} 문항` : '문항 전체') : '지문';
+  return (
+    <div data-testid="qa-message" style={{ display: 'flex', gap: 8, animation: 'jina-rise .3s ease-out' }}>
+      <JinaAvatar size={28} theme={theme} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+          <span className="jina-serif" style={{ fontSize: 14, fontStyle: 'italic', color: theme.text, fontWeight: 500 }}>Jina</span>
+          {label && (
+            <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: theme.accent + '20', color: theme.accent, fontWeight: 700, letterSpacing: '0.04em' }}>{label}</span>
+          )}
+          <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: theme.chipBg, color: theme.textMuted, fontWeight: 600 }}>{scope}</span>
+          <span style={{ fontSize: 10.5, color: theme.textDim }}>{msg.time}</span>
+        </div>
+        <div style={{ padding: '11px 13px', borderRadius: 16, borderTopLeftRadius: 4, background: theme.chipBg, border: `1px solid ${theme.border}` }}>
+          <div data-testid="qa-answer" style={{ fontSize: 13.5, color: theme.text, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{msg.answer}</div>
+          {msg.citations.length > 0 && (
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px dashed ${theme.border}`, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ fontSize: 10.5, color: theme.textDim, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>지문 인용</div>
+              {msg.citations.map((c, i) => (
+                <blockquote key={i} data-testid="qa-citation" className="jina-serif" style={{
+                  margin: 0, padding: '3px 10px', borderLeft: `2px solid ${theme.accent}`,
+                  fontStyle: 'italic', fontSize: 12.5, color: theme.textMuted, lineHeight: 1.55,
+                }}>“{c.quote}”</blockquote>
+              ))}
+            </div>
+          )}
+          {msg.citationsDropped > 0 && (
+            <div style={{ marginTop: 6, fontSize: 10.5, color: theme.textDim }}>지문과 일치하지 않는 인용 {msg.citationsDropped}개는 표시하지 않았어요</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Q&A 입력줄 — JinaInputBar(회화용: 영어로 말 걸기·음성 모드)와 달리 한국어 질문 500자 + 진행 중 취소
+function LessonQaInput({ theme, onSend, onCancel, loading, provider, modelInfo, itemId, compact = false }) {
+  const [text, setText] = React.useState('');
+  const ref = React.useRef(null);
+  const meta = window.JINA_AI.PROVIDER_META[provider] || {};
+  const canSend = text.trim().length > 0 && !loading;
+  const submit = () => {
+    if (!canSend) return;
+    onSend(text.trim());
+    setText('');
+    setTimeout(() => ref.current?.focus(), 50);
+  };
+  return (
+    <div style={{ padding: compact ? '10px 12px 16px' : '12px 14px 18px', borderTop: `1px solid ${theme.border}`, background: theme.bg }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+        <span style={{
+          fontSize: 10.5, padding: '3px 8px', borderRadius: 999,
+          background: (meta.color || '#888') + '22', color: meta.color || '#888',
+          fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase',
+          display: 'inline-flex', alignItems: 'center', gap: 5,
+        }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
+          {`${meta.label || provider} · ${modelInfo}`}
+        </span>
+        {itemId && (
+          <span style={{ fontSize: 10.5, padding: '3px 8px', borderRadius: 999, background: theme.accent + '20', color: theme.accent, fontWeight: 700 }}>Q{itemId} 문항</span>
+        )}
+        {loading && (
+          <span style={{ fontSize: 11, color: theme.textMuted, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: theme.accent, animation: 'jina-pulse 1s infinite' }} />
+            Jina가 답변 중…
+            <button type="button" data-testid="qa-cancel" onClick={onCancel} style={{ fontSize: 11, color: theme.error, fontWeight: 600, padding: '0 4px' }}>취소</button>
+          </span>
+        )}
+        <span style={{ marginLeft: 'auto', fontSize: 10.5, color: text.length >= 450 ? theme.warning : theme.textDim }}>{text.length}자 / 500</span>
+      </div>
+      <div style={{
+        display: 'flex', alignItems: 'flex-end', gap: 8,
+        padding: '8px 10px', borderRadius: 14,
+        background: theme.card, border: `1px solid ${theme.borderStrong}`,
+      }}>
+        <textarea
+          ref={ref}
+          data-testid="qa-input"
+          value={text}
+          maxLength={500}
+          onChange={(e) => setText(e.target.value.slice(0, 500))}
+          onKeyDown={(e) => {
+            // 한글 IME 조합 중 Enter 는 글자 확정이므로 전송하지 않는다
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); }
+          }}
+          rows={1}
+          placeholder={itemId ? `Q${itemId} 문항에 대해 질문하세요…` : '지문에 대해 질문하세요…  (Enter = 전송, Shift+Enter = 줄바꿈)'}
+          style={{
+            flex: 1, background: 'none', border: 'none', outline: 'none',
+            color: theme.text, fontSize: 13.5, lineHeight: 1.5, padding: '6px 4px',
+            resize: 'none', minHeight: 26, maxHeight: 110, fontFamily: 'inherit',
+          }}
+        />
+        <button type="button" data-testid="qa-send" onClick={submit} disabled={!canSend} style={{
+          padding: '8px 12px', borderRadius: 10,
+          background: canSend ? theme.text : theme.chipBg,
+          color: canSend ? theme.bg : theme.textMuted,
+          fontSize: 12, fontWeight: 600,
+          display: 'inline-flex', alignItems: 'center', gap: 5,
+          cursor: canSend ? 'pointer' : 'not-allowed',
+          transition: 'all .15s',
+        }}>
+          전송 <Icons.Send size={12} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// AI side panel (when "Jina에게 물어보기" is open) — 본문은 LessonQaChat
+function JinaSidePanel({ theme, aiConfig, onClose }) {
+  const { result } = useLesson();
+  return (
+    <div style={{
+      width: 380, flex: '0 0 auto',
+      borderLeft: `1px solid ${theme.border}`,
+      background: theme.bgSoft,
+      display: 'flex', flexDirection: 'column',
+      animation: 'jina-rise .25s ease-out',
+    }}>
+      <div style={{ padding: '14px 18px', borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <JinaAvatar size={32} pulsing theme={theme} />
+        <div style={{ flex: 1 }}>
+          <div className="jina-serif" style={{ fontSize: 15, fontStyle: 'italic', color: theme.text, fontWeight: 500 }}>Jina에게 물어보기</div>
+          <div style={{ fontSize: 10.5, color: theme.textDim }}>{result ? '지문과 문항에 대해 질문하세요' : '이 지문에 대해 무엇이든 질문하세요'}</div>
+        </div>
+        <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 8, color: theme.textMuted, display: 'grid', placeItems: 'center' }}>
+          <Icons.X size={14} />
+        </button>
+      </div>
+      <LessonQaChat theme={theme} aiConfig={aiConfig} />
     </div>
   );
 }
@@ -455,11 +699,13 @@ function LessonPlaceholder({ theme, loading, error }) {
 function LessonDesktop({ theme, aiConfig, onNavigate }) {
   const [askingAI, setAskingAI] = React.useState(true);
   const [highlighted, setHighlighted] = React.useState(null);
+  const [view, setView] = React.useState('study'); // study | list
   const { current: currentLesson, currentLoading, listLoading, error, next } = useLesson();
   const onNext = () => {
     next();
     setHighlighted(null);
   };
+  const openStudy = () => { setView('study'); setHighlighted(null); };
   if (!currentLesson) {
     return <LessonPlaceholder theme={theme} loading={currentLoading || listLoading} error={error} />;
   }
@@ -471,17 +717,27 @@ function LessonDesktop({ theme, aiConfig, onNavigate }) {
         display: 'flex', flexDirection: 'column',
         overflow: 'hidden',
       }}>
-        <LessonTopBar theme={theme} askingAI={askingAI} setAskingAI={setAskingAI} onBack={() => onNavigate && onNavigate('dashboard')} />
-        <div style={{
-          flex: 1, display: 'grid',
-          gridTemplateColumns: askingAI ? '1.2fr 1fr 380px' : '1.2fr 1fr',
-          minHeight: 0,
-        }}>
-          <PassageColumn theme={theme} highlighted={highlighted} setHighlighted={setHighlighted} />
-          {/* key로 리마운트해도 답/결과는 스토어에 있어 소실되지 않는다 */}
-          <QuestionsColumn key={currentLesson.id} theme={theme} onNext={onNext} />
-          {askingAI && <JinaSidePanel theme={theme} aiConfig={aiConfig} onClose={() => setAskingAI(false)} />}
-        </div>
+        <LessonTopBar theme={theme} askingAI={askingAI} setAskingAI={setAskingAI}
+          onBack={() => onNavigate && onNavigate('dashboard')}
+          listOpen={view === 'list'} onToggleList={() => setView((v) => (v === 'list' ? 'study' : 'list'))} />
+        {view === 'list' ? (
+          /* 목록 뷰 — 행 클릭 → select(id) 후 학습 뷰 복귀 (lesson-list.jsx) */
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <LessonListView theme={theme} onPick={openStudy} onClose={openStudy} />
+          </div>
+        ) : (
+          <div style={{
+            flex: 1, display: 'grid',
+            gridTemplateColumns: askingAI ? '1.2fr 1fr 380px' : '1.2fr 1fr',
+            minHeight: 0,
+          }}>
+            <PassageColumn theme={theme} highlighted={highlighted} setHighlighted={setHighlighted} />
+            {/* key로 리마운트해도 답/결과는 스토어에 있어 소실되지 않는다 */}
+            <QuestionsColumn key={currentLesson.id} theme={theme} onNext={onNext} />
+            {/* Q&A 대화는 지문 단위 — 지문이 바뀌면 key 로 새 대화 (QuestionsColumn 과 형제라 키 접두어로 구분) */}
+            {askingAI && <JinaSidePanel key={`qa-${currentLesson.id}`} theme={theme} aiConfig={aiConfig} onClose={() => setAskingAI(false)} />}
+          </div>
+        )}
       </div>
     </LessonCtx.Provider>
   );
@@ -491,7 +747,7 @@ function LessonDesktop({ theme, aiConfig, onNavigate }) {
 // Mobile Lesson
 // ─────────────────────────────────────────────────────
 function LessonMobile({ theme, aiConfig, onNavigate }) {
-  const [tab, setTab] = React.useState('passage'); // passage | questions | jina
+  const [tab, setTab] = React.useState('passage'); // list | passage | questions | jina
   const [highlighted, setHighlighted] = React.useState(null);
   const { current: currentLesson, currentLoading, listLoading, error, progress, next } = useLesson();
   const onNext = () => { next(); setHighlighted(null); setTab('passage'); };
@@ -528,6 +784,7 @@ function LessonMobile({ theme, aiConfig, onNavigate }) {
       {/* Tab bar */}
       <div style={{ padding: '8px 12px', display: 'flex', gap: 6, borderBottom: `1px solid ${theme.border}`, background: theme.bgSoft }}>
         {[
+          { id: 'list', label: '목록', icon: Icons.Menu },
           { id: 'passage', label: '지문', icon: Icons.Book },
           { id: 'questions', label: `문제 ${currentLesson.questions.length}`, icon: Icons.Target },
           { id: 'jina', label: 'Jina', icon: Icons.Sparkles, highlight: true },
@@ -551,6 +808,9 @@ function LessonMobile({ theme, aiConfig, onNavigate }) {
 
       {/* Tab content */}
       <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+        {tab === 'list' && (
+          <LessonListView theme={theme} compact onPick={() => { setTab('passage'); setHighlighted(null); }} />
+        )}
         {tab === 'passage' && (
           <div style={{ padding: '16px 16px 80px', background: theme.surface, minHeight: '100%' }}>
             <div style={{ padding: 12, borderRadius: 10, background: theme.bgSoft, border: `1px solid ${theme.border}`, marginBottom: 16, fontSize: 11.5 }}>
@@ -582,67 +842,21 @@ function LessonMobile({ theme, aiConfig, onNavigate }) {
             <QuestionsColumn key={currentLesson.id} theme={theme} onNext={onNext} />
           </div>
         )}
-        {tab === 'jina' && (
-          <MobileJinaTab theme={theme} aiConfig={aiConfig} />
-        )}
+        {/* Jina 탭은 display:none 으로 유지 — 문제 탭에서 채점하고 돌아와도 대화가 남는다. 지문이 바뀌면 key 로 새 대화 */}
+        <div style={{ display: tab === 'jina' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
+          <MobileJinaTab key={`qa-${currentLesson.id}`} theme={theme} aiConfig={aiConfig} active={tab === 'jina'} />
+        </div>
       </div>
     </div>
     </LessonCtx.Provider>
   );
 }
 
-function MobileJinaTab({ theme, aiConfig }) {
-  const { faq } = React.useContext(LessonCtx);
-  const suggestions = (faq?.length ? faq : DEFAULT_FAQ).slice(0, 3);
-  const { messages, loading, send } = useJinaChat([]);
-  const scrollRef = React.useRef(null);
-  React.useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages.length, loading]);
-  const modelInfo = window.JINA_AI.modelLabel(aiConfig);
+// 모바일 Jina 탭 — 본문은 LessonQaChat(compact). active 는 display:none 해제 시 스크롤 맞춤용
+function MobileJinaTab({ theme, aiConfig, active = true }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', padding: '14px 12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {messages.length === 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={{ fontSize: 11, color: theme.textDim, padding: '0 4px 4px' }}>자주 묻는 질문 ↓</div>
-            {suggestions.map((q, i) => (
-              <button key={i} onClick={() => send(q)} style={{
-                padding: '10px 12px', borderRadius: 10,
-                background: theme.card, border: `1px solid ${theme.border}`,
-                textAlign: 'left', fontSize: 12.5, color: theme.text,
-                display: 'flex', alignItems: 'flex-start', gap: 6,
-              }}>
-                <Icons.Sparkle size={11} style={{ color: theme.accent, marginTop: 3 }} />
-                <span>{q}</span>
-              </button>
-            ))}
-          </div>
-        )}
-        {messages.map((m, i) => (
-          m.role === 'user'
-            ? <LiveUserMessage key={i} theme={theme} msg={m} compact />
-            : <LiveJinaMessage key={i} theme={theme} msg={m} compact />
-        ))}
-        {loading && (
-          <div style={{ display: 'flex', gap: 8 }}>
-            <JinaAvatar size={26} pulsing theme={theme} />
-            <div style={{ padding: '8px 12px', borderRadius: 14, background: theme.chipBg, border: `1px solid ${theme.border}`, display: 'inline-flex', gap: 4, alignSelf: 'flex-start' }}>
-              {[0, 1, 2].map((i) => (
-                <span key={i} style={{ width: 4, height: 4, borderRadius: '50%', background: theme.textMuted, animation: `jina-pulse 1.2s ease-in-out ${i * 0.15}s infinite` }} />
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-      <JinaInputBar
-        theme={theme}
-        onSend={send}
-        loading={loading}
-        provider={aiConfig?.provider || 'ollama'}
-        modelInfo={modelInfo}
-        compact
-      />
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <LessonQaChat theme={theme} aiConfig={aiConfig} compact active={active} />
     </div>
   );
 }

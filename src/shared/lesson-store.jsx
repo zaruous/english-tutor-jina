@@ -11,6 +11,13 @@ const LessonContext = React.createContext(null);
 
 const LESSON_CACHE_KEY = 'jina_lesson_cache_v1';
 
+// 상세 DTO 정규화 — 화면 계약은 questions[{ n, stem, options }]. 서버가 items[{ position, stem, options }] 로
+// 내려주는 변형만 흡수한다(정답/해설 키는 어느 쪽에도 존재하지 않는다 — 서버가 SELECT 하지 않음).
+function normalizeLessonDetail(lesson) {
+  if (!lesson || Array.isArray(lesson.questions) || !Array.isArray(lesson.items)) return lesson;
+  return { ...lesson, questions: lesson.items.map((i) => ({ n: i.position ?? i.n, stem: i.stem, options: i.options })) };
+}
+
 function LessonProvider({ children }) {
   const [lessons, setLessons] = React.useState([]);
   const [progress, setProgress] = React.useState({ done: 0, total: 0 });
@@ -55,7 +62,7 @@ function LessonProvider({ children }) {
     const res = await window.JINA_API.get(`/api/lessons/${lessonId}`);
     if (res.ok) {
       setError(null);
-      setDetails((prev) => ({ ...prev, [lessonId]: res.lesson }));
+      setDetails((prev) => ({ ...prev, [lessonId]: normalizeLessonDetail(res.lesson) }));
     } else {
       setError(res.hint ? `${res.error} — ${res.hint}` : res.error);
     }
@@ -104,15 +111,31 @@ function LessonProvider({ children }) {
     if (current?.next_lesson_id) select(current.next_lesson_id);
   }, [current, select]);
 
+  // Jina Q&A — 비낙관적(AI 왕복 5~30초). 프롬프트(지문·문항·내 답)는 서버가 조립한다(POST /api/lessons/:id/qa):
+  // 클라이언트는 question·attempt_id·item_id 만 보내고 정답/해설은 알지도, 보내지도 않는다.
+  // 스토어 error 배너는 건드리지 않는다 — 패널이 응답 봉투 { ok, answer, citations… | ok:false, error, hint } 를 그대로 받아 표시한다.
+  const askLesson = React.useCallback(async ({ question, itemId, attemptId, provider, model, ollamaUrl, signal } = {}) => {
+    if (!currentId) return { ok: false, code: 'NO_LESSON', error: '선택된 레슨이 없습니다.' };
+    const body = { question, client_request_id: crypto.randomUUID() };
+    if (attemptId) {
+      body.attempt_id = attemptId;
+      if (itemId) body.item_id = itemId; // 문항 지정은 제출 후에만 의미가 있다(제출 전엔 서버가 무시)
+    }
+    if (provider) body.provider = provider;
+    if (model) body.model = model;
+    if (ollamaUrl) body.ollamaUrl = ollamaUrl;
+    return window.JINA_API.post(`/api/lessons/${currentId}/qa`, body, { signal });
+  }, [currentId]);
+
   const value = React.useMemo(() => ({
     lessons, progress, listLoading, error,
     currentId, current, currentLoading,
     answers: (currentId && answersByLesson[currentId]) || {},
     result: (currentId && resultByLesson[currentId]) || null,
     grading,
-    refresh, select, setAnswer, submit, retake, next,
+    refresh, select, setAnswer, submit, retake, next, askLesson,
   }), [lessons, progress, listLoading, error, currentId, current, currentLoading,
-       answersByLesson, resultByLesson, grading, refresh, select, setAnswer, submit, retake, next]);
+       answersByLesson, resultByLesson, grading, refresh, select, setAnswer, submit, retake, next, askLesson]);
 
   return <LessonContext.Provider value={value}>{children}</LessonContext.Provider>;
 }
@@ -333,6 +356,8 @@ function useLessonFallback() {
     result, grading: false,
     refresh: () => Promise.resolve({ ok: true }),
     select, setAnswer, submit, retake, next,
+    // 캔버스에서는 AI 호출(non-GET)이 막혀 있다 — 패널이 이 봉투를 오류 말풍선으로 보여준다
+    askLesson: () => Promise.resolve({ ok: false, code: 'READONLY', error: '캔버스에서는 Jina 질문이 비활성화되어 있습니다.' }),
   };
 }
 

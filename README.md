@@ -195,6 +195,7 @@ launchctl setenv OLLAMA_ORIGINS "*"
   - [x] `users` / `auth_sessions` — 인증 (`db/migrations/0001_auth.sql`)
   - [x] `vocab_words` / `user_vocab_cards` / `vocab_reviews` — 단어장 + SRS (`0002_vocab.sql`)
   - [x] `lessons` / `lesson_items` / `user_lesson_attempts` — 콘텐츠 + 서버 채점 (`0005_lessons.sql`, `0006_lessons_seed.sql`)
+  - [x] `lesson_qa_sessions` + `user_lesson_attempts.skill_code` — 레슨 Jina Q&A(`0011_lesson_qa.sql`, `docs/plan/07-…md` Phase 1). `POST /api/lessons/:id/qa`는 서버가 지문(제출 전)·문항+내 답(제출 후)만 조립해 AI task `lesson_qa`에 넘기고 정답·해설은 어떤 경로로도 미전송, 인용은 지문 부분문자열 검증, 제출 후엔 CLI 세션 resume. `GET /api/lessons?kind=&status=`, `GET /api/lessons/recommended`(대시보드와 같은 `recommendLessons`), 레슨 목록 뷰
   - [x] `conversation_sessions` / `conversation_messages` — 회화 (`0004_conversation.sql`)
   - [x] `corrections` — 누적 첨삭 기록 (`0004_conversation.sql`)
   - [x] `correction_reviews` / `user_goals` — 첨삭 SRS + 목표 (`0007_user_goals.sql`, `0008_progress.sql`)

@@ -34,8 +34,11 @@ function providerSemaphore(id) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const jitter = (ms) => Math.round(ms * (0.75 + Math.random() * 0.5));
 
+// context(선택): 서버가 조립한 학습 자료 텍스트(lesson_qa). 시스템 프롬프트 뒤 '--- 학습 자료 ---' 절로 들어가며
+// 학습자 입력이 아니므로 LEARNER_INPUT 으로 감싸지 않고 LIMITS.userMessage 길이 제한도 userMessage 에만 적용한다.
+// 생략하면 기존 task 의 프롬프트는 그대로다(하위호환).
 export async function askAI({
-  task = 'tutor', providerId, model, history = [], userMessage,
+  task = 'tutor', providerId, model, history = [], userMessage, context = null,
   sessionRef = null, ollamaUrl, signal,
 }) {
   if (!TASK_SCHEMAS[task]) throw new HttpError(400, 'BAD_REQUEST', `알 수 없는 task: ${task}`);
@@ -44,6 +47,9 @@ export async function askAI({
   }
   if (userMessage.length > LIMITS.userMessage) {
     throw new HttpError(413, 'PROMPT_TOO_LONG', `메시지는 ${LIMITS.userMessage}자 이하여야 합니다.`);
+  }
+  if (context !== null && context !== undefined && typeof context !== 'string') {
+    throw new HttpError(400, 'BAD_REQUEST', 'context 는 문자열이어야 합니다.');
   }
   const provider = getProvider(providerId);
   const schema = TASK_SCHEMAS[task];
@@ -57,8 +63,8 @@ export async function askAI({
 
     const includeSchemaContract = !provider.supportsJsonSchema;
     const buildInput = ({ withHistory, ref }) => ({
-      prompt: renderCliPrompt({ task, history: withHistory ? history : [], userMessage, includeSchemaContract }),
-      messages: renderChatMessages({ task, history: withHistory ? history : [], userMessage }),
+      prompt: renderCliPrompt({ task, history: withHistory ? history : [], userMessage, includeSchemaContract, context }),
+      messages: renderChatMessages({ task, history: withHistory ? history : [], userMessage, context }),
       jsonSchema: provider.supportsJsonSchema ? schema : null,
       model, sessionRef: ref, signal, baseUrl: ollamaUrl,
       // vocab_quiz 는 출력 JSON 이 커서(10단어×예문·번역·오답 3) 단독 40~50초, 경합 시 60초+ — HTTP 예산(150s) 안에서 더 준다
@@ -134,7 +140,7 @@ export async function askAI({
           meta: { queuedMs, durationMs: result.meta?.durationMs, violations, resumed, resume_fallback: resumeFallback },
         };
       }
-      // vocab_entry: 쓰레기 카드를 영구 저장하는 것보다 실패가 낫다
+      // vocab_entry/vocab_quiz/lesson_qa: 쓰레기 카드를 영구 저장하거나 근거 없는 설명을 내보내는 것보다 실패가 낫다
       throw new HttpError(502, 'SCHEMA_VIOLATION',
         `모델 응답이 스키마를 위반했습니다: ${violations.slice(0, 3).join('; ')}`,
         { provider: provider.id });

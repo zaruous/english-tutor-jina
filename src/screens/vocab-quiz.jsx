@@ -205,6 +205,8 @@ function DailyQuizPanel({ theme, aiConfig, compact = false }) {
             <div style={{ fontSize: compact ? 16 : 18, fontWeight: 700, color: theme.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{q.topic_title}</div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '0 0 auto' }}>
+            {/* 진행 중이라도 다른 주제로 새 퀴즈를 시작할 수 있게 — 오늘의 퀴즈는 유지되며 picker 의 '돌아가기' 로 복귀 */}
+            <button type="button" data-testid="quiz-new" onClick={() => setPicking(true)} title="이 퀴즈를 두고 다른 주제로 새 퀴즈 만들기" style={{ padding: '6px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600, color: theme.textMuted, background: theme.chipBg }}>새 퀴즈</button>
             {window.JINA_TTS && window.JINA_TTS.supported && (
               <button type="button" data-testid="quiz-auto-speak" onClick={() => setAutoSpeak(!autoSpeak)} aria-pressed={autoSpeak}
                 title="문항이 나올 때 단어를 자동으로 읽어줍니다 (브라우저 음성)" style={{

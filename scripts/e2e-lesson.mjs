@@ -5,6 +5,7 @@ import { launchOptions, routeCdn } from './e2e-env.mjs';
 import { pool } from '../api/lib/pool.js';
 
 const BASE = process.env.E2E_BASE || 'http://localhost:3003';
+const API = process.env.E2E_API || 'http://localhost:3004';
 const results = [];
 const check = (name, ok, detail = '') => {
   results.push({ name, ok, detail });
@@ -62,6 +63,10 @@ check('GET /api/lessons/1 에 정답·해설 비노출', leaks.length === 0, lea
 const badge1 = await progressBadge(page);
 check('진도 배지 1/2 (dev 시드 attempt 집계)', badge1 === '진도1/2', String(badge1));
 
+// 3b) Phase 1 — 제출 전 Jina 패널은 지문 질문만: 안내 문구 렌더, 문항 칩 없음
+check('Jina 패널 제출 전 안내(qa-notice) 렌더', (await page.locator('[data-testid="qa-notice"]').count()) === 1);
+check('제출 전 문항 칩 없음', (await page.locator('[data-testid="qa-item-chip"]').count()) === 0);
+
 // 4) 3문항 답변(오답 1개 섞기: 1→B, 2→A, 3→B) → 채점하기 → 서버 채점 결과
 for (const t of ['To outline next steps for an upcoming campaign',
                  'It has been postponed by one week',
@@ -109,6 +114,47 @@ check('★set24 고유 해설(늦어도 ~까지) — 해설 버그 해소',
   graded24.includes('늦어도') && !graded24.includes('move up'));
 check('Jina 패널 추천 질문 = 서버 lessons.faq (set24 전용 문구)',
   graded24.includes('"no later than"은 어떤 뉘앙스인가요?'));
+
+// 6b) Phase 1 — 제출 후 문항 칩(Q1~Q3)
+check('제출 후 문항 칩 3개(qa-item-chip)', (await page.locator('[data-testid="qa-item-chip"]').count()) === 3);
+
+// 6c) Phase 1 — API 계약: recommended ≤3 + reason_code, status 필터 검증, dry_run 컨텍스트(정답·선택지 비노출)
+const H = { 'Content-Type': 'application/json', 'X-Requested-With': 'jina', Origin: BASE };
+const recommended = await (await fetch(`${API}/api/lessons/recommended`, { headers: H })).json();
+check('GET /api/lessons/recommended ≤3 + reason_code', recommended.ok && recommended.lessons.length >= 1 && recommended.lessons.length <= 3
+  && recommended.lessons.every((l) => typeof l.reason_code === 'string' && l.reason_code), recommended.lessons?.map((l) => `${l.id}:${l.reason_code}`).join(','));
+const bogusStatus = await (await fetch(`${API}/api/lessons?status=bogus`, { headers: H })).json();
+check('GET /api/lessons?status=bogus → 400', bogusStatus.ok === false && bogusStatus.code === 'BAD_REQUEST');
+const detail1 = (await (await fetch(`${API}/api/lessons/1`, { headers: H })).json()).lesson;
+const pre = await (await fetch(`${API}/api/lessons/1/qa`, { method: 'POST', headers: H, body: JSON.stringify({ question: '요지?', dry_run: true }) })).json();
+const stems1 = (detail1.items || detail1.questions || []).map((q) => q.stem || q.q).filter(Boolean);
+const opts1 = (detail1.items || detail1.questions || []).flatMap((q) => (q.options || []).map((o) => o.text)).filter(Boolean);
+check('dry_run pre_submit — 지문만 (stem/선택지 0건 포함)', pre.ok && pre.mode === 'pre_submit' && stems1.length > 0
+  && stems1.every((t) => !pre.context.includes(t)) && opts1.every((t) => !pre.context.includes(t)));
+const newAttempt = await (await fetch(`${API}/api/lessons/1/attempts`, { method: 'POST', headers: H, body: JSON.stringify({
+  answers: Object.fromEntries((detail1.items || detail1.questions).map((q) => [String(q.position ?? q.n), (q.options[0].id)])), client_request_id: crypto.randomUUID() }) })).json();
+const post = await (await fetch(`${API}/api/lessons/1/qa`, { method: 'POST', headers: H, body: JSON.stringify({ question: '1번?', attempt_id: newAttempt.attempt?.id, item_id: 1, dry_run: true }) })).json();
+check('dry_run post_submit — 1번 stem 포함, explanation 미포함', post.ok && post.mode === 'post_submit' && post.context.includes(stems1[0]) && !/explanation/i.test(post.context));
+const foreign = await fetch(`${API}/api/lessons/1/qa`, { method: 'POST', headers: H, body: JSON.stringify({ question: 'x', attempt_id: 999999999, dry_run: true }) });
+check('남의/없는 attempt_id → 403 또는 404', foreign.status === 403 || foreign.status === 404, `status=${foreign.status}`);
+
+// 6d) Phase 1 — Jina Q&A 실호출 1회 (제출 후 문항 질문)
+await page.locator('[data-testid="qa-item-chip"]').first().click();
+await page.locator('[data-testid="qa-input"]').fill('1번 문항에서 내가 고른 답을 한국어로 설명해줘');
+await page.locator('[data-testid="qa-send"]').click();
+await page.waitForSelector('[data-testid="qa-answer"]', { timeout: 90000 }).catch(() => {});
+check('Jina Q&A 답변 렌더 (AI)', (await page.locator('[data-testid="qa-answer"]').count()) >= 1,
+  (await page.locator('body').textContent()).match(/오류: [^\n]{0,80}/)?.[0] || '답변 있음');
+
+// 6e) Phase 1 — 레슨 목록 뷰: 열기 → 행 수 = 서버 목록 → kind 필터 → 첫 행 클릭 → Set 23 복귀
+const listApi = await (await fetch(`${API}/api/lessons`, { headers: H })).json();
+await page.locator('[data-testid="lesson-list-open"]').click();
+await page.waitForTimeout(800);
+check('레슨 목록 뷰 — 행 수 = 서버 목록', (await page.locator('[data-testid="lesson-list-row"]').count()) === listApi.lessons.length, `${listApi.lessons.length}개`);
+check('레슨 목록 — kind 필터 칩', (await page.locator('[data-testid="lesson-kind-filter"]').count()) >= 2);
+await page.locator('[data-testid="lesson-list-row"]').first().click();
+await page.waitForTimeout(1500);
+check('목록에서 첫 레슨 선택 → Set 23 학습 뷰 복귀', (await page.locator('body').innerText()).includes('Set 23'));
 
 // 7) 새로고침 → 진도 2/2 (attempt 서버 저장 증명)
 await page.reload();

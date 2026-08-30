@@ -74,4 +74,18 @@ export function normalizeVocabQuiz(data) {
   };
 }
 
-export const NORMALIZERS = { tutor: normalizeTutor, vocab_entry: normalizeVocabEntry, vocab_quiz: normalizeVocabQuiz };
+// 레슨 Q&A: answer 2000자, 인용 quote 300자 최대 3개(빈 인용 제거).
+// quote 가 실제 지문의 부분문자열인지는 lesson.service.verifyCitations 가 지문 텍스트를 들고 검증한다.
+export function normalizeLessonQa(data) {
+  return {
+    answer: String(data.answer || '').trim().slice(0, 2000),
+    citations: (Array.isArray(data.citations) ? data.citations : [])
+      .map((c) => ({ quote: String(c?.quote || '').trim().slice(0, 300) }))
+      .filter((c) => c.quote)
+      .slice(0, 3),
+  };
+}
+
+export const NORMALIZERS = {
+  tutor: normalizeTutor, vocab_entry: normalizeVocabEntry, vocab_quiz: normalizeVocabQuiz, lesson_qa: normalizeLessonQa,
+};

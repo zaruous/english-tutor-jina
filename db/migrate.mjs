@@ -22,6 +22,7 @@ const LOCK_KEY_SQL = `SELECT pg_advisory_lock(hashtext('jina_migrations'))`;
 const RESET_TABLES = [
   'vocab_quizzes',
   'correction_reviews',
+  'lesson_qa_sessions',
   'user_lesson_attempts',
   'lesson_items',
   'lessons',

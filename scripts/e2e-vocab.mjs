@@ -59,7 +59,10 @@ check('시드 단어 표시', listText.includes('procurement') && listText.inclu
 // 6) AI 단어 추가 (claude, 5~15s)
 await page.locator('aside button', { hasText: '단어 추가' }).click();
 await page.waitForTimeout(500);
-const WORDS = ['meticulous', 'diligent', 'pragmatic', 'concise', 'feasible', 'tentative', 'adjacent', 'redundant'];
+// 반복 실행으로 후보가 소진되면 가짜 단어가 아니라 실제 단어가 선택되도록 후보를 넉넉히 둔다
+const WORDS = ['meticulous', 'diligent', 'pragmatic', 'concise', 'feasible', 'tentative', 'adjacent', 'redundant',
+  'ambiguous', 'coherent', 'deteriorate', 'eloquent', 'fluctuate', 'imperative', 'lucrative', 'negligible', 'obsolete', 'plausible',
+  'reluctant', 'scrupulous', 'substantial', 'transparent', 'versatile', 'viable', 'arbitrary', 'benchmark', 'compensate', 'delegate', 'expedite', 'facilitate'];
 const freshWord = WORDS.find((w) => !listText.includes(w)) || `test${String(Math.floor(Math.random() * 900) + 100)}word`.replace(/\d/g, (d) => 'abcdefghij'[d]);
 await page.locator('input[placeholder*="procrastinate"]').fill(freshWord);
 await page.locator('button', { hasText: 'AI 추가' }).click();
@@ -90,8 +93,9 @@ await page.locator('[data-testid="quiz-kind-keyword"]').click();
 await page.locator('[data-testid="quiz-keyword-input"]').fill('coffee');
 const vocabBefore = ((await (await fetch(`${API}/api/vocab`, { headers: { Origin: BASE } })).json()).cards || []).length;
 await page.locator('[data-testid="quiz-generate"]').click();
-await page.waitForSelector('[data-testid="quiz-word"]', { timeout: 120000 }).catch(() => {});
-check('키워드 퀴즈 생성 → 첫 문항 표시 (AI)', (await page.locator('[data-testid="quiz-word"]').count()) === 1,
+await page.waitForSelector('[data-testid="quiz-word"]', { timeout: 150000 }).catch(() => {}); // HTTP 예산(150s)과 동일 — 생성이 100초를 넘는 회차가 있다
+const quizShown = (await page.locator('[data-testid="quiz-word"]').count()) === 1;
+check('키워드 퀴즈 생성 → 첫 문항 표시 (AI)', quizShown,
   (await page.locator('main').textContent()).match(/오류: [^\n]{0,80}/)?.[0] || 'Q 1');
 const todayQuiz = (await (await fetch(`${API}/api/vocab/quiz/today`, { headers: { Origin: BASE } })).json()).quiz;
 check('서버 today 퀴즈 = 10단어', Boolean(todayQuiz) && todayQuiz.words.length === 10, todayQuiz?.topic_title);
@@ -110,7 +114,7 @@ for (let i = 0; i < 10 && todayQuiz; i++) {
 }
 check('정답 10개 클릭 → 즉시 피드백 10회', answeredOk === 10, `${answeredOk}/10`);
 check('서버 채점 결과 10 / 10', /10\s*\/\s*10/.test((await page.locator('[data-testid="quiz-score"]').textContent().catch(() => '')).replace(/\s+/g, ' ')));
-await page.locator('[data-testid="quiz-add-all"]').click();
+if (quizShown) await page.locator('[data-testid="quiz-add-all"]').click(); // 퀴즈가 안 떴으면 후속 클릭 생략(예외로 스위트가 중단되지 않게)
 await page.waitForSelector('[data-testid="quiz-add-result"]', { timeout: 15000 }).catch(() => {});
 check('10개 모두 단어장에 추가 메시지', /단어장에 10개 추가/.test(await page.locator('[data-testid="quiz-add-result"]').textContent().catch(() => '')));
 const vocabAfter = ((await (await fetch(`${API}/api/vocab`, { headers: { Origin: BASE } })).json()).cards || []).length;
