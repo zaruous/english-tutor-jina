@@ -53,7 +53,39 @@ export const VOCAB_SCHEMA = {
   required: ['word', 'pos', 'ipa', 'meaning_ko', 'examples', 'difficulty'],
 };
 
-export const TASK_SCHEMAS = { tutor: TUTOR_SCHEMA, vocab_entry: VOCAB_SCHEMA };
+// '오늘의 단어' 퀴즈 — 주제에 맞는 10단어 + 4지선다용 오답 보기 3개 (docs/plan/06-vocab-daily-quiz.md)
+export const VOCAB_QUIZ_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    topic_title: { type: 'string', description: '퀴즈 주제 제목 (한국어, 20자 이내)' },
+    topic_ko: { type: 'string', description: '주제 한 줄 설명 (한국어)' },
+    words: {
+      type: 'array', minItems: 10, maxItems: 10,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          word: { type: 'string', description: '표제어 (소문자 원형)' },
+          pos: { type: 'string', description: "품사 축약: 'n.' | 'v.' | 'adj.' | 'adv.' 등" },
+          ipa: { type: 'string', description: 'IPA 발음기호, 슬래시 포함' },
+          meaning_ko: { type: 'string', description: '정답 한국어 뜻 (1-3개, 쉼표 구분)' },
+          example_en: { type: 'string', description: '주제 맥락의 영어 예문 1개' },
+          example_ko: { type: 'string', description: '예문의 한국어 번역' },
+          distractors_ko: {
+            type: 'array', minItems: 3, maxItems: 3,
+            items: { type: 'string', description: '오답 보기 — 같은 품사의 그럴듯하지만 명확히 다른 한국어 뜻' },
+          },
+          difficulty: { type: 'integer', minimum: 1, maximum: 5, description: 'TOEIC 기준 난도' },
+        },
+        required: ['word', 'pos', 'ipa', 'meaning_ko', 'example_en', 'example_ko', 'distractors_ko', 'difficulty'],
+      },
+    },
+  },
+  required: ['topic_title', 'topic_ko', 'words'],
+};
+
+export const TASK_SCHEMAS = { tutor: TUTOR_SCHEMA, vocab_entry: VOCAB_SCHEMA, vocab_quiz: VOCAB_QUIZ_SCHEMA };
 
 // 스키마 검증 (외부 의존성 없이 필요한 만큼만)
 export function validateAgainst(schema, value) {

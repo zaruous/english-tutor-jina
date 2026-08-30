@@ -74,6 +74,7 @@ function VocabularyDesktop({ theme, aiConfig, onNavigate }) {
         </button>
         {[
           { id: 'review', label: '오늘의 복습', badge: dueCards.length },
+          { id: 'daily', label: '오늘의 단어 (AI 퀴즈)' },
           { id: 'list', label: '전체 단어장' },
           { id: 'add', label: '단어 추가 (+AI)' },
         ].map(({ id, label, badge }) => (
@@ -123,6 +124,7 @@ function VocabularyDesktop({ theme, aiConfig, onNavigate }) {
             <div style={{ fontSize: 11, color: theme.textDim, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>단어장</div>
             <h1 style={{ fontSize: 26, fontWeight: 700, color: theme.text, margin: 0 }}>
               {tab === 'review' && `오늘의 복습 · ${dueCards.length}개`}
+              {tab === 'daily' && '오늘의 단어 · AI 퀴즈'}
               {tab === 'list' && '전체 단어장'}
               {tab === 'add' && 'AI 단어 추가'}
             </h1>
@@ -170,6 +172,10 @@ function VocabularyDesktop({ theme, aiConfig, onNavigate }) {
           )}
 
           {/* ── LIST TAB ── */}
+          {/* ── DAILY QUIZ TAB — 패널(src/screens/vocab-quiz.jsx)이 스토어의 quiz 액션을 직접 쓴다 ── */}
+          {tab === 'daily' && (
+            <DailyQuizPanel theme={theme} aiConfig={aiConfig} />
+          )}
           {tab === 'list' && (
             <div style={{ padding: '28px 40px' }}>
               {/* Filter tabs */}
@@ -264,6 +270,7 @@ function VocabularyDesktop({ theme, aiConfig, onNavigate }) {
                         <span style={{ fontSize: 24, fontWeight: 800, color: theme.text }}>{addResult.card.word}</span>
                         <span style={{ fontSize: 13, color: theme.textMuted }}>{addResult.card.pos}</span>
                         <span style={{ fontSize: 13, color: theme.textMuted, fontStyle: 'italic' }}>{addResult.card.ipa}</span>
+                        <SpeakButton text={addResult.card.word} theme={theme} size={14} />
                         <span style={{ display: 'inline-flex', gap: 3, marginLeft: 'auto' }}>
                           {[1, 2, 3, 4, 5].map((d) => (
                             <span key={d} style={{ width: 6, height: 6, borderRadius: '50%', background: d <= addResult.card.difficulty ? theme.accent : theme.chipBg }} />
@@ -341,6 +348,7 @@ function FlashCard({ theme, card, flipped, onFlip, onResult, idx, total }) {
           </div>
           <div style={{ fontSize: 16, color: theme.textMuted, letterSpacing: '0.01em' }}>
             {card.pos} &nbsp; <span style={{ fontStyle: 'italic', opacity: 0.7 }}>{card.ipa}</span>
+            <SpeakButton text={card.word} theme={theme} size={16} style={{ verticalAlign: 'middle', marginLeft: 8 }} />
           </div>
           {/* Difficulty dots */}
           <div style={{ display: 'flex', justifyContent: 'center', gap: 5, marginTop: 18 }}>
@@ -488,6 +496,7 @@ function VocabListRow({ word: w, theme, compact = false }) {
             <span style={{ fontSize: compact ? 16 : 18, fontWeight: 700, color: theme.text }}>{w.word}</span>
             <span style={{ fontSize: 12, color: theme.textDim, marginLeft: 8 }}>{w.pos}</span>
             <span style={{ fontSize: 12, color: theme.textDim, marginLeft: 6, fontStyle: 'italic' }}>{w.ipa}</span>
+            <SpeakButton text={w.word} theme={theme} size={13} style={{ verticalAlign: 'middle', marginLeft: 4 }} />
           </div>
           <span style={{ fontSize: 14, color: theme.textMuted, marginLeft: 4 }}>{w.meaning_ko}</span>
         </div>
@@ -532,7 +541,7 @@ function VocabListRow({ word: w, theme, compact = false }) {
 // ─────────────────────────────────────────────────────
 // Mobile Vocabulary
 // ─────────────────────────────────────────────────────
-function MobileVocabulary({ theme, noNav = false, onNavigate }) {
+function MobileVocabulary({ theme, aiConfig, noNav = false, onNavigate }) {
   const { cards: vocabList, updateWord } = useVocab(); // Desktop과 같은 Context — state 분리 해소
   const [tab, setTab] = React.useState('review'); // 'review' | 'list'
   const [reviewIdx, setReviewIdx] = React.useState(0);
@@ -563,7 +572,7 @@ function MobileVocabulary({ theme, noNav = false, onNavigate }) {
         <div>
           <div style={{ fontSize: 11, color: theme.textDim, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 2 }}>단어장</div>
           <div style={{ fontSize: 22, fontWeight: 700, color: theme.text }}>
-            {tab === 'review' ? `복습 대기 ${dueCards.length}개` : '전체 단어'}
+            {tab === 'review' ? `복습 대기 ${dueCards.length}개` : tab === 'daily' ? '오늘의 단어 · AI 퀴즈' : '전체 단어'}
           </div>
         </div>
         <div style={{
@@ -578,6 +587,7 @@ function MobileVocabulary({ theme, noNav = false, onNavigate }) {
       <div style={{ display: 'flex', padding: '0 16px 12px', gap: 8 }}>
         {[
           { id: 'review', label: '복습', badge: dueCards.length },
+          { id: 'daily', label: '오늘의 단어' },
           { id: 'list', label: '전체 목록' },
         ].map(({ id, label, badge }) => (
           <button key={id} onClick={() => setTab(id)} style={{
@@ -631,6 +641,7 @@ function MobileVocabulary({ theme, noNav = false, onNavigate }) {
                   <div style={{ fontSize: 40, fontWeight: 800, color: theme.text, marginBottom: 8 }}>{currentCard.word}</div>
                   <div style={{ fontSize: 14, color: theme.textMuted }}>
                     {currentCard.pos} · <span style={{ fontStyle: 'italic' }}>{currentCard.ipa}</span>
+                    <SpeakButton text={currentCard.word} theme={theme} size={15} style={{ verticalAlign: 'middle', marginLeft: 6 }} />
                   </div>
                 </div>
                 <div style={{ borderTop: `1px solid ${theme.border}` }} />
@@ -679,6 +690,7 @@ function MobileVocabulary({ theme, noNav = false, onNavigate }) {
           )
         )}
 
+        {tab === 'daily' && <DailyQuizPanel theme={theme} aiConfig={aiConfig} compact />}
         {tab === 'list' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 4 }}>
             {vocabList.map((w) => (

@@ -115,10 +115,58 @@ function VocabProvider({ children }) {
     return res;
   }, []);
 
+  // ── 오늘의 단어 (AI 퀴즈) — 서버가 단일 소스(vocab_quizzes). 화면은 문항 진행 상태만 가진다.
+  // quiz: { current: QuizDto|null, loaded, loading, generating, error }
+  const [quiz, setQuiz] = React.useState({ current: null, loaded: false, loading: false, generating: false, error: null });
+  const quizAbortRef = React.useRef(null);
+  const quizError = (res) => (res.hint ? `${res.error} — ${res.hint}` : res.error);
+
+  const loadTodayQuiz = React.useCallback(async () => {
+    setQuiz((q) => ({ ...q, loading: true }));
+    const res = await window.JINA_API.get('/api/vocab/quiz/today');
+    setQuiz((q) => ({
+      ...q, loading: false, loaded: true,
+      current: res.ok ? res.quiz : q.current,
+      error: res.ok ? null : quizError(res),
+    }));
+    return res;
+  }, []);
+
+  // 생성: 비낙관적 — CLI 10~30초. 취소 지원(요청이 끊기면 서버가 CLI 프로세스까지 죽인다).
+  const generateQuiz = React.useCallback(async ({ kind, keyword, provider, model } = {}) => {
+    const controller = new AbortController();
+    quizAbortRef.current = controller;
+    setQuiz((q) => ({ ...q, generating: true, error: null }));
+    const res = await window.JINA_API.post('/api/vocab/quiz', { kind, keyword, provider, model }, { signal: controller.signal });
+    quizAbortRef.current = null;
+    if (res.ok) setQuiz((q) => ({ ...q, generating: false, loaded: true, current: res.quiz }));
+    else if (res.code === 'ABORTED') setQuiz((q) => ({ ...q, generating: false }));
+    else setQuiz((q) => ({ ...q, generating: false, error: quizError(res) }));
+    return res;
+  }, []);
+  const cancelQuiz = React.useCallback(() => { quizAbortRef.current?.abort(); }, []);
+
+  // 채점은 서버 — 응답의 quiz(answers/score/completed_at)로 교체
+  const answerQuiz = React.useCallback(async (quizId, answers) => {
+    const res = await window.JINA_API.post(`/api/vocab/quiz/${quizId}/answer`, { answers });
+    if (res.ok) setQuiz((q) => ({ ...q, current: res.quiz, error: null }));
+    else setQuiz((q) => ({ ...q, error: quizError(res) }));
+    return res;
+  }, []);
+
+  // 퀴즈 단어 → 단어장 (AI 재호출 없음). 성공 시 목록/통계 동기화
+  const addQuizWords = React.useCallback(async (quizId, indexes) => {
+    const res = await window.JINA_API.post(`/api/vocab/quiz/${quizId}/add`, { indexes: indexes || [] });
+    if (res.ok) refresh();
+    return res;
+  }, [refresh]);
+
   const value = React.useMemo(() => ({
     cards, stats, loading, error, addState,
     updateWord, addWord, cancelAdd, removeWord, refresh, formatNextReview,
-  }), [cards, stats, loading, error, addState, updateWord, addWord, cancelAdd, removeWord, refresh]);
+    quiz, loadTodayQuiz, generateQuiz, cancelQuiz, answerQuiz, addQuizWords,
+  }), [cards, stats, loading, error, addState, updateWord, addWord, cancelAdd, removeWord, refresh,
+      quiz, loadTodayQuiz, generateQuiz, cancelQuiz, answerQuiz, addQuizWords]);
 
   return <VocabContext.Provider value={value}>{children}</VocabContext.Provider>;
 }
@@ -153,6 +201,29 @@ const FALLBACK_CARDS = [
     ['All employees must complete the annual compliance training.', 'The audit confirmed full compliance with safety regulations.'], 3, 'new', 0, 1, 2.5, 0, 0),
 ];
 
+// 캔버스용 데모 퀴즈 — DTO 모양(options 는 정답+오답 3개 고정 순서). 실제 셔플/채점은 서버.
+const FQ = (index, word, pos, ipa, meaning_ko, example_en, example_ko, d) => ({
+  index, word, pos, ipa, meaning_ko, example_en, example_ko, difficulty: 3,
+  options: index % 2 ? [d[0], meaning_ko, d[1], d[2]] : [d[0], d[1], meaning_ko, d[2]],
+});
+const FALLBACK_QUIZ = {
+  id: 0, kind: 'random', keyword: null, topic_title: '비즈니스 이메일 표현', topic_ko: '업무 메일에서 자주 쓰는 동사·명사 10개',
+  total: 10, answers: null, score: null, provider: null, model: null, created_at: null, completed_at: null,
+  words: [
+    FQ(0, 'attach', 'v.', '/əˈtætʃ/', '첨부하다', 'Please find the report attached to this email.', '이 메일에 첨부한 보고서를 확인해 주세요.', ['삭제하다', '전달하다', '요약하다']),
+    FQ(1, 'forward', 'v.', '/ˈfɔːrwərd/', '전달하다, 회송하다', 'I will forward the invoice to accounting.', '청구서를 회계팀에 전달하겠습니다.', ['보류하다', '승인하다', '취소하다']),
+    FQ(2, 'attendee', 'n.', '/əˌtenˈdiː/', '참석자', 'All attendees will receive the slides afterward.', '참석자 전원이 이후 슬라이드를 받게 됩니다.', ['발표자', '주최자', '후원자']),
+    FQ(3, 'agenda', 'n.', '/əˈdʒendə/', '안건, 의제', 'The agenda for Monday is attached.', '월요일 안건을 첨부했습니다.', ['회의록', '예산안', '일정표']),
+    FQ(4, 'follow up', 'v.', '/ˈfɑːloʊ ʌp/', '후속 조치하다, 다시 확인하다', 'I am following up on my previous email.', '이전 메일에 대해 다시 확인차 연락드립니다.', ['철회하다', '보고하다', '연기하다']),
+    FQ(5, 'deadline', 'n.', '/ˈdedlaɪn/', '기한, 마감', 'The deadline has been extended to Friday.', '기한이 금요일로 연장되었습니다.', ['시작일', '휴가', '예산']),
+    FQ(6, 'clarify', 'v.', '/ˈklærɪfaɪ/', '명확히 하다', 'Could you clarify the second point?', '두 번째 항목을 명확히 해 주시겠어요?', ['반박하다', '축소하다', '승인하다']),
+    FQ(7, 'confidential', 'adj.', '/ˌkɑːnfɪˈdenʃl/', '기밀의', 'This document is confidential.', '이 문서는 기밀입니다.', ['공개된', '긴급한', '임시의']),
+    FQ(8, 'reschedule', 'v.', '/ˌriːˈskedʒuːl/', '일정을 변경하다', 'Can we reschedule the call to 3 p.m.?', '통화를 오후 3시로 옮길 수 있을까요?', ['취소하다', '기록하다', '확정하다']),
+    FQ(9, 'regards', 'n.', '/rɪˈɡɑːrdz/', '안부, (맺음말) ~올림', 'Best regards, Jina', '감사합니다, Jina', ['참조', '제목', '서명']),
+  ],
+};
+const READONLY_RES = { ok: false, code: 'READONLY', error: '캔버스에서는 저장이 비활성화되어 있습니다.' };
+
 function useVocabFallback() {
   const [cards, setCards] = React.useState(FALLBACK_CARDS);
   const [addState, setAddState] = React.useState({ pending: null, result: null });
@@ -183,6 +254,10 @@ function useVocabFallback() {
     cards, stats, loading: false, error: null, addState,
     updateWord, addWord, cancelAdd: () => {}, removeWord: () => Promise.resolve({ ok: true }),
     refresh: () => Promise.resolve(), formatNextReview,
+    quiz: { current: FALLBACK_QUIZ, loaded: true, loading: false, generating: false, error: null },
+    loadTodayQuiz: () => Promise.resolve({ ok: true, quiz: FALLBACK_QUIZ }),
+    generateQuiz: () => Promise.resolve(READONLY_RES), cancelQuiz: () => {},
+    answerQuiz: () => Promise.resolve(READONLY_RES), addQuizWords: () => Promise.resolve(READONLY_RES),
   };
 }
 

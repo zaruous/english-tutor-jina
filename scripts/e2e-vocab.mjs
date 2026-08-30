@@ -80,6 +80,43 @@ await page.waitForTimeout(800);
 const afterReload = await page.locator('main').textContent();
 check(`새로고침 후 ${freshWord} 잔존`, afterReload.includes(freshWord));
 
+// 7b) 오늘의 단어 — AI 퀴즈: 키워드 생성 → 서버 DTO 정답으로 10문항 → 10/10 → 전체 추가 → 단어장 +10
+await page.locator('aside button', { hasText: '오늘의 단어 (AI 퀴즈)' }).click();
+await page.waitForTimeout(1500);
+// 오늘 퀴즈가 이미 있으면(완료/진행) '새 퀴즈 만들기'로 주제 선택 화면을 연다
+if (await page.locator('[data-testid="quiz-new"]').count()) { await page.locator('[data-testid="quiz-new"]').click(); await page.waitForTimeout(500); }
+check('퀴즈 탭 → 주제 선택 화면', (await page.locator('[data-testid="quiz-generate"]').count()) === 1);
+await page.locator('[data-testid="quiz-kind-keyword"]').click();
+await page.locator('[data-testid="quiz-keyword-input"]').fill('coffee');
+const vocabBefore = ((await (await fetch(`${API}/api/vocab`, { headers: { Origin: BASE } })).json()).cards || []).length;
+await page.locator('[data-testid="quiz-generate"]').click();
+await page.waitForSelector('[data-testid="quiz-word"]', { timeout: 120000 }).catch(() => {});
+check('키워드 퀴즈 생성 → 첫 문항 표시 (AI)', (await page.locator('[data-testid="quiz-word"]').count()) === 1,
+  (await page.locator('main').textContent()).match(/오류: [^\n]{0,80}/)?.[0] || 'Q 1');
+const todayQuiz = (await (await fetch(`${API}/api/vocab/quiz/today`, { headers: { Origin: BASE } })).json()).quiz;
+check('서버 today 퀴즈 = 10단어', Boolean(todayQuiz) && todayQuiz.words.length === 10, todayQuiz?.topic_title);
+check('발음 버튼(🔊) 렌더 — 문항 단어 옆', (await page.locator('[data-testid="speak-btn"]').count()) >= 1);
+check('jinaSpeak 전역 · 호출 시 예외 없음', await page.evaluate(() => typeof window.jinaSpeak === 'function' && typeof window.jinaSpeak('test') === 'boolean'));
+let answeredOk = 0;
+for (let i = 0; i < 10 && todayQuiz; i++) {
+  const word = (await page.locator('[data-testid="quiz-word"]').textContent()).trim();
+  const w = todayQuiz.words.find((x) => x.word === word);
+  if (!w) break;
+  await page.locator('[data-testid="quiz-option"]', { hasText: w.meaning_ko }).first().click();
+  await page.waitForSelector('[data-testid="quiz-feedback"]');
+  if ((await page.locator('[data-testid="quiz-feedback"]').textContent()).includes('정답!')) answeredOk += 1;
+  await page.locator('[data-testid="quiz-next"]').click();
+  await page.waitForTimeout(i === 9 ? 2500 : 300);
+}
+check('정답 10개 클릭 → 즉시 피드백 10회', answeredOk === 10, `${answeredOk}/10`);
+check('서버 채점 결과 10 / 10', /10\s*\/\s*10/.test((await page.locator('[data-testid="quiz-score"]').textContent().catch(() => '')).replace(/\s+/g, ' ')));
+await page.locator('[data-testid="quiz-add-all"]').click();
+await page.waitForSelector('[data-testid="quiz-add-result"]', { timeout: 15000 }).catch(() => {});
+check('10개 모두 단어장에 추가 메시지', /단어장에 10개 추가/.test(await page.locator('[data-testid="quiz-add-result"]').textContent().catch(() => '')));
+const vocabAfter = ((await (await fetch(`${API}/api/vocab`, { headers: { Origin: BASE } })).json()).cards || []).length;
+check('서버 단어장 +10', vocabAfter === vocabBefore + 10, `${vocabBefore} → ${vocabAfter}`);
+const todayDone = (await (await fetch(`${API}/api/vocab/quiz/today`, { headers: { Origin: BASE } })).json()).quiz;
+check('today 퀴즈 completed · score 10', Boolean(todayDone?.completed_at) && todayDone.score === 10);
 // 8) 모바일 뷰포트 — 같은 목록 (Context 승격 증명)
 const mobile = await browser.newPage({ viewport: { width: 390, height: 844 } });
 await routeCdn(mobile);

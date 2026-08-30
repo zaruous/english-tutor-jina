@@ -251,7 +251,7 @@ function FeedbackPane({ theme, lastScored }) {
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
               <span className="jina-serif" style={{ fontSize: 22, color: theme.text, fontStyle: 'italic', fontWeight: 500 }}>{dueCard.word}</span>
               <span style={{ fontSize: 11, color: theme.textMuted }}>{dueCard.ipa}</span>
-              <button style={{ marginLeft: 'auto', color: theme.accent }}><Icons.Volume size={14} /></button>
+              <SpeakButton text={dueCard.word} theme={theme} size={14} style={{ marginLeft: 'auto', color: theme.accent }} />
             </div>
             <div style={{ fontSize: 11, color: theme.textDim, marginBottom: 8 }}>{dueCard.pos} {dueCard.meaning_ko}</div>
             {dueCard.examples?.[0] && (

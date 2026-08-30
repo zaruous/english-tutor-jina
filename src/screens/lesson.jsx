@@ -78,6 +78,8 @@ function LessonTopBar({ theme, askingAI, setAskingAI, onBack }) {
 function PassageColumn({ theme, highlighted, setHighlighted }) {
   const lesson = React.useContext(LessonCtx);
   const p = lesson.passage;
+  // 듣기 버튼용 — 제목 + 본문을 문장으로 이어 브라우저 음성(speech.jsx)으로 읽는다. **강조** 마크는 제거
+  const passageText = [p.subject, ...(p.body || [])].join(". ").replace(/[*][*]/g, "");
   const renderBody = () => p.body.map((para, i) => {
     // Bold markdown-ish
     const parts = para.split(/(\*\*[^*]+\*\*)/g);
@@ -146,7 +148,7 @@ function PassageColumn({ theme, highlighted, setHighlighted }) {
         <button style={{ padding: '6px 10px', borderRadius: 8, background: theme.chipBg, color: theme.text, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
           <Icons.Pin size={12} /> 하이라이트
         </button>
-        <button style={{ padding: '6px 10px', borderRadius: 8, background: theme.chipBg, color: theme.text, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+        <button type="button" onClick={() => window.jinaSpeak && window.jinaSpeak(passageText, { rate: 0.95 })} title="지문을 브라우저 음성으로 읽어줍니다" style={{ padding: '6px 10px', borderRadius: 8, background: theme.chipBg, color: theme.text, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
           <Icons.Volume size={12} /> 듣기
         </button>
         <button style={{ padding: '6px 10px', borderRadius: 8, background: theme.chipBg, color: theme.text, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
@@ -340,7 +342,7 @@ function QuestionsColumn({ theme, onNext }) {
                 <span className="jina-serif" style={{ fontSize: 16, fontStyle: 'italic', color: theme.text, fontWeight: 500 }}>{v.word}</span>
                 <span style={{ fontSize: 10.5, color: theme.textDim }}>{v.ipa}</span>
                 <span style={{ fontSize: 10.5, color: theme.accent, fontWeight: 600 }}>{v.pos}</span>
-                <button style={{ marginLeft: 'auto', color: theme.textMuted }}><Icons.Volume size={12} /></button>
+                <SpeakButton text={v.word} theme={theme} size={12} style={{ marginLeft: 'auto', color: theme.textMuted }} />
               </div>
               <div style={{ fontSize: 12, color: theme.textMuted }}>{v.meaning}</div>
               <div style={{ fontSize: 11, color: theme.textDim, fontStyle: 'italic', marginTop: 3 }}>"{v.ex}"</div>

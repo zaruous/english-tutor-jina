@@ -35,4 +35,43 @@ export function normalizeVocabEntry(data) {
   };
 }
 
-export const NORMALIZERS = { tutor: normalizeTutor, vocab_entry: normalizeVocabEntry };
+// 퀴즈: 단어 중복 제거, 정답과 겹치는 오답 보기 제거 후 다른 단어의 뜻으로 3개 채움.
+// 10개 미달이면 createQuiz 가 SCHEMA_VIOLATION 으로 거절한다 (불량 퀴즈 저장 금지).
+export function normalizeVocabQuiz(data) {
+  const seen = new Set();
+  const words = (Array.isArray(data.words) ? data.words : []).map((w) => {
+    const meaning = String(w.meaning_ko || '').trim().slice(0, 200);
+    return {
+      word: String(w.word || '').trim().slice(0, 64),
+      pos: String(w.pos || '').trim().slice(0, 16),
+      ipa: String(w.ipa || '').trim().slice(0, 64),
+      meaning_ko: meaning,
+      example_en: String(w.example_en || '').trim().slice(0, 300),
+      example_ko: String(w.example_ko || '').trim().slice(0, 300),
+      distractors_ko: (Array.isArray(w.distractors_ko) ? w.distractors_ko : [])
+        .map((d) => String(d).trim().slice(0, 200))
+        .filter((d, i, arr) => d && d !== meaning && arr.indexOf(d) === i)
+        .slice(0, 3),
+      difficulty: clampInt(w.difficulty, 1, 5),
+    };
+  }).filter((w) => {
+    const key = w.word.toLowerCase();
+    if (!w.word || !w.meaning_ko || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  for (const w of words) {
+    let k = 0;
+    while (w.distractors_ko.length < 3 && k < words.length) {
+      const alt = words[k++].meaning_ko;
+      if (alt !== w.meaning_ko && !w.distractors_ko.includes(alt)) w.distractors_ko.push(alt);
+    }
+  }
+  return {
+    topic_title: String(data.topic_title || '오늘의 단어').trim().slice(0, 40),
+    topic_ko: String(data.topic_ko || '').trim().slice(0, 200),
+    words,
+  };
+}
+
+export const NORMALIZERS = { tutor: normalizeTutor, vocab_entry: normalizeVocabEntry, vocab_quiz: normalizeVocabQuiz };
