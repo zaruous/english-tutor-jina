@@ -43,18 +43,23 @@ ollama pull qwen2.5:3b
 ollama pull llama3.1:8b
 ```
 
-### 3. 프로토타입 열기
-
-`index.html`을 브라우저에서 열거나 로컬 서버로 서빙:
+### 3. 서버 실행 (정적 3003 + API 3004 동시)
 
 ```bash
-# Python
-python3 -m http.server 8000
-# 또는 Node
-npx serve
+npm install                 # pg / dotenv / playwright
+cp .env.example .env        # PGHOST 등 실제 접속정보를 채운다 (.env는 git 미추적)
+npm run db:migrate          # 최초 1회 — 0001~0008 마이그레이션
+npm run db:seed             # 개발 계정(DEV_USER_EMAIL/PASSWORD) 생성
+npm run dev                 # server.js(3003) + api/server.js(3004) 동시 실행, Ctrl+C로 둘 다 종료
 
-# 그 다음 http://localhost:8000 접속
+# 그 다음 http://localhost:3003 접속
 ```
+
+한쪽만 띄우려면 `npm run dev:web`(정적) / `npm run dev:api`(API). `npm run dev:all`은 `dev`와 동일(구 문서 호환).
+
+**E2E (Playwright, 141개)** — `npm run dev`가 떠 있는 상태에서 `node scripts/e2e-{vocab,conversation,lesson,dashboard,progress,auth}.mjs`.
+브라우저·CDN 설정은 `scripts/e2e-env.mjs`가 환경에 맞게 고른다: 기본은 Playwright 번들 chromium(`channel: chromium`),
+`PW_CHROMIUM=<실행파일>`로 교체 가능, unpkg가 막힌 환경은 `E2E_VENDOR=<react/react-dom/babel 로컬 디렉터리>`. 회화·단어장 스위트는 실제 AI provider(CLI) 호출이 필요하다.
 
 ### 4. 설정 확인
 

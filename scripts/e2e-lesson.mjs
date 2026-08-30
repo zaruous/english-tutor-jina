@@ -1,6 +1,7 @@
 // E2E: TOEIC 학습 탭 영속화 검증 (docs/plan/02-lesson.md Phase 4)
 // scripts/e2e-vocab.mjs를 본떠 작성 — 동일 vendor CDN 라우팅 + Babel 컴파일 대기.
 import { chromium } from 'playwright';
+import { launchOptions, routeCdn } from './e2e-env.mjs';
 import { pool } from '../api/lib/pool.js';
 
 const BASE = 'http://localhost:3003';
@@ -10,18 +11,6 @@ const check = (name, ok, detail = '') => {
   console.log(`${ok ? '✔' : '✖'} ${name}${detail ? ' — ' + detail : ''}`);
 };
 
-const VENDOR = '/tmp/claude-0/-home-user-english-tutor-jina/112ff4bd-5b74-582c-b59e-e6f055a8d4cd/scratchpad/vendor';
-// 이 컨테이너는 unpkg CDN이 차단되어 있어 로컬 파일로 라우팅한다 (리포 무수정)
-async function routeCdn(page) {
-  await page.route('**://unpkg.com/**', (route) => {
-    const url = route.request().url();
-    const file = url.includes('react-dom') ? 'react-dom.development.js'
-      : url.includes('/react@') ? 'react.development.js'
-      : url.includes('babel') ? 'babel.min.js' : null;
-    if (!file) return route.abort();
-    return route.fulfill({ path: `${VENDOR}/${file}`, contentType: 'application/javascript' });
-  });
-}
 
 // 진도(1/2 → 2/2)는 attempts 집계 파생값이라 이 스크립트가 attempt를 만들며 값이 변한다.
 // 재실행 가능하게 하려고 dev 시드 attempt(고정 client_request_id) 외의 시도를 지운다.
@@ -44,7 +33,7 @@ const mobileProgress = (p) => p.evaluate(() => {
   return el ? el.textContent.trim() : null;
 });
 
-const browser = await chromium.launch({ headless: true, executablePath: '/opt/pw-browsers/chromium' });
+const browser = await chromium.launch(launchOptions);
 const errors = [];
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 page.on('console', (m) => {

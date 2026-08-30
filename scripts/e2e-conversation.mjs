@@ -1,28 +1,18 @@
 // E2E: AI 회화 영속화 검증 (docs/plan/01-conversation.md Phase C5)
 // scripts/e2e-vocab.mjs를 본떠 작성 — 동일 vendor CDN 라우팅 + Babel 컴파일 대기.
 import { chromium } from 'playwright';
+import { launchOptions, routeCdn } from './e2e-env.mjs';
 
 const BASE = 'http://localhost:3003';
+const API = 'http://localhost:3004';
 const results = [];
 const check = (name, ok, detail = '') => {
   results.push({ name, ok, detail });
   console.log(`${ok ? '✔' : '✖'} ${name}${detail ? ' — ' + detail : ''}`);
 };
 
-const VENDOR = '/tmp/claude-0/-home-user-english-tutor-jina/112ff4bd-5b74-582c-b59e-e6f055a8d4cd/scratchpad/vendor';
-// 이 컨테이너는 unpkg CDN이 차단되어 있어 로컬 파일로 라우팅한다 (리포 무수정)
-async function routeCdn(page) {
-  await page.route('**://unpkg.com/**', (route) => {
-    const url = route.request().url();
-    const file = url.includes('react-dom') ? 'react-dom.development.js'
-      : url.includes('/react@') ? 'react.development.js'
-      : url.includes('babel') ? 'babel.min.js' : null;
-    if (!file) return route.abort();
-    return route.fulfill({ path: `${VENDOR}/${file}`, contentType: 'application/javascript' });
-  });
-}
 
-const browser = await chromium.launch({ headless: true, executablePath: '/opt/pw-browsers/chromium' });
+const browser = await chromium.launch(launchOptions);
 const errors = [];
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 page.on('console', (m) => {
@@ -52,8 +42,20 @@ check('저장된 메시지 로드 (OfficeMart + 첨삭 2개 렌더)',
 // 4) FeedbackPane 실데이터 — /100 옆 점수 숫자 + 오늘의 단어(vocab due 카드)
 const feedback = await page.locator('aside').last().textContent();
 const scoreMatch = feedback.match(/(\d+)\/ 100/);
-check('FeedbackPane 점수 = 서버 파생값 (마지막 scored 평균 84)',
-  scoreMatch !== null && Number(scoreMatch[1]) === 84, scoreMatch ? scoreMatch[1] : '점수 없음');
+// 기대값은 고정 리터럴이 아니라 서버 DTO에서 재계산 — 스토어 computeLastScored와 같은 산식:
+// 위에서 클릭한 '비즈니스 미팅' 세션의 마지막 scored assistant 메시지 점수 평균(반올림)
+const hdr = { headers: { Origin: BASE } };
+const srvSessions = (await (await fetch(`${API}/api/conversations`, hdr)).json()).sessions;
+const autoSession = srvSessions.find((sess) => sess.title === '비즈니스 미팅') || null; // 위에서 클릭한 세션
+let expectedScore = null;
+if (autoSession) {
+  const { messages: srvMsgs } = await (await fetch(`${API}/api/conversations/${autoSession.id}`, hdr)).json();
+  const lastScored = [...srvMsgs].reverse().find((m) => m.role === 'assistant' && m.scores);
+  const vals = lastScored ? Object.values(lastScored.scores).filter((v) => typeof v === 'number') : [];
+  expectedScore = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+}
+check(`FeedbackPane 점수 = 서버 파생값 (세션 #${autoSession?.id} 마지막 scored 평균 ${expectedScore})`,
+  expectedScore !== null && scoreMatch !== null && Number(scoreMatch[1]) === expectedScore, scoreMatch ? scoreMatch[1] : '점수 없음');
 check('FeedbackPane 오늘의 단어 (vocab due 카드)', feedback.includes('오늘의 단어'));
 
 // 5) 새 회화 시작 → 전송 → 첨삭 렌더 (claude 5~15s)

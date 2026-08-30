@@ -4,10 +4,10 @@
 // 캔버스 무인증(요청 0건)을 확인한다.
 // 기대값은 하드코딩하지 않고 서버 DTO/테마 토큰을 읽어 대조한다 (e2e-progress.mjs 규범).
 import { chromium } from 'playwright';
+import { launchOptions, routeCdn } from './e2e-env.mjs';
 
 const BASE = 'http://localhost:3003';
 const API = 'http://localhost:3004';
-const VENDOR = '/tmp/claude-0/-home-user-english-tutor-jina/112ff4bd-5b74-582c-b59e-e6f055a8d4cd/scratchpad/vendor';
 
 const BOOT_MS = 9000; // in-browser Babel 컴파일
 
@@ -17,17 +17,6 @@ const check = (name, ok, detail = '') => {
   console.log(`${ok ? '✔' : '✖'} ${name}${detail ? ' — ' + detail : ''}`);
 };
 
-// 이 컨테이너는 unpkg CDN이 차단되어 있어 로컬 파일로 라우팅한다 (리포 무수정)
-async function routeCdn(page) {
-  await page.route('**://unpkg.com/**', (route) => {
-    const url = route.request().url();
-    const file = url.includes('react-dom') ? 'react-dom.development.js'
-      : url.includes('/react@') ? 'react.development.js'
-      : url.includes('babel') ? 'babel.min.js' : null;
-    if (!file) return route.abort();
-    return route.fulfill({ path: `${VENDOR}/${file}`, contentType: 'application/javascript' });
-  });
-}
 
 // 401은 이 문서의 설계된 경로다 — opt-out 상태의 GET /api/auth/me와 오답 로그인이
 // 브라우저 네트워크 로그에 401을 남기는 것은 정상 동작이므로 무시 목록에 넣는다.
@@ -88,7 +77,7 @@ const patchBad = await (await fetch(`${API}/api/me`, {
 })).json();
 check('PATCH /api/me 빈 이름 → 400', patchBad.ok === false && patchBad.code === 'BAD_REQUEST', String(patchBad.code));
 
-const browser = await chromium.launch({ headless: true, executablePath: '/opt/pw-browsers/chromium' });
+const browser = await chromium.launch(launchOptions);
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors = [];
 errorSink(page, errors);

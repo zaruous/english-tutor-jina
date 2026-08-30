@@ -2,10 +2,10 @@
 // 서버 집계(GET /api/dashboard)가 데스크탑·모바일에 같은 수치로 렌더되는지,
 // 캔버스(Provider 부재)가 fallback으로 무에러 렌더되는지 확인한다.
 import { chromium } from 'playwright';
+import { launchOptions, routeCdn } from './e2e-env.mjs';
 
 const BASE = 'http://localhost:3003';
 const API = 'http://localhost:3004';
-const VENDOR = '/tmp/claude-0/-home-user-english-tutor-jina/112ff4bd-5b74-582c-b59e-e6f055a8d4cd/scratchpad/vendor';
 
 const results = [];
 const check = (name, ok, detail = '') => {
@@ -13,17 +13,6 @@ const check = (name, ok, detail = '') => {
   console.log(`${ok ? '✔' : '✖'} ${name}${detail ? ' — ' + detail : ''}`);
 };
 
-// 이 컨테이너는 unpkg CDN이 차단되어 있어 로컬 파일로 라우팅한다 (리포 무수정)
-async function routeCdn(page) {
-  await page.route('**://unpkg.com/**', (route) => {
-    const url = route.request().url();
-    const file = url.includes('react-dom') ? 'react-dom.development.js'
-      : url.includes('/react@') ? 'react.development.js'
-      : url.includes('babel') ? 'babel.min.js' : null;
-    if (!file) return route.abort();
-    return route.fulfill({ path: `${VENDOR}/${file}`, contentType: 'application/javascript' });
-  });
-}
 
 // 서버 DTO를 먼저 받아 화면 수치와 대조한다 (하드코딩 기대값 금지)
 const cookieRes = await fetch(`${API}/api/auth/me`);
@@ -33,7 +22,7 @@ check('GET /api/dashboard ok', dash.ok === true);
 check('집계 필드 존재', ['stats', 'goal', 'today_plan', 'skills', 'weekly', 'recommendations']
   .every((k) => dash[k] !== undefined));
 
-const browser = await chromium.launch({ headless: true, executablePath: '/opt/pw-browsers/chromium' });
+const browser = await chromium.launch(launchOptions);
 
 // ── 데스크탑 ──
 const desk = await browser.newPage({ viewport: { width: 1440, height: 900 } });

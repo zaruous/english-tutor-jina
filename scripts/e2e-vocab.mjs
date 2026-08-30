@@ -1,27 +1,17 @@
 // E2E: 단어장 실기능 검증 (docs/PLAN-vocab-backend.md Phase 5 브라우저 검증 순서)
 import { chromium } from 'playwright';
+import { launchOptions, routeCdn } from './e2e-env.mjs';
 
 const BASE = 'http://localhost:3003';
+const API = 'http://localhost:3004';
 const results = [];
 const check = (name, ok, detail = '') => {
   results.push({ name, ok, detail });
   console.log(`${ok ? '✔' : '✖'} ${name}${detail ? ' — ' + detail : ''}`);
 };
 
-const VENDOR = '/tmp/claude-0/-home-user-english-tutor-jina/112ff4bd-5b74-582c-b59e-e6f055a8d4cd/scratchpad/vendor';
-// 이 컨테이너는 unpkg CDN이 차단되어 있어 로컬 파일로 라우팅한다 (리포 무수정)
-async function routeCdn(page) {
-  await page.route('**://unpkg.com/**', (route) => {
-    const url = route.request().url();
-    const file = url.includes('react-dom') ? 'react-dom.development.js'
-      : url.includes('/react@') ? 'react.development.js'
-      : url.includes('babel') ? 'babel.min.js' : null;
-    if (!file) return route.abort();
-    return route.fulfill({ path: `${VENDOR}/${file}`, contentType: 'application/javascript' });
-  });
-}
 
-const browser = await chromium.launch({ headless: true, executablePath: '/opt/pw-browsers/chromium' });
+const browser = await chromium.launch(launchOptions);
 const errors = [];
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 page.on('console', (m) => {
@@ -58,11 +48,12 @@ if (await flipBtn.count()) {
   check('플래시카드 표시', false, '의미 확인 버튼 없음');
 }
 
-// 5) 전체 목록 — 서버 데이터 (resilient 포함 9단어)
+// 5) 전체 목록 — 서버 DTO(GET /api/vocab)의 단어가 전부 화면에 있어야 한다 (시드 상태에 의존하지 않음)
+const serverWords = ((await (await fetch(`${API}/api/vocab`, { headers: { Origin: BASE } })).json()).cards || []).map((c) => c.word);
 await page.locator('aside button', { hasText: '전체 단어장' }).click();
 await page.waitForTimeout(800);
 const listText = await page.locator('main').textContent();
-check('서버 카드 목록 (resilient 잔존 = 서버 저장)', listText.includes('resilient'));
+check('서버 카드 목록 = GET /api/vocab 단어 전부 렌더', serverWords.length > 0 && serverWords.every((w) => listText.includes(w)), `${serverWords.length}단어`);
 check('시드 단어 표시', listText.includes('procurement') && listText.includes('수용하다') === false || listText.includes('accommodate'));
 
 // 6) AI 단어 추가 (claude, 5~15s)
@@ -100,7 +91,7 @@ await mobile.waitForTimeout(2500);
 await mobile.locator('button', { hasText: '전체 목록' }).click();
 await mobile.waitForTimeout(800);
 const mobileList = await mobile.locator('body').textContent();
-check('모바일 단어장 = 같은 서버 목록', mobileList.includes(freshWord) && mobileList.includes('resilient'));
+check('모바일 단어장 = 같은 서버 목록', mobileList.includes(freshWord) && serverWords.every((w) => mobileList.includes(w)));
 await mobile.close();
 
 // 9) 캔버스 — READONLY 가드
