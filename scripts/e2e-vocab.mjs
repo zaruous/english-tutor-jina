@@ -2,8 +2,8 @@
 import { chromium } from 'playwright';
 import { launchOptions, routeCdn } from './e2e-env.mjs';
 
-const BASE = 'http://localhost:3003';
-const API = 'http://localhost:3004';
+const BASE = process.env.E2E_BASE || 'http://localhost:3003';
+const API = process.env.E2E_API || 'http://localhost:3004';
 const results = [];
 const check = (name, ok, detail = '') => {
   results.push({ name, ok, detail });
@@ -25,7 +25,7 @@ await page.waitForTimeout(9000); // in-browser Babel 컴파일
 check('데스크탑 렌더', (await page.locator('#root').innerHTML()).length > 1000);
 
 // 2) 단어장 탭
-await page.locator('header button', { hasText: '단어장' }).click();
+await page.locator('aside[aria-label="주요 메뉴"] button', { hasText: '단어장' }).click();
 await page.waitForTimeout(2500);
 const reviewHeader = await page.locator('h1').first().textContent();
 check('복습 큐 헤더', /오늘의 복습 · \d+개/.test(reviewHeader), reviewHeader.trim());
@@ -73,7 +73,7 @@ check('AI 추가 결과 카드 (실제 품사/발음기호/뜻)', /단어장에 
 // 7) 새로고침 후 잔존 (서버 저장 증명)
 await page.reload();
 await page.waitForTimeout(9000);
-await page.locator('header button', { hasText: '단어장' }).click();
+await page.locator('aside[aria-label="주요 메뉴"] button', { hasText: '단어장' }).click();
 await page.waitForTimeout(2500);
 await page.locator('aside button', { hasText: '전체 단어장' }).click();
 await page.waitForTimeout(800);
@@ -109,7 +109,7 @@ check('캔버스 콘솔 에러 0', canvasErrors.length === 0, canvasErrors.slice
 await canvas.close();
 
 // 10) 회화 — claude 실채팅 + API kill 후 에러 버블
-await page.locator('header button', { hasText: 'AI 회화' }).click();
+await page.locator('aside[aria-label="주요 메뉴"] button', { hasText: 'AI 회화' }).click();
 await page.waitForTimeout(2000);
 const chatInput = page.locator('textarea');
 await chatInput.fill('I go to school yesterday.');

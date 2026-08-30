@@ -11,7 +11,7 @@ const SRS_COLORS = {
 // ─────────────────────────────────────────────────────
 // Desktop Vocabulary
 // ─────────────────────────────────────────────────────
-function VocabularyDesktop({ theme, aiConfig }) {
+function VocabularyDesktop({ theme, aiConfig, onNavigate }) {
   const {
     cards: vocabList, stats: srvStats, error: storeError,
     updateWord, addWord: addWordApi, cancelAdd, addState,
@@ -59,17 +59,19 @@ function VocabularyDesktop({ theme, aiConfig }) {
       display: 'flex',
     }}>
       {/* Sidebar */}
-      <aside style={{
+      <aside aria-label="단어장 메뉴" style={{
         width: 240, padding: '24px 16px',
         borderRight: `1px solid ${theme.border}`,
         background: theme.bgSoft,
         display: 'flex', flexDirection: 'column', gap: 4,
         flexShrink: 0,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px 20px' }}>
+        {/* 로고 — 클릭하면 홈(대시보드). 공통 사이드바 로고와 같은 동작 */}
+        <button type="button" onClick={() => onNavigate && onNavigate('dashboard')} aria-label="홈(대시보드)으로" title="홈으로"
+          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px 20px', width: '100%', textAlign: 'left' }}>
           <JinaAvatar size={32} theme={theme} />
           <span className="jina-serif" style={{ fontSize: 20, fontStyle: 'italic', color: theme.text }}>Jina</span>
-        </div>
+        </button>
         {[
           { id: 'review', label: '오늘의 복습', badge: dueCards.length },
           { id: 'list', label: '전체 단어장' },

@@ -10,7 +10,9 @@ function DashSkel({ theme, h = 120, radius = 18, style }) {
   return (
     <div style={{
       height: h, borderRadius: radius, background: theme.card,
-      border: `1px solid ${theme.border}`, position: 'relative', overflow: 'hidden', ...style,
+      border: `1px solid ${theme.border}`, position: 'relative', overflow: 'hidden',
+      flexShrink: 0, // 스켈레톤도 flex column 안에서 찌부러지지 않게
+      ...style,
     }}>
       <div style={{
         position: 'absolute', inset: 0, background: theme.chipBg, opacity: 0.55,
@@ -47,9 +49,10 @@ function JinaAvatar({ size = 44, pulsing = false, theme }) {
   );
 }
 
-function NavItem({ icon: Ico, label, active, theme, badge }) {
+function NavItem({ icon: Ico, label, active, theme, badge, onClick, disabled }) {
   return (
-    <button style={{
+    <button type="button" onClick={onClick} disabled={disabled} aria-current={active ? 'page' : undefined}
+      title={disabled ? `${label} (준비 중)` : label} style={{
       display: 'flex', alignItems: 'center', gap: 12,
       padding: '10px 12px', borderRadius: 10, width: '100%',
       color: active ? theme.text : theme.textMuted,
@@ -57,6 +60,7 @@ function NavItem({ icon: Ico, label, active, theme, badge }) {
       fontSize: 14, fontWeight: active ? 600 : 500,
       transition: 'all .15s',
       textAlign: 'left',
+      cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.55 : 1,
     }}>
       <Ico size={18} stroke={active ? 2 : 1.6} />
       <span style={{ flex: 1 }}>{label}</span>
@@ -71,7 +75,9 @@ function NavItem({ icon: Ico, label, active, theme, badge }) {
   );
 }
 
-function Sidebar({ theme }) {
+// 캔버스 아트보드(app.jsx, withSidebar) 전용 — 실제 앱의 좌측 내비는 main.jsx 셸의 AppDesktopSidebar(src/shared/app-nav.jsx).
+function Sidebar({ theme, onNavigate, page = 'dashboard' }) {
+  const go = (id) => () => onNavigate && onNavigate(id);
   const { dash } = useDashboard();
   const name = dash?.user?.display_name || '';
   const target = dash?.goal?.target_score;
@@ -83,25 +89,26 @@ function Sidebar({ theme }) {
       display: 'flex', flexDirection: 'column', gap: 4,
       flex: '0 0 auto',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 8px 22px' }}>
+      <button type="button" onClick={go('dashboard')} aria-label="홈(대시보드)으로" title="홈으로"
+        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 8px 22px', width: '100%', textAlign: 'left' }}>
         <JinaAvatar size={32} theme={theme} />
         <div>
           <div className="jina-serif" style={{ fontSize: 22, color: theme.text, fontStyle: 'italic', lineHeight: 1 }}>Jina</div>
           <div style={{ fontSize: 10.5, color: theme.textDim, letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: 2 }}>AI English Tutor</div>
         </div>
-      </div>
+      </button>
 
       <div style={{ fontSize: 11, color: theme.textDim, padding: '8px 12px 4px', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>학습</div>
-      <NavItem icon={Icons.Home} label="대시보드" active theme={theme} />
-      <NavItem icon={Icons.Chat} label="Jina와 대화" theme={theme} badge="LIVE" />
-      <NavItem icon={Icons.Mic} label="스피킹 연습" theme={theme} />
-      <NavItem icon={Icons.Headphones} label="리스닝" theme={theme} />
-      <NavItem icon={Icons.Book} label="단어장" theme={theme} />
+      <NavItem icon={Icons.Home} label="대시보드" active={page === 'dashboard'} theme={theme} onClick={go('dashboard')} />
+      <NavItem icon={Icons.Chat} label="Jina와 대화" active={page === 'conversation'} theme={theme} badge="LIVE" onClick={go('conversation')} />
+      <NavItem icon={Icons.Mic} label="스피킹 연습" theme={theme} disabled />
+      <NavItem icon={Icons.Headphones} label="리스닝" theme={theme} disabled />
+      <NavItem icon={Icons.Book} label="단어장" active={page === 'vocabulary'} theme={theme} onClick={go('vocabulary')} />
 
       <div style={{ fontSize: 11, color: theme.textDim, padding: '16px 12px 4px', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 600 }}>시험</div>
-      <NavItem icon={Icons.Target} label="TOEIC 모의고사" theme={theme} />
-      <NavItem icon={Icons.ChartBar} label="성적 추이" theme={theme} />
-      <NavItem icon={Icons.Folder} label="오답 노트" theme={theme} />
+      <NavItem icon={Icons.Target} label="TOEIC 모의고사" active={page === 'lesson'} theme={theme} onClick={go('lesson')} />
+      <NavItem icon={Icons.ChartBar} label="성적 추이" active={page === 'progress'} theme={theme} onClick={go('progress')} />
+      <NavItem icon={Icons.Folder} label="오답 노트" theme={theme} disabled />
 
       <div style={{ flex: 1 }} />
 
@@ -168,6 +175,9 @@ function HeroCard({ theme, onNavigate }) {
   return (
     <div style={{
       position: 'relative', overflow: 'hidden',
+      // 부모(flex column + overflow auto) 안에서 overflow:hidden 인 flex 아이템은 자동 최소 높이가 0 이 되어
+      // 다른 카드 대신 이 카드만 58px 로 찌부러졌다(내용은 188px). 줄어들지 않게 고정.
+      flexShrink: 0,
       border: `1px solid ${theme.border}`,
       borderRadius: 22,
       padding: 28,
@@ -240,7 +250,7 @@ function StatStrip({ theme }) {
   const { dash } = useDashboard();
   if (!dash) {
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))', gap: 14 }}>
         {[0, 1, 2, 3].map((i) => <DashSkel key={i} theme={theme} h={128} />)}
       </div>
     );
@@ -255,7 +265,7 @@ function StatStrip({ theme }) {
       change: s.accuracy_change > 0 ? `+${s.accuracy_change}%p` : null },
   ];
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))', gap: 14 }}>
       {stats.map((s, i) => (
         <Card key={i} theme={theme} pad={18}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -705,7 +715,11 @@ function TopBar({ theme }) {
   );
 }
 
-function DashboardDesktop({ theme }) {
+// withSidebar: 캔버스 아트보드(app.jsx)만 true. 실제 앱은 main.jsx 셸의 AppDesktopSidebar 가 좌측 내비를 그린다.
+// onNavigate: 셸의 navigate() — 사이드바·히어로·오늘의 학습·첨삭·추천 카드의 이동 버튼이 전부 이걸 쓴다.
+function DashboardDesktop({ theme, onNavigate, withSidebar = false }) {
+  // 좁은 데스크탑(≤1000px)에서는 다단 그리드를 1단으로 — 카드 내부 텍스트가 세로로 깨지지 않게
+  const stack = useMediaQuery('(max-width: 1000px)');
   return (
     <div className="jina-root" style={{
       width: '100%', height: '100%',
@@ -713,7 +727,7 @@ function DashboardDesktop({ theme }) {
       display: 'flex',
       overflow: 'hidden',
     }}>
-      <Sidebar theme={theme} />
+      {withSidebar && <Sidebar theme={theme} onNavigate={onNavigate} />}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <TopBar theme={theme} />
         <div style={{
@@ -721,18 +735,18 @@ function DashboardDesktop({ theme }) {
           display: 'flex', flexDirection: 'column', gap: 18,
           overflow: 'auto',
         }}>
-          <HeroCard theme={theme} />
+          <HeroCard theme={theme} onNavigate={onNavigate} />
           <StatStrip theme={theme} />
-          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 18 }}>
-            <TodayPlan theme={theme} />
+          <div style={{ display: 'grid', gridTemplateColumns: stack ? 'minmax(0, 1fr)' : 'minmax(0, 1.4fr) minmax(0, 1fr)', gap: 18 }}>
+            <TodayPlan theme={theme} onNavigate={onNavigate} />
             <GoalRing theme={theme} />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 18 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: stack ? 'minmax(0, 1fr)' : 'repeat(3, minmax(0, 1fr))', gap: 18 }}>
             <SkillCard theme={theme} />
             <WeeklyChart theme={theme} />
-            <RecommendCard theme={theme} />
+            <RecommendCard theme={theme} onNavigate={onNavigate} />
           </div>
-          <CorrectionsCard theme={theme} />
+          <CorrectionsCard theme={theme} onNavigate={onNavigate} />
         </div>
       </div>
     </div>

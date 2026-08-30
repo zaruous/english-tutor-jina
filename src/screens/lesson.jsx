@@ -27,7 +27,7 @@ function Pill({ children, theme, color, bg }) {
 
 // Lesson top bar with progress + AI mode
 // 콘텐츠(title/subtitle/difficulty)는 LessonCtx(=서버 LessonDetail), 진도는 스토어 파생값.
-function LessonTopBar({ theme, askingAI, setAskingAI }) {
+function LessonTopBar({ theme, askingAI, setAskingAI, onBack }) {
   const { title, subtitle, difficulty, est_minutes: estMinutes } = React.useContext(LessonCtx);
   const { progress } = useLesson();
   const stars = '★'.repeat(difficulty || 0) + '☆'.repeat(Math.max(0, 5 - (difficulty || 0)));
@@ -39,7 +39,7 @@ function LessonTopBar({ theme, askingAI, setAskingAI }) {
       display: 'flex', alignItems: 'center', gap: 14,
       background: theme.bg,
     }}>
-      <button style={{ width: 34, height: 34, borderRadius: 9, background: theme.chipBg, color: theme.text, display: 'grid', placeItems: 'center' }}>
+      <button type="button" onClick={onBack} aria-label="대시보드로 돌아가기" title="대시보드" style={{ width: 34, height: 34, borderRadius: 9, background: theme.chipBg, color: theme.text, display: 'grid', placeItems: 'center' }}>
         <Icons.ArrowLeft size={16} />
       </button>
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -450,7 +450,7 @@ function LessonPlaceholder({ theme, loading, error }) {
   );
 }
 
-function LessonDesktop({ theme, aiConfig }) {
+function LessonDesktop({ theme, aiConfig, onNavigate }) {
   const [askingAI, setAskingAI] = React.useState(true);
   const [highlighted, setHighlighted] = React.useState(null);
   const { current: currentLesson, currentLoading, listLoading, error, next } = useLesson();
@@ -469,7 +469,7 @@ function LessonDesktop({ theme, aiConfig }) {
         display: 'flex', flexDirection: 'column',
         overflow: 'hidden',
       }}>
-        <LessonTopBar theme={theme} askingAI={askingAI} setAskingAI={setAskingAI} />
+        <LessonTopBar theme={theme} askingAI={askingAI} setAskingAI={setAskingAI} onBack={() => onNavigate && onNavigate('dashboard')} />
         <div style={{
           flex: 1, display: 'grid',
           gridTemplateColumns: askingAI ? '1.2fr 1fr 380px' : '1.2fr 1fr',
@@ -488,7 +488,7 @@ function LessonDesktop({ theme, aiConfig }) {
 // ─────────────────────────────────────────────────────
 // Mobile Lesson
 // ─────────────────────────────────────────────────────
-function LessonMobile({ theme, aiConfig }) {
+function LessonMobile({ theme, aiConfig, onNavigate }) {
   const [tab, setTab] = React.useState('passage'); // passage | questions | jina
   const [highlighted, setHighlighted] = React.useState(null);
   const { current: currentLesson, currentLoading, listLoading, error, progress, next } = useLesson();
@@ -506,7 +506,7 @@ function LessonMobile({ theme, aiConfig }) {
     }}>
       {/* Header */}
       <div style={{ padding: '10px 14px 12px', borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <button style={{ width: 30, height: 30, borderRadius: 8, color: theme.text, display: 'grid', placeItems: 'center' }}>
+        <button type="button" onClick={() => onNavigate && onNavigate('dashboard')} aria-label="대시보드로 돌아가기" style={{ width: 30, height: 30, borderRadius: 8, color: theme.text, display: 'grid', placeItems: 'center' }}>
           <Icons.ArrowLeft size={16} />
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>

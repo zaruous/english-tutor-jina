@@ -61,6 +61,7 @@ function MobileDashboard({ theme, noNav = false, onNavigate }) {
             : theme.surface,
           border: `1px solid ${theme.border}`,
           position: 'relative', overflow: 'hidden',
+          flexShrink: 0, // 스크롤 컬럼(flex column) 안에서 overflow:hidden 카드가 찌부러지지 않게 (데스크탑 HeroCard 와 같은 버그)
         }}>
           <div style={{
             position: 'absolute', right: -40, top: -40, width: 160, height: 160,

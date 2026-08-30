@@ -92,7 +92,7 @@ function App() {
           subtitle="학습 진도 + Jina의 추천"
         >
           <DCArtboard id="dashboard-desktop" label="05 · Desktop · Dashboard" width={1440} height={920}>
-            <DashboardDesktop theme={theme} />
+            <DashboardDesktop theme={theme} withSidebar />
           </DCArtboard>
           <DCArtboard id="dashboard-mobile" label="06 · Mobile · Dashboard" width={420} height={892}>
             <IOSDevice width={402} height={874} dark={theme.isDark}>

@@ -2,13 +2,7 @@
 // 데스크탑: 상단 네비바 + 현재 페이지
 // 모바일: 현재 페이지 + 하단 탭바
 
-const APP_PAGES = [
-  { id: 'dashboard',    label: '대시보드', icon: 'Home' },
-  { id: 'conversation', label: 'AI 회화',  icon: 'Chat',    badge: 'LIVE' },
-  { id: 'lesson',       label: 'TOEIC 학습', icon: 'Book' },
-  { id: 'vocabulary',   label: '단어장',   icon: 'BookOpen' },
-  { id: 'progress',     label: '학습 통계', icon: 'Chart' },
-];
+const APP_PAGES = window.APP_PAGES; // 페이지 단일 소스 — src/shared/app-nav.jsx (좌측 사이드바·모바일 탭과 공유)
 
 // AppMobileNav 는 src/shared/app-nav.jsx 로 이동 (canvas.html도 로드해야 하므로)
 
@@ -21,7 +15,7 @@ function readSettings() {
 }
 
 // ─────────────────────────────────────────────────────
-// 데스크탑 상단 네비
+// 데스크탑 상단 헤더 — 현재 페이지 제목 + 사용자 칩 + 설정 (페이지 탭은 좌측 사이드바로 이동)
 // ─────────────────────────────────────────────────────
 function TopNav({ page, onNavigate, theme, onOpenSettings }) {
   const { user } = useAuth();
@@ -33,45 +27,11 @@ function TopNav({ page, onNavigate, theme, onOpenSettings }) {
       background: theme.bgSoft,
       flexShrink: 0,
     }}>
-      {/* Logo */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 20 }}>
-        <JinaAvatar size={28} theme={theme} />
-        <span className="jina-serif" style={{ fontSize: 18, fontStyle: 'italic', color: theme.text, fontWeight: 500 }}>Jina</span>
+      {/* 현재 페이지 제목 — 페이지 이동은 좌측 AppDesktopSidebar 가 담당한다 (상단 탭과 중복 내비였던 것을 정리) */}
+      {/* 페이지 컴포넌트가 자체 h1 을 가지므로 여기선 heading 이 아닌 라벨로 둔다 (h1 중복 방지) */}
+      <div style={{ margin: 0, fontSize: 15, fontWeight: 600, color: theme.text, letterSpacing: '-0.01em' }}>
+        {(APP_PAGES.find((p) => p.id === page) || APP_PAGES[0]).label}
       </div>
-
-      {/* Nav tabs */}
-      {APP_PAGES.map(({ id, label, icon: iconName, badge }) => {
-        const Ico = Icons[iconName];
-        const active = page === id;
-        return (
-          <button key={id} onClick={() => onNavigate(id)} style={{
-            padding: '6px 14px', borderRadius: 8,
-            background: active ? (theme.isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)') : 'transparent',
-            color: active ? theme.text : theme.textMuted,
-            fontWeight: active ? 700 : 500,
-            fontSize: 13.5,
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            transition: 'all .15s',
-            position: 'relative',
-          }}>
-            {Ico && <Ico size={14} stroke={active ? 2.2 : 1.6} />}
-            {label}
-            {badge && (
-              <span style={{
-                fontSize: 9, padding: '1px 5px', borderRadius: 999,
-                background: theme.success, color: '#fff', fontWeight: 800,
-                letterSpacing: '0.04em',
-              }}>{badge}</span>
-            )}
-            {active && (
-              <span style={{
-                position: 'absolute', bottom: 0, left: 12, right: 12,
-                height: 2, borderRadius: 99, background: theme.accent,
-              }} />
-            )}
-          </button>
-        );
-      })}
 
       {/* Spacer */}
       <div style={{ flex: 1 }} />
@@ -381,6 +341,11 @@ function JinaApp() {
   const [aiHealth, setAiHealth] = React.useState({ checking: false, providers: {} });
   const [providerMeta, setProviderMeta] = React.useState([]);
   const [isMobile, setIsMobile] = React.useState(window.innerWidth < 768);
+  // 데스크탑 좌측 사이드바 — 1300px 미만에서는 아이콘 레일(72px)로 접어 본문 폭을 확보한다
+  const sidebarRail = useMediaQuery('(max-width: 1299px)');
+  const { user } = useAuth();
+  // 허용된 페이지 id 만 라우팅 — '준비 중' 항목·오타 id 는 무시 (알 수 없는 page 가 state 에 남는 일 방지)
+  const navigate = React.useCallback((id) => { if (APP_PAGE_IDS.has(id)) setPage(id); }, []);
 
   React.useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 768);
@@ -419,7 +384,7 @@ function JinaApp() {
   }, [checkHealth]);
 
   const theme = JINA_THEMES[themeName] || JINA_THEMES.aurora;
-  const commonProps = { theme, aiConfig, onNavigate: setPage };
+  const commonProps = { theme, aiConfig, onNavigate: navigate };
 
   const renderPage = () => {
     if (isMobile) {
@@ -455,18 +420,20 @@ function JinaApp() {
       {!isMobile && (
         <TopNav
           page={page}
-          onNavigate={setPage}
+          onNavigate={navigate}
           theme={theme}
           onOpenSettings={() => setShowSettings(true)}
         />
       )}
 
       {/* 페이지 콘텐츠 — VocabProvider가 데스크탑/모바일 단어장을 한 스토어로 묶는다 */}
-      <div style={{
-        flex: 1,
-        overflow: 'hidden',
-        position: 'relative',
-      }}>
+      <div style={{ flex: 1, overflow: 'hidden', position: 'relative', display: 'flex' }}>
+        {/* 데스크탑 좌측 사이드바 — 모든 페이지에서 같은 자리(1차 내비). 모바일은 하단 탭이 담당 */}
+        {!isMobile && (
+          <AppDesktopSidebar theme={theme} page={page} onNavigate={navigate} user={user}
+            collapsed={sidebarRail} onOpenSettings={() => setShowSettings(true)} />
+        )}
+        <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
         <VocabProvider>
           <ConversationProvider>
             <LessonProvider>
@@ -478,12 +445,13 @@ function JinaApp() {
             </LessonProvider>
           </ConversationProvider>
         </VocabProvider>
+        </div>
       </div>
 
       {/* 모바일 하단 탭 */}
       {isMobile && (
         <div style={{ flexShrink: 0, position: 'relative', background: theme.glassBg, borderTop: `1px solid ${theme.border}` }}>
-          <AppMobileNav theme={theme} active={page} onNavigate={setPage} />
+          <AppMobileNav theme={theme} active={page} onNavigate={navigate} />
         </div>
       )}
 

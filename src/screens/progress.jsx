@@ -60,7 +60,7 @@ function ProgressErrorBanner({ theme, error }) {
 // ─────────────────────────────────────────────────────
 // Desktop Progress
 // ─────────────────────────────────────────────────────
-function ProgressDesktop({ theme }) {
+function ProgressDesktop({ theme, onNavigate }) {
   const { data: d, error, reviewCorrection } = useProgress();
   const [reviewing, setReviewing] = React.useState(false);
 
@@ -80,17 +80,19 @@ function ProgressDesktop({ theme }) {
       display: 'flex',
     }}>
       {/* Sidebar */}
-      <aside style={{
+      <aside aria-label="통계 메뉴" style={{
         width: 240, padding: '24px 16px',
         borderRight: `1px solid ${theme.border}`,
         background: theme.bgSoft,
         display: 'flex', flexDirection: 'column', gap: 4,
         flexShrink: 0,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px 20px' }}>
+        {/* 로고 — 클릭하면 홈(대시보드). 공통 사이드바 로고와 같은 동작 */}
+        <button type="button" onClick={() => onNavigate && onNavigate('dashboard')} aria-label="홈(대시보드)으로" title="홈으로"
+          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px 20px', width: '100%', textAlign: 'left' }}>
           <JinaAvatar size={32} theme={theme} />
           <span className="jina-serif" style={{ fontSize: 20, fontStyle: 'italic', color: theme.text }}>Jina</span>
-        </div>
+        </button>
         {[
           { id: 'overview', label: '학습 개요', active: true },
           { id: 'sessions', label: '세션 기록' },

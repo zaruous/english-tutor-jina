@@ -4,7 +4,7 @@ import { chromium } from 'playwright';
 import { launchOptions, routeCdn } from './e2e-env.mjs';
 import { pool } from '../api/lib/pool.js';
 
-const BASE = 'http://localhost:3003';
+const BASE = process.env.E2E_BASE || 'http://localhost:3003';
 const results = [];
 const check = (name, ok, detail = '') => {
   results.push({ name, ok, detail });
@@ -45,7 +45,7 @@ await routeCdn(page);
 await page.goto(BASE);
 await page.waitForTimeout(9000); // in-browser Babel 컴파일
 check('데스크탑 렌더', (await page.locator('#root').innerHTML()).length > 1000);
-await page.locator('header button', { hasText: 'TOEIC 학습' }).click();
+await page.locator('aside[aria-label="주요 메뉴"] button', { hasText: 'TOEIC 학습' }).click();
 await page.waitForTimeout(2500);
 const lessonText = await page.locator('body').textContent();
 check('학습 탭 서버 콘텐츠 렌더 (Set 23 + 지문 본문)',
@@ -78,9 +78,9 @@ check('서버 채점 결과 2 / 3 정답', /2\s*\/\s*3 정답/.test(graded),
 check('2번 문항 서버 해설(move up) 렌더', graded.includes('move up'));
 
 // 5) 다른 탭 왕복(리마운트) 후에도 답/결과 유지 — 스토어 생존
-await page.locator('header button', { hasText: '단어장' }).click();
+await page.locator('aside[aria-label="주요 메뉴"] button', { hasText: '단어장' }).click();
 await page.waitForTimeout(1500);
-await page.locator('header button', { hasText: 'TOEIC 학습' }).click();
+await page.locator('aside[aria-label="주요 메뉴"] button', { hasText: 'TOEIC 학습' }).click();
 await page.waitForTimeout(1500);
 const afterRemount = await page.locator('body').innerText();
 check('탭 왕복 리마운트 후 답/결과 유지 (스토어 생존)',
@@ -113,7 +113,7 @@ check('Jina 패널 추천 질문 = 서버 lessons.faq (set24 전용 문구)',
 // 7) 새로고침 → 진도 2/2 (attempt 서버 저장 증명)
 await page.reload();
 await page.waitForTimeout(9000);
-await page.locator('header button', { hasText: 'TOEIC 학습' }).click();
+await page.locator('aside[aria-label="주요 메뉴"] button', { hasText: 'TOEIC 학습' }).click();
 await page.waitForTimeout(2500);
 const badge2 = await progressBadge(page);
 check('새로고침 후 진도 2/2 (서버 저장)', badge2 === '진도2/2', String(badge2));

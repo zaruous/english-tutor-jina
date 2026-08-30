@@ -4,8 +4,8 @@
 import { chromium } from 'playwright';
 import { launchOptions, routeCdn } from './e2e-env.mjs';
 
-const BASE = 'http://localhost:3003';
-const API = 'http://localhost:3004';
+const BASE = process.env.E2E_BASE || 'http://localhost:3003';
+const API = process.env.E2E_API || 'http://localhost:3004';
 
 const results = [];
 const check = (name, ok, detail = '') => {
@@ -50,6 +50,36 @@ if (dash.recent_correction) {
 // 데이터 없는 스킬은 "데이터 없음" 빈 상태로 (하드코딩 92/76/64/58 제거 확인)
 const emptySkill = dash.skills.find((s) => s.pct == null);
 if (emptySkill) check('스킬 빈 상태 처리', deskText.includes('데이터 없음'));
+// ── 좌측 사이드바(1차 내비) — 모든 데스크탑 페이지 공통. 클릭이 실제 이동인지, 현재 항목 표시, 준비 중 항목 비활성 ──
+const nav = desk.locator('aside[aria-label="주요 메뉴"]');
+check('사이드바 렌더 (주요 메뉴)', (await nav.count()) === 1);
+check('사이드바 현재 페이지 aria-current=page', ((await nav.locator('button[aria-current="page"]').textContent()) || '').includes('대시보드'));
+const soonBtn = nav.locator('button', { hasText: '스피킹 연습' });
+check('준비 중 메뉴는 비활성 + 배지', (await soonBtn.isDisabled()) && (await soonBtn.textContent()).includes('준비 중'));
+await nav.locator('button', { hasText: 'AI 회화' }).click();
+await desk.waitForTimeout(2500);
+check('사이드바 AI 회화 클릭 → 회화 화면', (await desk.locator('body').textContent()).includes('새 회화 시작'));
+check('이동 후 사이드바 유지 + 활성 항목 갱신', ((await nav.locator('button[aria-current="page"]').textContent()) || '').includes('AI 회화'));
+await nav.locator('button', { hasText: '대시보드' }).click();
+await desk.waitForTimeout(2500);
+check('사이드바 대시보드 클릭 → 복귀', (await desk.locator('body').textContent()).includes('오늘의 학습'));
+// 로고(Jina) 클릭 = 홈. 다른 페이지(단어장)로 간 뒤 로고를 눌러 대시보드로 돌아오는지
+await nav.locator('button', { hasText: '단어장' }).click();
+await desk.waitForTimeout(2500);
+check('사이드바 단어장 클릭 → 단어장 화면', (await desk.locator('body').textContent()).includes('전체 단어장'));
+await nav.locator('button[aria-label="홈(대시보드)으로"]').click();
+await desk.waitForTimeout(2500);
+check('로고(Jina) 클릭 → 홈(대시보드) 복귀', (await desk.locator('body').textContent()).includes('오늘의 학습')
+  && ((await nav.locator('button[aria-current="page"]').textContent()) || '').includes('대시보드'));
+// 대시보드 카드의 이동 버튼(onNavigate 전달 확인) — 첨삭 카드 '회화' 버튼이 있으면 눌러 본다
+const corrBtn = desk.locator('button', { hasText: '회화 탭' }).first();
+if (await corrBtn.count()) {
+  await corrBtn.click();
+  await desk.waitForTimeout(2000);
+  check('첨삭 카드 → 회화 이동', (await desk.locator('body').textContent()).includes('새 회화 시작'));
+  await nav.locator('button', { hasText: '대시보드' }).click();
+  await desk.waitForTimeout(2000);
+}
 check('데스크탑 콘솔 에러 0', deskErrors.length === 0, deskErrors.slice(0, 2).join(' | '));
 await desk.close();
 

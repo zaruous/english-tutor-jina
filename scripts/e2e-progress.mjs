@@ -6,8 +6,8 @@
 import { chromium } from 'playwright';
 import { launchOptions, routeCdn } from './e2e-env.mjs';
 
-const BASE = 'http://localhost:3003';
-const API = 'http://localhost:3004';
+const BASE = process.env.E2E_BASE || 'http://localhost:3003';
+const API = process.env.E2E_API || 'http://localhost:3004';
 
 const results = [];
 const check = (name, ok, detail = '') => {

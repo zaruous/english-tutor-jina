@@ -23,9 +23,9 @@ function Waveform({ theme, active = false, height = 28, bars = 14 }) {
 }
 
 // Mini conversation sidebar — 서버 SessionDto 목록을 소비
-function ConvoSidebar({ theme, sessions, activeId, onSessionChange, onNewSession, formatTime, sessionsLoading }) {
+function ConvoSidebar({ theme, sessions, activeId, onSessionChange, onNewSession, formatTime, sessionsLoading, onBack }) {
   return (
-    <aside style={{
+    <aside aria-label="회화 세션" style={{
       width: 280, padding: '20px 16px',
       borderRight: `1px solid ${theme.border}`,
       background: theme.bgSoft,
@@ -34,7 +34,7 @@ function ConvoSidebar({ theme, sessions, activeId, onSessionChange, onNewSession
       overflowY: 'auto',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 4px 8px' }}>
-        <button style={{
+        <button type="button" onClick={onBack} aria-label="대시보드로 돌아가기" title="대시보드" style={{
           width: 32, height: 32, borderRadius: 9,
           background: theme.chipBg, display: 'grid', placeItems: 'center', color: theme.textMuted,
         }}>
@@ -161,7 +161,7 @@ function FeedbackPane({ theme, lastScored }) {
   const dueCard = cards.find((c) => c.status === 'due');
   const corrections = lastScored?.corrections ?? [];
   return (
-    <aside style={{
+    <aside aria-label="실시간 피드백" style={{
       width: 340, padding: 24,
       borderLeft: `1px solid ${theme.border}`,
       background: theme.bgSoft,
@@ -176,7 +176,7 @@ function FeedbackPane({ theme, lastScored }) {
           ? `linear-gradient(135deg, ${theme.surface}, ${theme.surfaceElev})`
           : theme.surface,
         border: `1px solid ${theme.border}`,
-        position: 'relative', overflow: 'hidden',
+        position: 'relative', overflow: 'hidden', flexShrink: 0,
       }}>
         <div style={{ position: 'absolute', right: -30, top: -30, width: 100, height: 100, borderRadius: '50%', background: theme.accentGrad, filter: 'blur(40px)', opacity: theme.isDark ? 0.4 : 0.2 }} />
         <div style={{ position: 'relative' }}>
@@ -266,7 +266,7 @@ function FeedbackPane({ theme, lastScored }) {
   );
 }
 
-function ConversationDesktop({ theme, aiConfig }) {
+function ConversationDesktop({ theme, aiConfig, onNavigate }) {
   const {
     messages, loading, send,
     sessions, activeSessionId, sessionsLoading,
@@ -289,7 +289,7 @@ function ConversationDesktop({ theme, aiConfig }) {
       display: 'flex',
       overflow: 'hidden',
     }}>
-      <ConvoSidebar theme={theme} sessions={sessions} activeId={activeSessionId}
+      <ConvoSidebar theme={theme} sessions={sessions} activeId={activeSessionId} onBack={() => onNavigate && onNavigate('dashboard')}
         onSessionChange={selectSession} onNewSession={newSession}
         formatTime={formatSessionTime} sessionsLoading={sessionsLoading} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>

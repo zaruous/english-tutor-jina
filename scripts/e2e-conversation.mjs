@@ -3,8 +3,8 @@
 import { chromium } from 'playwright';
 import { launchOptions, routeCdn } from './e2e-env.mjs';
 
-const BASE = 'http://localhost:3003';
-const API = 'http://localhost:3004';
+const BASE = process.env.E2E_BASE || 'http://localhost:3003';
+const API = process.env.E2E_API || 'http://localhost:3004';
 const results = [];
 const check = (name, ok, detail = '') => {
   results.push({ name, ok, detail });
@@ -24,11 +24,11 @@ await routeCdn(page);
 await page.goto(BASE);
 await page.waitForTimeout(9000); // in-browser Babel 컴파일
 check('데스크탑 렌더', (await page.locator('#root').innerHTML()).length > 1000);
-await page.locator('header button', { hasText: 'AI 회화' }).click();
+await page.locator('aside[aria-label="주요 메뉴"] button', { hasText: 'AI 회화' }).click();
 await page.waitForTimeout(2500);
 
 // 2) 사이드바 시드 세션
-const sidebarText = await page.locator('aside').first().textContent();
+const sidebarText = await page.locator('aside[aria-label="회화 세션"]').textContent();
 check('사이드바 시드 세션 (비즈니스 미팅 + 카페에서 주문하기)',
   sidebarText.includes('비즈니스 미팅') && sidebarText.includes('카페에서 주문하기'));
 
@@ -72,13 +72,13 @@ const afterSend = await page.locator('body').textContent();
 check('새 회화 전송 → 첨삭 포함 응답', /첨삭 \([1-9]/.test(afterSend));
 
 // 6) 사이드바 자동 제목 세션
-const sidebar2 = await page.locator('aside').first().textContent();
+const sidebar2 = await page.locator('aside[aria-label="회화 세션"]').textContent();
 check('사이드바 자동 제목 세션 (I go to school…)', sidebar2.includes('I go to school'));
 
 // 7) 새로고침 → 세션/메시지 잔존 (서버 저장 증명)
 await page.reload();
 await page.waitForTimeout(9000);
-await page.locator('header button', { hasText: 'AI 회화' }).click();
+await page.locator('aside[aria-label="주요 메뉴"] button', { hasText: 'AI 회화' }).click();
 await page.waitForTimeout(2500);
 await page.locator('aside button', { hasText: 'I go to school' }).first().click();
 await page.waitForTimeout(2000);
