@@ -20,6 +20,8 @@ function AppMobileNav({ theme, active, onNavigate }) {
     }}>
       {items.map(({ id, label, icon: Ico }) => (
         <button key={id} onClick={() => onNavigate && onNavigate(id)} style={{
+          // .jina-root 리셋 밖(main.jsx 모바일 셸)에서도 UA 기본 버튼(회색 박스)이 비치지 않게 자립형으로 초기화
+          background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
           flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
           color: active === id ? theme.accent : theme.textDim,
           fontSize: 9.5, fontWeight: active === id ? 700 : 400,

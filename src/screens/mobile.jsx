@@ -360,8 +360,8 @@ function MobileConversation({ theme, aiConfig }) {
         )}
         {messages.map((m, i) => (
           m.role === 'user'
-            ? <LiveUserMessage key={m.id ?? i} theme={theme} msg={m} compact />
-            : <LiveJinaMessage key={m.id ?? i} theme={theme} msg={m} compact />
+            ? <LiveUserMessage key={m.id != null ? `srv-${m.id}` : `local-${i}`} theme={theme} msg={m} compact />
+            : <LiveJinaMessage key={m.id != null ? `srv-${m.id}` : `local-${i}`} theme={theme} msg={m} compact />
         ))}
 
         {loading && (

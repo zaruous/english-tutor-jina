@@ -323,8 +323,8 @@ function ConversationDesktop({ theme, aiConfig }) {
           ) : (
             messages.map((m, i) => (
               m.role === 'user'
-                ? <LiveUserMessage key={m.id ?? i} theme={theme} msg={m} />
-                : <LiveJinaMessage key={m.id ?? i} theme={theme} msg={m} />
+                ? <LiveUserMessage key={m.id != null ? `srv-${m.id}` : `local-${i}`} theme={theme} msg={m} />
+                : <LiveJinaMessage key={m.id != null ? `srv-${m.id}` : `local-${i}`} theme={theme} msg={m} />
             ))
           )}
 

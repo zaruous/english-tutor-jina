@@ -607,7 +607,7 @@ function RecommendCard({ theme, onNavigate }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                 <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: it.accent + '20', color: it.accent, fontWeight: 600, letterSpacing: '0.04em' }}>{it.tag}</span>
-                <span style={{ fontSize: 10, color: theme.textDim }}>· 매칭 {it.match}%</span>
+                {it.match != null && <span style={{ fontSize: 10, color: theme.textDim }}>· 매칭 {it.match}%</span>}
               </div>
               <div style={{ fontSize: 14, color: theme.text, fontWeight: 600, lineHeight: 1.3 }}>{it.title}</div>
               <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>{it.sub}</div>
@@ -622,22 +622,23 @@ function RecommendCard({ theme, onNavigate }) {
 
 // Weekly chart
 function WeeklyChart({ theme }) {
-  const days = [
-    { d: '월', mins: 28, label: '월' },
-    { d: '화', mins: 45, label: '화' },
-    { d: '수', mins: 18, label: '수' },
-    { d: '목', mins: 52, label: '목' },
-    { d: '금', mins: 38, label: '금' },
-    { d: '토', mins: 64, label: '토' },
-    { d: '일', mins: 0, label: '오늘', current: true },
-  ];
-  const max = 70;
+  const { dash } = useDashboard();
+  if (!dash) return <DashSkel theme={theme} h={196} />;
+  // 서버 weekly.days(월~일 7칸) → 막대. today 칸은 '오늘' 라벨 + 강조
+  const days = dash.weekly.days.map((d) => ({ d: d.dow, mins: d.minutes, label: d.today ? '오늘' : d.dow, current: d.today }));
+  const max = Math.max(70, ...days.map((d) => d.mins)); // 70분 기준 스케일, 초과분이 있으면 최대값 기준
+  const changePct = dash.stats.week_change_pct; // null = 비교할 지난주 기록 없음 → 문구 생략
   return (
     <Card theme={theme} pad={22}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
         <div>
           <h3 style={{ fontSize: 16, color: theme.text, margin: 0, fontWeight: 600 }}>이번 주 학습량</h3>
-          <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>총 4시간 12분 · 평균보다 <b style={{ color: theme.success }}>32% 많음</b></div>
+          <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>
+            {DASH_FMT.duration(dash.weekly.total_minutes)}
+            {changePct != null && (
+              <> · 평균보다 <b style={{ color: changePct >= 0 ? theme.success : theme.error }}>{Math.abs(changePct)}% {changePct >= 0 ? '많음' : '적음'}</b></>
+            )}
+          </div>
         </div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8, alignItems: 'end', height: 100 }}>
@@ -661,6 +662,7 @@ function WeeklyChart({ theme }) {
 }
 
 function TopBar({ theme }) {
+  const { dash } = useDashboard(); // 스트릭 배지 — 서버 stats.streak_days (로딩 중 '—')
   return (
     <header style={{
       display: 'flex', alignItems: 'center', gap: 16,
@@ -689,7 +691,7 @@ function TopBar({ theme }) {
         color: theme.text, fontSize: 12.5, fontWeight: 500,
       }}>
         <Icons.Flame size={14} style={{ color: theme.accent2 }} />
-        <b className="jina-serif" style={{ fontSize: 15, fontWeight: 500 }}>24</b>일 연속
+        <b className="jina-serif" style={{ fontSize: 15, fontWeight: 500 }}>{dash?.stats?.streak_days ?? '—'}</b>일 연속
       </button>
       <button style={{
         width: 36, height: 36, borderRadius: 10,
