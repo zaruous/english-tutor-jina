@@ -5,8 +5,12 @@ function useJinaChat(initialMessages = []) {
   const [messages, setMessages] = React.useState(initialMessages);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState(null);
+  // 서버가 돌려준 CLI 세션 핸들(conversationId). 다음 턴에 되돌려주면 서버가 히스토리 없이 세션을 이어간다.
+  // provider 를 바꾸면 핸들이 안 맞아 서버가 히스토리(아래 hist)로 폴백하므로 hist 는 계속 보낸다.
+  const convRef = React.useRef(null);
 
   const reset = React.useCallback((msgs = []) => {
+    convRef.current = null;
     setMessages(msgs);
     setLoading(false);
     setError(null);
@@ -22,7 +26,7 @@ function useJinaChat(initialMessages = []) {
     const hist = [...messages, userMsg]
       .filter((m) => m.role === 'user' || m.role === 'assistant')
       .map((m) => ({ role: m.role, content: m.contentForModel || m.content }));
-    const res = await window.JINA_AI.askJina({ history: hist.slice(0, -1), userMessage: text.trim() });
+    const res = await window.JINA_AI.askJina({ history: hist.slice(0, -1), userMessage: text.trim(), conversationId: convRef.current });
     setLoading(false);
     if (!res.ok) {
       setError(res.error || '응답 실패');
@@ -32,6 +36,7 @@ function useJinaChat(initialMessages = []) {
       }]);
       return;
     }
+    if (res.conversationId) convRef.current = res.conversationId;
     const d = res.data || {};
     setMessages((m) => [...m, {
       role: 'assistant', kind: 'jina-ai',

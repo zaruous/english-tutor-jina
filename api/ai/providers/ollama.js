@@ -5,6 +5,7 @@ import { HttpError } from '../../lib/errors.js';
 
 export const ollama = {
   id: 'ollama',
+  supportsResume: false, // stateless HTTP — 매 턴 히스토리를 보낸다
   label: 'Ollama',
   kind: 'http',
   supportsJsonSchema: true,

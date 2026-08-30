@@ -9,6 +9,7 @@ import { runCli } from '../../lib/cli/run-cli.js';
 
 export const claude = {
   id: 'claude',
+  supportsResume: true,  // --resume <session_id>: 서버가 히스토리를 생략해도 CLI 세션이 맥락을 쥔다
   label: 'Claude',
   kind: 'cli',
   supportsJsonSchema: false, // 프롬프트 계약 + extractJson

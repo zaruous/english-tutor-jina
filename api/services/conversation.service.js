@@ -182,7 +182,7 @@ export async function findReplay(user, sessionId, clientRequestId, client = pool
 // 세션 로드 + 소유권/상태 검사 (전송 전).
 export async function loadSessionForSend(user, sessionId) {
   const { rows: [session] } = await pool.query(
-    `SELECT id, title, status FROM public.conversation_sessions
+    `SELECT id, title, status, provider_ref, provider_ref_provider FROM public.conversation_sessions
       WHERE id = $1 AND user_id = $2`,
     [sessionId, user.id],
   );
@@ -195,7 +195,7 @@ export async function loadSessionForSend(user, sessionId) {
 }
 
 // 히스토리는 DB가 단일 소스 — 클라이언트 history는 받지 않는다.
-// askAI가 LIMITS(8턴/6000자)로 다시 절단하므로 넉넉히 16개.
+// 첫 턴과 resume 폴백에서만 프롬프트에 들어간다(CLI 세션 resume 시엔 생략). askAI가 LIMITS(8턴/6000자)로 다시 절단하므로 넉넉히 16개.
 export async function loadHistory(sessionId) {
   const { rows } = await pool.query(
     `SELECT role, content FROM public.conversation_messages
@@ -263,9 +263,11 @@ export async function saveExchange(user, sessionId, { text, clientRequestId, ai 
       await client.query(
         `UPDATE public.conversation_sessions
             SET last_message_at = now(), updated_at = now(),
-                title = CASE WHEN title = '새 회화' THEN left($3, 40) ELSE title END
+                title = CASE WHEN title = '새 회화' THEN left($3, 40) ELSE title END,
+                -- CLI resume 핸들: 다음 턴이 같은 provider 면 히스토리 없이 이어간다. stateless provider(ollama) 는 NULL 로 비운다
+                provider_ref = $4, provider_ref_provider = $5
           WHERE id = $1 AND user_id = $2`,
-        [sessionId, user.id, text],
+        [sessionId, user.id, text, ai.sessionRef ?? null, ai.sessionRef ? (ai.provider ?? null) : null],
       );
 
       return {

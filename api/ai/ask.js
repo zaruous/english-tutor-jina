@@ -5,6 +5,8 @@
 //  2. 파싱/검증 실패 시에만 같은 provider, "새 세션"에 repair 프롬프트 1회
 //     (잘못된 턴을 컨텍스트에 남기지 않기 위해 새 세션)
 //  3. 3차 없음. task별 강등: tutor → degraded 원문 / vocab_entry → SCHEMA_VIOLATION(저장 금지)
+//  0. sessionRef + provider.supportsResume 이면 히스토리 없이 CLI 세션 resume. 실패 시 히스토리 새 세션 1회 폴백
+//     (전송 오류·TIMEOUT 은 폴백 없음). 결과 meta.resumed / meta.resume_fallback.
 //  4. 전송 오류(CLI_NOT_FOUND/NOT_LOGGED_IN)는 내용 재시도 안 함.
 //     TIMEOUT만 예산 40% 이상 남았을 때 1회, 백오프 400ms → 1200ms(±25% 지터)
 import { config } from '../config.js';
@@ -18,6 +20,7 @@ import { getProvider } from './registry.js';
 
 const HTTP_BUDGET_MS = 150_000;  // 브라우저 abort 180s > HTTP 150s > 프로세스 90~120s
 const PROCESS_TIMEOUT_MS = 120_000;
+const QUIZ_PROCESS_TIMEOUT_MS = 140_000; // 오늘의 단어 퀴즈 생성 전용 (브라우저 abort 180s > HTTP 150s > 140s)
 
 const globalSemaphore = new Semaphore(4, { queueMax: config.ai.queueMax });
 const providerSemaphores = new Map();
@@ -53,20 +56,46 @@ export async function askAI({
     const queuedMs = globalSlot.queuedMs + providerSlot.queuedMs;
 
     const includeSchemaContract = !provider.supportsJsonSchema;
-    const runInput = {
-      prompt: renderCliPrompt({ task, history, userMessage, includeSchemaContract }),
-      messages: renderChatMessages({ task, history, userMessage }),
+    const buildInput = ({ withHistory, ref }) => ({
+      prompt: renderCliPrompt({ task, history: withHistory ? history : [], userMessage, includeSchemaContract }),
+      messages: renderChatMessages({ task, history: withHistory ? history : [], userMessage }),
       jsonSchema: provider.supportsJsonSchema ? schema : null,
-      model, sessionRef, signal, baseUrl: ollamaUrl,
-      timeoutMs: Math.min(PROCESS_TIMEOUT_MS, provider.timeoutMs),
-    };
+      model, sessionRef: ref, signal, baseUrl: ollamaUrl,
+      // vocab_quiz 는 출력 JSON 이 커서(10단어×예문·번역·오답 3) 단독 40~50초, 경합 시 60초+ — HTTP 예산(150s) 안에서 더 준다
+      timeoutMs: task === 'vocab_quiz' ? QUIZ_PROCESS_TIMEOUT_MS : Math.min(PROCESS_TIMEOUT_MS, provider.timeoutMs),
+    });
+
+    // ── 세션 resume (하이브리드) ──
+    // sessionRef 가 있고 provider 가 CLI 세션을 이어갈 수 있으면 히스토리를 생략하고 시스템 지시 + 새 메시지만
+    // 보낸다 — 맥락은 CLI 세션이 쥔다(8턴 창이 아닌 전체 대화). resume 이 실패하면(세션 파일 없음·다른 머신·
+    // 만료 등) 예전처럼 히스토리를 통째로 넣은 새 세션으로 1회 폴백한다. DB 히스토리는 여전히 단일 소스.
+    const canResume = Boolean(sessionRef) && provider.supportsResume === true;
+    let runInput = canResume
+      ? buildInput({ withHistory: false, ref: sessionRef })
+      : buildInput({ withHistory: true, ref: null });
+    let resumed = canResume;
+    let resumeFallback = false;
 
     // ── 1차 호출 (TIMEOUT 1회 재시도 포함) ──
     let result;
     try {
       result = await runWithTimeoutRetry(provider, runInput, deadline);
     } catch (err) {
-      throw decorate(err, provider.id);
+      // 전송 계층 오류는 폴백해도 같은 이유로 실패한다 — 내용(세션) 문제일 때만 히스토리로 재시도
+      const transport = ['TIMEOUT', 'NOT_LOGGED_IN', 'CLI_NOT_FOUND', 'QUEUE_FULL'].includes(err.code);
+      if (canResume && !transport && !signal?.aborted && Date.now() < deadline - 20_000) {
+        console.warn(`[ai] ${provider.id} resume 실패 (${err.code || err.message}) → 히스토리 재전송으로 폴백`);
+        runInput = buildInput({ withHistory: true, ref: null });
+        resumed = false;
+        resumeFallback = true;
+        try {
+          result = await runWithTimeoutRetry(provider, runInput, deadline);
+        } catch (err2) {
+          throw decorate(err2, provider.id);
+        }
+      } else {
+        throw decorate(err, provider.id);
+      }
     }
 
     // ── 파싱 + 검증 ──
@@ -102,7 +131,7 @@ export async function askAI({
             reply_en: String(result.text || '').slice(0, 500),
             reply_ko: null, corrections: [], scores: null, suggestion: null,
           },
-          meta: { queuedMs, durationMs: result.meta?.durationMs, violations },
+          meta: { queuedMs, durationMs: result.meta?.durationMs, violations, resumed, resume_fallback: resumeFallback },
         };
       }
       // vocab_entry: 쓰레기 카드를 영구 저장하는 것보다 실패가 낫다
@@ -115,7 +144,7 @@ export async function askAI({
       ok: true, provider: provider.id,
       sessionRef: result.sessionRef,
       data: NORMALIZERS[task](parsed),
-      meta: { queuedMs, durationMs: result.meta?.durationMs, model: result.model },
+      meta: { queuedMs, durationMs: result.meta?.durationMs, model: result.model, resumed, resume_fallback: resumeFallback },
     };
   } finally {
     providerSlot?.release();

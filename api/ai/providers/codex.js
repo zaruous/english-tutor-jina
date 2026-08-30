@@ -9,6 +9,7 @@ import { runCli } from '../../lib/cli/run-cli.js';
 
 export const codex = {
   id: 'codex',
+  supportsResume: true,  // exec resume <thread_id>
   label: 'Codex',
   kind: 'cli',
   supportsJsonSchema: false,

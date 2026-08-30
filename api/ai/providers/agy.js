@@ -12,6 +12,7 @@ const PROMPT_MAX = 24_000; // Windows 명령줄 32767자 상한 대비 여유
 
 export const agy = {
   id: 'agy',
+  supportsResume: true,  // --conversation <conversation_id>
   label: 'Antigravity',
   kind: 'cli',
   supportsJsonSchema: true,

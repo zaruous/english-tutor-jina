@@ -10,6 +10,7 @@ import { runCli } from '../../lib/cli/run-cli.js';
 
 export const cursor = {
   id: 'cursor',
+  supportsResume: true,  // --resume <chat id>
   label: 'Cursor',
   kind: 'cli',
   supportsJsonSchema: false,

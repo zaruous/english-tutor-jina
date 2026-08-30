@@ -1,5 +1,6 @@
 // 프롬프트 렌더링 — ai-provider.jsx JINA_SYSTEM_PROMPT 이관.
-// v1은 stateless: 매 요청 시스템 프롬프트 + 최근 8턴을 렌더해 보낸다.
+// 하이브리드: 첫 턴·폴백은 시스템 프롬프트 + 최근 8턴을 렌더해 보내고, CLI 세션 resume 턴은
+// 히스토리를 생략(history=[])해 시스템 프롬프트 + 새 메시지만 보낸다(맥락은 CLI 세션이 쥔다). ask.js 참조.
 // 학습자 입력은 구분자로 감싸 프롬프트 인젝션을 차단한다.
 import { TASK_SCHEMAS } from './schemas.js';
 

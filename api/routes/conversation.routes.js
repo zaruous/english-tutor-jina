@@ -52,17 +52,22 @@ export function registerConversationRoutes(router) {
       return;
     }
 
-    await convo.loadSessionForSend(user, sessionId); // 404 / 409 SESSION_ENDED
-    const history = await convo.loadHistory(sessionId); // DB가 단일 소스
+    const session = await convo.loadSessionForSend(user, sessionId); // 404 / 409 SESSION_ENDED
+    const history = await convo.loadHistory(sessionId); // DB가 단일 소스 — 첫 턴·resume 폴백용
+    const providerId = body.provider || defaultProviderId();
+    // 같은 provider 의 CLI 세션 핸들이 있으면 resume(askAI 가 히스토리를 생략). provider 가 바뀌면 히스토리로 새 세션.
+    const sessionRef = session.provider_ref && session.provider_ref_provider === providerId
+      ? session.provider_ref : null;
 
     // AI 호출 — ★트랜잭션 밖★. 요청이 끊기면 CLI 프로세스까지 죽인다 (ai.routes.js와 동일).
     const abort = new AbortController();
     res.on('close', () => { if (!res.writableEnded) abort.abort(); });
     const ai = await askAI({
       task: 'tutor',
-      providerId: body.provider || defaultProviderId(),
+      providerId,
       model: str(body.model, 'model', { max: 100, optional: true }) ?? null,
       history,
+      sessionRef,
       userMessage: text,
       ollamaUrl: body.provider === 'ollama'
         ? str(body.ollamaUrl, 'ollamaUrl', { max: 200, optional: true })
@@ -76,7 +81,11 @@ export function registerConversationRoutes(router) {
       provider: ai.provider,
       ...(ai.degraded ? { degraded: true } : {}),
       ...saved,
-      meta: { queuedMs: ai.meta?.queuedMs, durationMs: ai.meta?.durationMs },
+      meta: {
+        queuedMs: ai.meta?.queuedMs, durationMs: ai.meta?.durationMs,
+        resumed: ai.meta?.resumed ?? false,               // CLI 세션 이어붙임(히스토리 생략)
+        resume_fallback: ai.meta?.resume_fallback ?? false, // resume 실패 → 히스토리 재전송으로 처리됨
+      },
     });
   });
 
