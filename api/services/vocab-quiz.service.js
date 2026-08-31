@@ -41,7 +41,9 @@ export function quizDto(row) {
 }
 
 // 사용자가 이미 가진 단어 — 프롬프트의 제외 목록 (최근 추가순 60개)
-export async function existingWords(user, limit = 60) {
+// 최근순 — renderQuizRequest 가 문자 예산(≈1200자)까지만 프롬프트에 싣는다.
+// 60개였을 때 단어장이 커지면 옛 단어가 제외 목록 밖으로 밀려 중복 출제됐다.
+export async function existingWords(user, limit = 300) {
   const { rows } = await pool.query(
     `SELECT w.word
        FROM public.user_vocab_cards c

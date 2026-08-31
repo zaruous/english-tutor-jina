@@ -8,6 +8,7 @@
 const APP_PAGES = [
   { id: 'dashboard',    label: '대시보드',   short: '홈',      icon: 'Home',       group: '학습' },
   { id: 'conversation', label: 'AI 회화',    short: 'AI 회화', icon: 'Chat',       group: '학습', badge: 'LIVE' },
+  { id: 'topics',       label: '주제별 학습', short: '주제',    icon: 'Layers',     group: '학습', requiresTopics: true },
   { id: 'speaking',     label: '스피킹 연습',                  icon: 'Mic',        group: '학습', soon: true, mobile: false },
   { id: 'listening',    label: '리스닝',                      icon: 'Headphones', group: '학습', soon: true, mobile: false },
   { id: 'lesson',       label: 'TOEIC 학습', short: '학습',    icon: 'Book',       group: '시험' },
@@ -17,6 +18,20 @@ const APP_PAGES = [
 ];
 // 라우팅이 받아주는 id — 준비 중 항목은 제외 (main.jsx navigate()가 이 집합으로 필터한다)
 const APP_PAGE_IDS = new Set(APP_PAGES.filter((p) => !p.soon).map((p) => p.id));
+
+// 토픽 진입점은 서버가 임계치 충족 토픽만 반환할 때에만 노출한다.
+function useHasEligibleTopics() {
+  const [has, setHas] = React.useState(false);
+  React.useEffect(() => {
+    if (window.JINA_READONLY || !window.JINA_API) return undefined;
+    let cancelled = false;
+    window.JINA_API.get('/api/topics').then((res) => {
+      if (!cancelled) setHas(Boolean(res.ok && res.topics?.length));
+    });
+    return () => { cancelled = true; };
+  }, []);
+  return has;
+}
 
 // matchMedia 훅 — 인라인 스타일만 쓰는 이 코드베이스에서 미디어쿼리를 대신한다.
 function useMediaQuery(query) {
@@ -39,8 +54,9 @@ function useMediaQuery(query) {
 function AppDesktopSidebar({ theme, page, onNavigate, onOpenSettings, user, collapsed }) {
   const narrow = useMediaQuery('(max-width: 1299px)');
   const rail = collapsed != null ? collapsed : narrow;
+  const hasTopics = useHasEligibleTopics();
   const groups = [];
-  for (const p of APP_PAGES) {
+  for (const p of APP_PAGES.filter((item) => !item.requiresTopics || hasTopics)) {
     let g = groups.find((x) => x.name === p.group);
     if (!g) { g = { name: p.group, items: [] }; groups.push(g); }
     g.items.push(p);
@@ -145,7 +161,8 @@ function AppDesktopSidebar({ theme, page, onNavigate, onOpenSettings, user, coll
 
 // 모바일 하단 탭 — APP_PAGES 중 mobile !== false 이고 soon 이 아닌 항목만
 function AppMobileNav({ theme, active, onNavigate }) {
-  const items = APP_PAGES.filter((p) => !p.soon && p.mobile !== false);
+  const hasTopics = useHasEligibleTopics();
+  const items = APP_PAGES.filter((p) => !p.soon && p.mobile !== false && (!p.requiresTopics || hasTopics));
   return (
     <div style={{
       position: 'absolute', bottom: 0, left: 0, right: 0,

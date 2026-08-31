@@ -596,11 +596,11 @@ function RecommendCard({ theme, onNavigate }) {
     <Card theme={theme} pad={22}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
         <h3 style={{ fontSize: 16, color: theme.text, margin: 0, fontWeight: 600 }}>Jina의 추천</h3>
-        <button style={{ fontSize: 12, color: theme.textMuted }}>전체 보기</button>
+        <button type="button" onClick={() => onNavigate && onNavigate('lesson')} style={{ fontSize: 12, color: theme.textMuted }}>전체 보기</button>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {items.map((it, i) => (
-          <button key={i} style={{
+          <button key={i} type="button" onClick={() => onNavigate && onNavigate('lesson')} style={{
             display: 'flex', alignItems: 'center', gap: 14, padding: 12, borderRadius: 12,
             background: theme.chipBg, border: `1px solid ${theme.border}`,
             textAlign: 'left', width: '100%',
@@ -627,6 +627,36 @@ function RecommendCard({ theme, onNavigate }) {
         ))}
       </div>
     </Card>
+  );
+}
+
+function TopicJourneyCard({ theme, onNavigate }) {
+  const [topic, setTopic] = React.useState(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    window.JINA_API.get('/api/topics').then((res) => {
+      if (!cancelled && res.ok) setTopic(res.topics?.[0] || null);
+    });
+    return () => { cancelled = true; };
+  }, []);
+  if (!topic) return null; // 임계치 미만 토픽은 API에서 오지 않으므로 빈 선반을 만들지 않는다.
+  return (
+    <button type="button" data-testid="dashboard-topic-entry" onClick={() => onNavigate && onNavigate('topics')} style={{
+      width: '100%', padding: '17px 20px', borderRadius: 15, textAlign: 'left',
+      border: `1px solid ${theme.accent}44`, background: `linear-gradient(110deg, ${theme.accent}12, ${theme.card})`,
+      display: 'flex', alignItems: 'center', gap: 14,
+    }}>
+      <div style={{ width: 42, height: 42, borderRadius: 12, background: theme.accent + '1d', color: theme.accent, display: 'grid', placeItems: 'center' }}>
+        <Icons.Layers size={19} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 10.5, color: theme.accent, fontWeight: 800, letterSpacing: '.07em' }}>주제별 학습</div>
+        <div style={{ fontSize: 14.5, color: theme.text, fontWeight: 700, marginTop: 3 }}>{topic.label_ko}</div>
+        <div style={{ fontSize: 11.5, color: theme.textMuted, marginTop: 2 }}>{topic.lesson_count}개 레슨 · {topic.scenario_count}개 회화 · {topic.vocab_count}개 단어</div>
+      </div>
+      <span style={{ color: theme.textMuted, fontSize: 11.5 }}>학습 경로 열기</span>
+      <Icons.ChevronRight size={16} style={{ color: theme.accent }} />
+    </button>
   );
 }
 
@@ -737,6 +767,7 @@ function DashboardDesktop({ theme, onNavigate, withSidebar = false }) {
         }}>
           <HeroCard theme={theme} onNavigate={onNavigate} />
           <StatStrip theme={theme} />
+          <TopicJourneyCard theme={theme} onNavigate={onNavigate} />
           <div style={{ display: 'grid', gridTemplateColumns: stack ? 'minmax(0, 1fr)' : 'minmax(0, 1.4fr) minmax(0, 1fr)', gap: 18 }}>
             <TodayPlan theme={theme} onNavigate={onNavigate} />
             <GoalRing theme={theme} />

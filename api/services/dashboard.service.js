@@ -137,15 +137,17 @@ async function fetchLessonAccuracy(t, params) {
   }
   const { rows: [r] } = await pool.query(
     `SELECT
-       COALESCE(sum(correct_count) FILTER (WHERE created_at > now() - interval '30 days'), 0)::int AS pass_30,
-       COALESCE(sum(total_count)   FILTER (WHERE created_at > now() - interval '30 days'), 0)::int AS total_30,
-       COALESCE(sum(correct_count) FILTER (WHERE created_at BETWEEN now() - interval '60 days'
+       COALESCE(sum(correct_count) FILTER (WHERE ua.created_at > now() - interval '30 days'), 0)::int AS pass_30,
+       COALESCE(sum(total_count)   FILTER (WHERE ua.created_at > now() - interval '30 days'), 0)::int AS total_30,
+       COALESCE(sum(correct_count) FILTER (WHERE ua.created_at BETWEEN now() - interval '60 days'
                                                               AND now() - interval '30 days'), 0)::int AS pass_prev,
-       COALESCE(sum(total_count)   FILTER (WHERE created_at BETWEEN now() - interval '60 days'
+       COALESCE(sum(total_count)   FILTER (WHERE ua.created_at BETWEEN now() - interval '60 days'
                                                               AND now() - interval '30 days'), 0)::int AS total_prev,
        COALESCE(sum(correct_count), 0)::int AS pass_all,
        COALESCE(sum(total_count), 0)::int   AS total_all
-       FROM public.user_lesson_attempts WHERE user_id = $1`,
+       FROM public.user_lesson_attempts ua
+       JOIN public.lessons l ON l.id = ua.lesson_id AND l.source = 'seed'
+      WHERE ua.user_id = $1`,
     [params[0]],
   );
   return r;

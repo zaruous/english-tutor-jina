@@ -10,6 +10,7 @@ import { withTx } from '../lib/tx.js';
 // LessonSummary 컬럼 — GET /api/lessons 행과 GET /api/lessons/recommended 행이 같은 모양이 되도록 한 곳에서 정의.
 const SUMMARY_COLS = `
          l.id, l.slug, l.kind, l.title, l.subtitle, l.difficulty, l.est_minutes, l.position,
+         l.source, l.visibility,
          (SELECT count(*)::int FROM public.lesson_items i WHERE i.lesson_id = l.id) AS question_count,
          COALESCE(a.attempt_count, 0) AS attempt_count, a.best_correct, a.last_attempted_at`;
 // last_correct/last_total = 가장 최근 시도의 채점 결과 (추천 reason 'retry_low_score' 판정용)
@@ -25,7 +26,7 @@ const ATTEMPT_AGG = `
 const LIST_BODY = `
   SELECT ${SUMMARY_COLS}
     FROM public.lessons l ${ATTEMPT_AGG}
-   WHERE l.published`;
+   WHERE l.published AND (l.visibility = 'public' OR l.created_by = $1)`;
 const LIST_SELECT = `${LIST_BODY}
    ORDER BY l.position, l.id`;
 
@@ -34,10 +35,12 @@ export const LESSON_STATUS_FILTERS = ['new', 'attempted']; // status 필터 허�
 // progress.done/total — 항상 이 쿼리로 집계 (저장 금지)
 async function fetchProgress(userId, client = pool) {
   const { rows: [p] } = await client.query(
-    `SELECT (SELECT count(*)::int FROM public.lessons WHERE published) AS total,
+    `SELECT (SELECT count(*)::int FROM public.lessons
+              WHERE published AND (visibility = 'public' OR created_by = $1)) AS total,
             (SELECT count(DISTINCT ua.lesson_id)::int
                FROM public.user_lesson_attempts ua
                JOIN public.lessons l2 ON l2.id = ua.lesson_id AND l2.published
+                AND (l2.visibility = 'public' OR l2.created_by = $1)
               WHERE ua.user_id = $1) AS done`,
     [userId],
   );
@@ -87,6 +90,7 @@ export async function recommendLessons(user, { limit = 3 } = {}) {
     pool.query(
       `SELECT ua.lesson_id FROM public.user_lesson_attempts ua
          JOIN public.lessons l ON l.id = ua.lesson_id AND l.published
+          AND (l.visibility = 'public' OR l.created_by = $1)
         WHERE ua.user_id = $1 ORDER BY ua.created_at DESC, ua.id DESC LIMIT 1`,
       [user.id],
     ),
@@ -116,9 +120,10 @@ export async function getLesson(user, lessonId) {
   // ★ answer/explanation은 컬럼 나열에 존재하지 않는다 — DTO 유출 불가
   const { rows: [l] } = await pool.query(
     `SELECT id, slug, kind, title, subtitle, difficulty, est_minutes, position,
-            passage, vocab, faq
-       FROM public.lessons WHERE id = $1 AND published`,
-    [lessonId],
+            passage, vocab, faq, source, visibility
+       FROM public.lessons
+      WHERE id = $2 AND published AND (visibility = 'public' OR created_by = $1)`,
+    [user.id, lessonId],
   );
   if (!l) throw new HttpError(404, 'NOT_FOUND', '레슨을 찾을 수 없습니다.');
 
@@ -131,20 +136,25 @@ export async function getLesson(user, lessonId) {
   // '다음 지문': position, id 순서상 다음 published 레슨, 마지막이면 첫 레슨(순환)
   const { rows: [next] } = await pool.query(
     `SELECT id FROM public.lessons
-      WHERE published AND (position, id) > ($2::int, $1::bigint)
+      WHERE published AND (visibility = 'public' OR created_by = $1)
+        AND (position, id) > ($3::int, $2::bigint)
       ORDER BY position, id LIMIT 1`,
-    [lessonId, l.position],
+    [user.id, lessonId, l.position],
   );
   let nextLessonId = next?.id ?? null;
   if (nextLessonId === null) {
     const { rows: [first] } = await pool.query(
-      `SELECT id FROM public.lessons WHERE published ORDER BY position, id LIMIT 1`,
+      `SELECT id FROM public.lessons
+        WHERE published AND (visibility = 'public' OR created_by = $1)
+        ORDER BY position, id LIMIT 1`,
+      [user.id],
     );
     nextLessonId = first?.id ?? null;
   }
 
   const { rows: [agg] } = await pool.query(
-    `SELECT count(*)::int AS attempt_count, max(correct_count)::int AS best_correct
+    `SELECT count(*)::int AS attempt_count, max(correct_count)::int AS best_correct,
+            (array_agg(id ORDER BY created_at DESC, id DESC))[1]::bigint AS last_attempt_id
        FROM public.user_lesson_attempts WHERE user_id = $1 AND lesson_id = $2`,
     [user.id, lessonId],
   );
@@ -153,6 +163,7 @@ export async function getLesson(user, lessonId) {
     lesson: {
       id: l.id, slug: l.slug, kind: l.kind, title: l.title, subtitle: l.subtitle,
       difficulty: l.difficulty, est_minutes: l.est_minutes,
+      source: l.source, visibility: l.visibility,
       passage: l.passage,
       questions: items.map((i) => ({ n: i.position, stem: i.stem, options: i.options })),
       // 같은 문항을 lesson_items 컬럼명(position)으로도 — Q&A item_id(=position) 매핑·scripts/verify-lesson-qa.mjs 용. 정답 없음.
@@ -160,6 +171,7 @@ export async function getLesson(user, lessonId) {
       vocabulary: l.vocab, // mock 계약 유지 — PassageColumn/QuestionsColumn이 lesson.vocabulary를 읽는다
       faq: l.faq,
       attempt_count: agg.attempt_count, best_correct: agg.best_correct,
+      last_attempt_id: agg.last_attempt_id,
       question_count: items.length,
       next_lesson_id: nextLessonId,
     },
@@ -187,26 +199,28 @@ export async function submitAttempt(user, lessonId, { answers, clientRequestId, 
   return withTx(async (client) => {
     // 문항 로드 (published 레슨만) — 채점 재료. 트랜잭션 안은 SELECT/INSERT만.
     const { rows: items } = await client.query(
-      `SELECT i.position, i.options, i.answer, i.explanation
+      `SELECT i.position, i.options, i.answer, i.explanation, i.skill_code
          FROM public.lesson_items i
          JOIN public.lessons l ON l.id = i.lesson_id AND l.published
-        WHERE i.lesson_id = $1 ORDER BY i.position`,
-      [lessonId],
+          AND (l.visibility = 'public' OR l.created_by = $1)
+        WHERE i.lesson_id = $2 ORDER BY i.position`,
+      [user.id, lessonId],
     );
     if (items.length === 0) throw new HttpError(404, 'NOT_FOUND', '레슨을 찾을 수 없습니다.');
 
     // 멱등: 같은 client_request_id면 저장된 answers로 results 재구성 → replay
     if (clientRequestId) {
       const { rows: [existing] } = await client.query(
-        `SELECT id, lesson_id, answers, correct_count, total_count, created_at
-           FROM public.user_lesson_attempts WHERE client_request_id = $1`,
-        [clientRequestId],
+        `SELECT id, lesson_id, answers, correct_count, total_count, skill_code, created_at
+           FROM public.user_lesson_attempts WHERE client_request_id = $1 AND user_id = $2`,
+        [clientRequestId, user.id],
       );
       if (existing) {
         return {
           attempt: {
             id: existing.id, lesson_id: existing.lesson_id,
             correct_count: existing.correct_count, total_count: existing.total_count,
+            skill_code: existing.skill_code,
             score: score(existing.correct_count, existing.total_count),
             created_at: existing.created_at,
           },
@@ -234,19 +248,28 @@ export async function submitAttempt(user, lessonId, { answers, clientRequestId, 
     }
 
     const correctCount = items.filter((i) => answers[String(i.position)] === i.answer).length;
+    const wrongSkills = items
+      .filter((i) => answers[String(i.position)] !== i.answer)
+      .map((i) => i.skill_code)
+      .filter(Boolean);
+    const skillCode = wrongSkills.length
+      ? [...new Set(wrongSkills)].sort((a, b) =>
+        wrongSkills.filter((x) => x === b).length - wrongSkills.filter((x) => x === a).length)[0]
+      : null;
     const { rows: [attempt] } = await client.query(
       `INSERT INTO public.user_lesson_attempts
-         (user_id, lesson_id, answers, correct_count, total_count, elapsed_ms, client_request_id)
-       VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7)
-       RETURNING id, lesson_id, correct_count, total_count, created_at`,
+         (user_id, lesson_id, answers, correct_count, total_count, elapsed_ms, client_request_id, skill_code)
+       VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8)
+       RETURNING id, lesson_id, correct_count, total_count, skill_code, created_at`,
       [user.id, lessonId, JSON.stringify(answers), correctCount, items.length,
-       elapsedMs ?? null, clientRequestId ?? null],
+       elapsedMs ?? null, clientRequestId ?? null, skillCode],
     );
 
     return {
       attempt: {
         id: attempt.id, lesson_id: attempt.lesson_id,
         correct_count: attempt.correct_count, total_count: attempt.total_count,
+        skill_code: attempt.skill_code,
         score: score(attempt.correct_count, attempt.total_count),
         created_at: attempt.created_at,
       },
@@ -303,8 +326,9 @@ function renderItems(items, answers) {
 //  - attemptId 있음 → 소유권(user)·레슨 일치 검증 후 'post_submit': 지문 + 문항(itemId 면 그 문항만) + 학습자의 답.
 export async function prepareQa(user, lessonId, { attemptId, itemId } = {}) {
   const { rows: [lesson] } = await pool.query(
-    `SELECT id, passage FROM public.lessons WHERE id = $1 AND published`,
-    [lessonId],
+    `SELECT id, passage FROM public.lessons
+      WHERE id = $2 AND published AND (visibility = 'public' OR created_by = $1)`,
+    [user.id, lessonId],
   );
   if (!lesson) throw new HttpError(404, 'NOT_FOUND', '레슨을 찾을 수 없습니다.');
 
@@ -375,4 +399,22 @@ export async function saveQaSessionRef(user, lessonId, attemptId, provider, prov
      DO UPDATE SET provider_ref = EXCLUDED.provider_ref, updated_at = now()`,
     [user.id, lessonId, attemptId, provider, providerRef],
   );
+}
+
+export async function reportLesson(user, lessonId, { reason, details }) {
+  const { rowCount } = await pool.query(
+    `SELECT 1 FROM public.lessons
+      WHERE id = $2 AND published AND (visibility = 'public' OR created_by = $1)`,
+    [user.id, lessonId],
+  );
+  if (rowCount === 0) throw new HttpError(404, 'NOT_FOUND', '레슨을 찾을 수 없습니다.');
+  const { rows: [row] } = await pool.query(
+    `INSERT INTO public.lesson_reports (user_id, lesson_id, reason, details)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (user_id, lesson_id) DO UPDATE
+       SET reason = EXCLUDED.reason, details = EXCLUDED.details, created_at = now()
+     RETURNING id, lesson_id, reason, details, created_at`,
+    [user.id, lessonId, reason, details ?? null],
+  );
+  return row;
 }

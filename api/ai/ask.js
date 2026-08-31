@@ -21,6 +21,7 @@ import { getProvider } from './registry.js';
 const HTTP_BUDGET_MS = 150_000;  // 브라우저 abort 180s > HTTP 150s > 프로세스 90~120s
 const PROCESS_TIMEOUT_MS = 120_000;
 const QUIZ_PROCESS_TIMEOUT_MS = 140_000; // 오늘의 단어 퀴즈 생성 전용 (브라우저 abort 180s > HTTP 150s > 140s)
+const GENERATION_PROCESS_TIMEOUT_MS = 140_000;
 
 const globalSemaphore = new Semaphore(4, { queueMax: config.ai.queueMax });
 const providerSemaphores = new Map();
@@ -68,7 +69,9 @@ export async function askAI({
       jsonSchema: provider.supportsJsonSchema ? schema : null,
       model, sessionRef: ref, signal, baseUrl: ollamaUrl,
       // vocab_quiz 는 출력 JSON 이 커서(10단어×예문·번역·오답 3) 단독 40~50초, 경합 시 60초+ — HTTP 예산(150s) 안에서 더 준다
-      timeoutMs: task === 'vocab_quiz' ? QUIZ_PROCESS_TIMEOUT_MS : Math.min(PROCESS_TIMEOUT_MS, provider.timeoutMs),
+      timeoutMs: task === 'vocab_quiz' ? QUIZ_PROCESS_TIMEOUT_MS
+        : ['lesson_gen', 'scenario_gen', 'vocab_set'].includes(task) ? GENERATION_PROCESS_TIMEOUT_MS
+          : Math.min(PROCESS_TIMEOUT_MS, provider.timeoutMs),
     });
 
     // ── 세션 resume (하이브리드) ──
@@ -140,7 +143,7 @@ export async function askAI({
           meta: { queuedMs, durationMs: result.meta?.durationMs, violations, resumed, resume_fallback: resumeFallback },
         };
       }
-      // vocab_entry/vocab_quiz/lesson_qa: 쓰레기 카드를 영구 저장하거나 근거 없는 설명을 내보내는 것보다 실패가 낫다
+      // 영속 콘텐츠/근거 응답 task는 형식 위반 출력을 저장하거나 내보내지 않는다.
       throw new HttpError(502, 'SCHEMA_VIOLATION',
         `모델 응답이 스키마를 위반했습니다: ${violations.slice(0, 3).join('; ')}`,
         { provider: provider.id });

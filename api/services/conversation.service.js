@@ -7,9 +7,10 @@ import { HttpError } from '../lib/errors.js';
 import { pool } from '../lib/pool.js';
 import { withTx } from '../lib/tx.js';
 import { predict } from './srs.js';
+import { getScenarioForSession } from './topic.service.js';
 
 const SESSION_SELECT = `
-  SELECT s.id, s.title, s.scenario, s.status, s.started_at, s.ended_at, s.last_message_at,
+  SELECT s.id, s.title, s.scenario_id, s.scenario, s.status, s.started_at, s.ended_at, s.last_message_at,
          (SELECT count(*)::int FROM public.conversation_messages m
            WHERE m.session_id = s.id)                                          AS message_count,
          (SELECT round(avg(v.value::numeric))::int
@@ -42,6 +43,7 @@ export const CORRECTION_SELECT = `
 function sessionDto(row) {
   return {
     id: row.id,
+    scenario_id: row.scenario_id,
     title: row.title,
     status: row.status,
     scenario: row.scenario,
@@ -111,14 +113,39 @@ export async function getSessionDto(user, sessionId, client = pool) {
   return sessionDto(row);
 }
 
-export async function createSession(user, { title, scenario } = {}) {
-  const { rows: [row] } = await pool.query(
-    `INSERT INTO public.conversation_sessions (user_id, title, scenario)
-     VALUES ($1, COALESCE($2, '새 회화'), $3::jsonb)
-     RETURNING id`,
-    [user.id, title ?? null, scenario ? JSON.stringify(scenario) : null],
-  );
-  return { session: await getSessionDto(user, row.id) };
+export async function createSession(user, { title, scenario, scenarioId } = {}) {
+  let snapshot = scenario ?? null;
+  let resolvedTitle = title ?? null;
+  let openingMessage = null;
+  if (scenarioId) {
+    const selected = await getScenarioForSession(user, scenarioId);
+    resolvedTitle ||= selected.title;
+    snapshot = {
+      tag: selected.tag,
+      level: '★'.repeat(selected.level) + '☆'.repeat(5 - selected.level),
+      title: selected.title,
+      description: selected.description,
+      opening_message: selected.opening_message,
+      objectives: selected.objectives,
+    };
+    openingMessage = selected.opening_message || null;
+  }
+  return withTx(async (client) => {
+    const { rows: [row] } = await client.query(
+      `INSERT INTO public.conversation_sessions (user_id, title, scenario, scenario_id, last_message_at)
+       VALUES ($1, COALESCE($2, '새 회화'), $3::jsonb, $4, CASE WHEN $5::text IS NULL THEN NULL ELSE now() END)
+       RETURNING id`,
+      [user.id, resolvedTitle, snapshot ? JSON.stringify(snapshot) : null, scenarioId ?? null, openingMessage],
+    );
+    if (openingMessage) {
+      await client.query(
+        `INSERT INTO public.conversation_messages (session_id, user_id, role, content)
+         VALUES ($1, $2, 'assistant', $3)`,
+        [row.id, user.id, openingMessage],
+      );
+    }
+    return { session: await getSessionDto(user, row.id, client) };
+  });
 }
 
 export async function getSessionWithMessages(user, sessionId) {
@@ -182,8 +209,12 @@ export async function findReplay(user, sessionId, clientRequestId, client = pool
 // 세션 로드 + 소유권/상태 검사 (전송 전).
 export async function loadSessionForSend(user, sessionId) {
   const { rows: [session] } = await pool.query(
-    `SELECT id, title, status, provider_ref, provider_ref_provider FROM public.conversation_sessions
-      WHERE id = $1 AND user_id = $2`,
+    `SELECT s.id, s.title, s.status, s.provider_ref, s.provider_ref_provider,
+            s.scenario_id, cs.system_prompt AS scenario_system_prompt,
+            cs.opening_message AS scenario_opening_message
+       FROM public.conversation_sessions s
+       LEFT JOIN public.conversation_scenarios cs ON cs.id = s.scenario_id
+      WHERE s.id = $1 AND s.user_id = $2`,
     [sessionId, user.id],
   );
   if (!session) throw new HttpError(404, 'NOT_FOUND', '세션을 찾을 수 없습니다.');

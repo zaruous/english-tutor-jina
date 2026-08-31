@@ -116,9 +116,13 @@ check('정답 10개 클릭 → 즉시 피드백 10회', answeredOk === 10, `${an
 check('서버 채점 결과 10 / 10', /10\s*\/\s*10/.test((await page.locator('[data-testid="quiz-score"]').textContent().catch(() => '')).replace(/\s+/g, ' ')));
 if (quizShown) await page.locator('[data-testid="quiz-add-all"]').click(); // 퀴즈가 안 떴으면 후속 클릭 생략(예외로 스위트가 중단되지 않게)
 await page.waitForSelector('[data-testid="quiz-add-result"]', { timeout: 15000 }).catch(() => {});
-check('10개 모두 단어장에 추가 메시지', /단어장에 10개 추가/.test(await page.locator('[data-testid="quiz-add-result"]').textContent().catch(() => '')));
+// 생성 시 기존 단어 제외는 프롬프트 지시라 단어장이 커지면 중복이 샐 수 있다 — added+duplicates=10 으로 단정
+const addMsg = await page.locator('[data-testid="quiz-add-result"]').textContent().catch(() => '');
+const addedN = Number(addMsg.match(/단어장에 (\d+)개 추가/)?.[1] ?? -1);
+const dupN = Number(addMsg.match(/이미 있던 단어 (\d+)개/)?.[1] ?? 0);
+check('퀴즈 10단어 전부 추가 처리 (added+duplicates=10)', addedN >= 0 && addedN + dupN === 10, addMsg.trim().slice(0, 60));
 const vocabAfter = ((await (await fetch(`${API}/api/vocab`, { headers: { Origin: BASE } })).json()).cards || []).length;
-check('서버 단어장 +10', vocabAfter === vocabBefore + 10, `${vocabBefore} → ${vocabAfter}`);
+check('서버 단어장 +added', vocabAfter === vocabBefore + addedN, `${vocabBefore} → ${vocabAfter} (added ${addedN})`);
 const todayDone = (await (await fetch(`${API}/api/vocab/quiz/today`, { headers: { Origin: BASE } })).json()).quiz;
 check('today 퀴즈 completed · score 10', Boolean(todayDone?.completed_at) && todayDone.score === 10);
 // 8) 모바일 뷰포트 — 같은 목록 (Context 승격 증명)

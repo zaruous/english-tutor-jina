@@ -15,7 +15,10 @@ import { registerConversationRoutes } from './routes/conversation.routes.js';
 import { registerLessonRoutes } from './routes/lesson.routes.js';
 import { registerDashboardRoutes } from './routes/dashboard.routes.js';
 import { registerProgressRoutes } from './routes/progress.routes.js';
+import { registerAiJobRoutes } from './routes/ai-job.routes.js';
+import { registerTopicRoutes } from './routes/topic.routes.js';
 import { warmProviderHealth } from './ai/registry.js';
+import { startAiJobWorker } from './services/ai-job-worker.js';
 
 const router = new Router();
 registerHealthRoutes(router);
@@ -26,6 +29,8 @@ registerConversationRoutes(router);
 registerLessonRoutes(router);
 registerDashboardRoutes(router);
 registerProgressRoutes(router);
+registerAiJobRoutes(router);
+registerTopicRoutes(router);
 
 const server = http.createServer(async (req, res) => {
   requestLogger(req, res);
@@ -57,4 +62,5 @@ server.listen(config.apiPort, () => {
   logBootConfig();
   console.log(`[api] listening on http://localhost:${config.apiPort}`);
   warmProviderHealth(); // 부팅 시 헬스 캐시 1회 워밍 (비동기, 실패 무해)
+  startAiJobWorker().catch((err) => console.error('[ai-job] 워커 시작 실패:', err.message));
 });

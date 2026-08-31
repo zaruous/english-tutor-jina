@@ -20,8 +20,21 @@ const wiped = await pool.query(
   `DELETE FROM public.user_lesson_attempts WHERE client_request_id IS DISTINCT FROM $1::uuid`,
   [SEED_REQ_ID],
 );
+// 진도 분모는 시드에 따라 변한다(0014 가 공개 레슨 3개 추가, AI 생성 개인 레슨 가변) — 고정값 대신 DB 로 계산.
+const { rows: [devU] } = await pool.query(
+  `SELECT id FROM public.users WHERE email = $1`, [process.env.DEV_USER_EMAIL || 'jina@dev.local']);
+const { rows: [prog0] } = await pool.query(
+  `SELECT (SELECT count(*)::int FROM public.lessons
+            WHERE published AND (visibility = 'public' OR created_by = $1)) AS total,
+          (SELECT count(DISTINCT ua.lesson_id)::int
+             FROM public.user_lesson_attempts ua
+             JOIN public.lessons l2 ON l2.id = ua.lesson_id AND l2.published
+              AND (l2.visibility = 'public' OR l2.created_by = $1)
+            WHERE ua.user_id = $1) AS done`,
+  [devU.id],
+);
 await pool.end();
-console.log(`· 진도 초기화: 시드 외 attempt ${wiped.rowCount}건 삭제 (기대 진도 1/2)`);
+console.log(`· 진도 초기화: 시드 외 attempt ${wiped.rowCount}건 삭제 (기대 진도 ${prog0.done}/${prog0.total})`);
 
 // 진도 배지 텍스트 ("진도" 라벨의 부모 텍스트 = "진도1/2")
 const progressBadge = (p) => p.evaluate(() => {
@@ -59,13 +72,15 @@ const detailRaw = await page.evaluate(() => fetch(window.JINA_API.base + '/api/l
 const leaks = ['"answer"', '"correct"', '"explanation"'].filter((k) => detailRaw.includes(k));
 check('GET /api/lessons/1 에 정답·해설 비노출', leaks.length === 0, leaks.join(',') || '누출 0');
 
-// 3) 진도 배지 = attempts 집계 파생값 (dev 시드 1건 → 1/2)
+// 3) 진도 배지 = attempts 집계 파생값 (dev 시드 attempt → done/total 은 시작 시 DB 계산값)
 const badge1 = await progressBadge(page);
-check('진도 배지 1/2 (dev 시드 attempt 집계)', badge1 === '진도1/2', String(badge1));
+check(`진도 배지 ${prog0.done}/${prog0.total} (dev 시드 attempt 집계)`,
+  badge1 === `진도${prog0.done}/${prog0.total}`, String(badge1));
 
-// 3b) Phase 1 — 제출 전 Jina 패널은 지문 질문만: 안내 문구 렌더, 문항 칩 없음
-check('Jina 패널 제출 전 안내(qa-notice) 렌더', (await page.locator('[data-testid="qa-notice"]').count()) === 1);
-check('제출 전 문항 칩 없음', (await page.locator('[data-testid="qa-item-chip"]').count()) === 0);
+// 3b) Phase 1 후속 — 시드 attempt 가 있는 레슨은 상세 DTO last_attempt_id 로 제출 후 Q&A 상태를 복원한다
+//     (제출 전 안내·칩 없음 검증은 attempt 가 없는 Set 24 에서 — 아래 6 직후)
+check('시드 attempt 레슨 — last_attempt_id 복원: 문항 칩 3', (await page.locator('[data-testid="qa-item-chip"]').count()) === 3);
+check('시드 attempt 레슨 — 제출 전 안내(qa-notice) 없음', (await page.locator('[data-testid="qa-notice"]').count()) === 0);
 
 // 4) 3문항 답변(오답 1개 섞기: 1→B, 2→A, 3→B) → 채점하기 → 서버 채점 결과
 for (const t of ['To outline next steps for an upcoming campaign',
@@ -97,6 +112,10 @@ await page.waitForTimeout(2500);
 const set24 = await page.locator('body').innerText();
 check('다음 지문 → Set 24 렌더 (subtitle/지문 교체)',
   set24.includes('Set 24') && set24.includes('Elevator B'));
+
+// 6a) Phase 1 — attempt 없는 레슨의 제출 전 Jina 패널: 안내 문구 렌더, 문항 칩 없음
+check('Set 24 제출 전 안내(qa-notice) 렌더', (await page.locator('[data-testid="qa-notice"]').count()) === 1);
+check('Set 24 제출 전 문항 칩 없음', (await page.locator('[data-testid="qa-item-chip"]').count()) === 0);
 for (const t of ['To inform staff about temporary elevator unavailability',
                  'Call extension 4400 by Wednesday afternoon',
                  'By Friday at noon']) {
@@ -152,17 +171,32 @@ await page.locator('[data-testid="lesson-list-open"]').click();
 await page.waitForTimeout(800);
 check('레슨 목록 뷰 — 행 수 = 서버 목록', (await page.locator('[data-testid="lesson-list-row"]').count()) === listApi.lessons.length, `${listApi.lessons.length}개`);
 check('레슨 목록 — kind 필터 칩', (await page.locator('[data-testid="lesson-kind-filter"]').count()) >= 2);
+
+// 6f) Phase 2 — 'AI로 Part 5 만들기' 패널 (UI 만 — 실제 생성·큐 규칙은 scripts/verify-lesson-gen.mjs 가 검증)
+check('AI 생성 토글 버튼 렌더', (await page.locator('[data-testid="lesson-generator-toggle"]').count()) === 1);
+await page.locator('[data-testid="lesson-generator-toggle"]').click();
+await page.waitForTimeout(400);
+check('생성 패널 — 주제·난도·문항 수·만들기', (await page.locator('[data-testid="lesson-generator"]').count()) === 1
+  && (await page.locator('[data-testid="lesson-gen-topic"]').count()) === 1
+  && (await page.locator('[data-testid="lesson-gen-difficulty"]').count()) === 1
+  && (await page.locator('[data-testid="lesson-gen-count"]').count()) === 1
+  && (await page.locator('[data-testid="lesson-gen-submit"]').count()) === 1);
+await page.locator('[data-testid="lesson-gen-topic"]').fill('');
+check('주제 비우면 만들기 비활성', await page.locator('[data-testid="lesson-gen-submit"]').isDisabled());
+await page.locator('[data-testid="lesson-generator-toggle"]').click(); // 패널 닫기
+await page.waitForTimeout(300);
+
 await page.locator('[data-testid="lesson-list-row"]').first().click();
 await page.waitForTimeout(1500);
 check('목록에서 첫 레슨 선택 → Set 23 학습 뷰 복귀', (await page.locator('body').innerText()).includes('Set 23'));
 
-// 7) 새로고침 → 진도 2/2 (attempt 서버 저장 증명)
+// 7) 새로고침 → 진도 2/total (attempt 서버 저장 증명 — 이 스크립트가 Set 23·24 두 레슨에 시도를 남겼다)
 await page.reload();
 await page.waitForTimeout(9000);
 await page.locator('aside[aria-label="주요 메뉴"] button', { hasText: 'TOEIC 학습' }).click();
 await page.waitForTimeout(2500);
 const badge2 = await progressBadge(page);
-check('새로고침 후 진도 2/2 (서버 저장)', badge2 === '진도2/2', String(badge2));
+check(`새로고침 후 진도 2/${prog0.total} (서버 저장)`, badge2 === `진도2/${prog0.total}`, String(badge2));
 
 // 8) 모바일 뷰포트 — 헤더 진도가 데스크탑과 동일 (파생값 서버 단일 소스)
 const mobile = await browser.newPage({ viewport: { width: 390, height: 844 } });
@@ -173,7 +207,7 @@ await mobile.locator('button', { hasText: '학습' }).last().click();
 await mobile.waitForTimeout(2500);
 const mobileText = await mobile.locator('body').innerText();
 const mobileBadge = await mobileProgress(mobile);
-check('모바일 진도 = 데스크탑과 동일 값', mobileBadge === '2/2', String(mobileBadge));
+check('모바일 진도 = 데스크탑과 동일 값', mobileBadge === `2/${prog0.total}`, String(mobileBadge));
 check('모바일 헤더 subtitle = 서버 DTO', mobileText.includes('Set 23 · 비즈니스 이메일'));
 await mobile.close();
 

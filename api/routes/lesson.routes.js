@@ -45,6 +45,15 @@ export function registerLessonRoutes(router) {
     sendJson(res, 200, { ok: true, ...result });
   });
 
+  router.post('/api/lessons/:id/reports', async (req, res, { params }) => {
+    const { user } = await requireUser(req, res);
+    const lessonId = posInt(params.id, 'id');
+    const body = await readJson(req);
+    const reason = oneOf(body.reason, 'reason', ['incorrect_answer', 'ambiguous', 'language', 'other']);
+    const details = str(body.details, 'details', { max: 1000, optional: true }) ?? null;
+    sendJson(res, 201, { ok: true, report: await lessons.reportLesson(user, lessonId, { reason, details }) });
+  });
+
   // Jina Q&A — 클라이언트는 question(+attempt_id/item_id)만 보내고 학습 자료는 서버가 조립한다.
   // 정답·해설은 어떤 경로로도 프롬프트·응답에 실리지 않는다(lesson.service.prepareQa 가 SELECT 컬럼을 제한).
   //  - attempt_id 없음 → 'pre_submit': 지문만, stateless(sessionRef 없음, history []).

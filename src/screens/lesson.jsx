@@ -376,11 +376,13 @@ function QuestionsColumn({ theme, onNext }) {
 // 대화 상태는 컴포넌트 로컬 — 호출측이 key={lesson.id} 로 지문마다 새 대화를 만든다.
 // active: display:none 으로 숨겨진 탭(모바일)이 다시 보일 때 스크롤을 맞추기 위한 힌트.
 function LessonQaChat({ theme, aiConfig, compact = false, active = true }) {
-  const { faq, questions } = React.useContext(LessonCtx);   // 추천 질문도 서버 콘텐츠(lessons.faq)
+  const lesson = React.useContext(LessonCtx);
+  const { faq, questions } = lesson;   // 추천 질문도 서버 콘텐츠(lessons.faq)
   const suggestions = faq?.length ? faq : DEFAULT_FAQ;
   const shown = compact ? suggestions.slice(0, 3) : suggestions;
-  const { result, askLesson } = useLesson();
-  const attemptId = result?.attempt?.id || null;             // 제출 전 null → 지문 질문(stateless)
+  const { result, retaking, askLesson } = useLesson();
+  // 새로고침 뒤에도 상세 DTO의 last_attempt_id로 제출 후 Q&A 문맥을 복원한다.
+  const attemptId = result?.attempt?.id || (!retaking ? lesson.last_attempt_id : null) || null;
   const [messages, setMessages] = React.useState([]);
   const [loading, setLoading] = React.useState(false);
   const [itemId, setItemId] = React.useState(null);          // 선택 문항(position). null = 문항 전체

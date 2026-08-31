@@ -107,8 +107,91 @@ export const LESSON_QA_SCHEMA = {
   required: ['answer', 'citations'],
 };
 
+// TOEIC Part 5 생성 — count의 정확한 일치는 작업 저장 직전 서비스 검증에서 확인한다.
+// JSON Schema는 provider 네이티브 제약으로 구조와 상한을 먼저 보장한다.
+export const LESSON_GEN_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    title: { type: 'string' },
+    subtitle: { type: 'string' },
+    items: {
+      type: 'array', minItems: 3, maxItems: 10,
+      items: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          stem: { type: 'string' },
+          options: {
+            type: 'array', minItems: 4, maxItems: 4,
+            items: {
+              type: 'object', additionalProperties: false,
+              properties: {
+                id: { type: 'string', enum: ['A', 'B', 'C', 'D'] },
+                text: { type: 'string' },
+              },
+              required: ['id', 'text'],
+            },
+          },
+          answer: { type: 'string', enum: ['A', 'B', 'C', 'D'] },
+          explanation: { type: 'string' },
+          skill_code: { type: 'string', enum: ['grammar', 'vocab', 'detail', 'inference', 'main_idea'] },
+        },
+        required: ['stem', 'options', 'answer', 'explanation', 'skill_code'],
+      },
+    },
+  },
+  required: ['title', 'subtitle', 'items'],
+};
+
+export const SCENARIO_GEN_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    title: { type: 'string' },
+    tag: { type: 'string' },
+    description: { type: 'string' },
+    system_prompt: { type: 'string' },
+    opening_message: { type: 'string' },
+    objectives: { type: 'array', minItems: 2, maxItems: 5, items: { type: 'string' } },
+  },
+  required: ['title', 'tag', 'description', 'system_prompt', 'opening_message', 'objectives'],
+};
+
+// Phase 3 토픽 임계치가 단어 20개이므로 생성 세트도 정확히 20개를 계약한다.
+export const VOCAB_SET_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    title: { type: 'string' },
+    description: { type: 'string' },
+    words: {
+      type: 'array', minItems: 20, maxItems: 20,
+      items: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          word: { type: 'string' },
+          pos: { type: 'string' },
+          ipa: { type: 'string' },
+          meaning_ko: { type: 'string' },
+          example_en: { type: 'string' },
+          example_ko: { type: 'string' },
+          difficulty: { type: 'integer', minimum: 1, maximum: 5 },
+        },
+        required: ['word', 'pos', 'ipa', 'meaning_ko', 'example_en', 'example_ko', 'difficulty'],
+      },
+    },
+  },
+  required: ['title', 'description', 'words'],
+};
+
 export const TASK_SCHEMAS = {
-  tutor: TUTOR_SCHEMA, vocab_entry: VOCAB_SCHEMA, vocab_quiz: VOCAB_QUIZ_SCHEMA, lesson_qa: LESSON_QA_SCHEMA,
+  tutor: TUTOR_SCHEMA,
+  vocab_entry: VOCAB_SCHEMA,
+  vocab_quiz: VOCAB_QUIZ_SCHEMA,
+  lesson_qa: LESSON_QA_SCHEMA,
+  lesson_gen: LESSON_GEN_SCHEMA,
+  scenario_gen: SCENARIO_GEN_SCHEMA,
+  vocab_set: VOCAB_SET_SCHEMA,
 };
 
 // 스키마 검증 (외부 의존성 없이 필요한 만큼만)

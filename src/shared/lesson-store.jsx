@@ -28,7 +28,9 @@ function LessonProvider({ children }) {
   const [currentLoading, setCurrentLoading] = React.useState(false);
   const [answersByLesson, setAnswersByLesson] = React.useState({}); // { [lessonId]: { [n]: optionId } }
   const [resultByLesson, setResultByLesson] = React.useState({});   // { [lessonId]: { attempt, results } }
+  const [retakingByLesson, setRetakingByLesson] = React.useState({});
   const [grading, setGrading] = React.useState(false);
+  const [generation, setGeneration] = React.useState({ status: 'idle', job: null, error: null, result: null });
 
   const refresh = React.useCallback(async () => {
     const res = await window.JINA_API.get('/api/lessons');
@@ -91,6 +93,7 @@ function LessonProvider({ children }) {
     if (res.ok) {
       setError(null);
       setResultByLesson((prev) => ({ ...prev, [currentId]: { attempt: res.attempt, results: res.results } }));
+      setRetakingByLesson((prev) => ({ ...prev, [currentId]: false }));
       if (res.progress) setProgress(res.progress);
       refresh(); // lessons 목록(attempt_count/best_correct) 동기화
     } else {
@@ -104,6 +107,7 @@ function LessonProvider({ children }) {
     if (!currentId) return;
     setAnswersByLesson((prev) => { const n = { ...prev }; delete n[currentId]; return n; });
     setResultByLesson((prev) => { const n = { ...prev }; delete n[currentId]; return n; });
+    setRetakingByLesson((prev) => ({ ...prev, [currentId]: true }));
   }, [currentId]);
 
   const current = currentId ? details[currentId] || null : null;
@@ -127,15 +131,65 @@ function LessonProvider({ children }) {
     return window.JINA_API.post(`/api/lessons/${currentId}/qa`, body, { signal });
   }, [currentId]);
 
+  // Part 5 비동기 생성 — POST는 즉시 202, 실제 CLI 실행은 서버 워커가 처리한다.
+  // 완료될 때까지 GET을 폴링하고 성공하면 목록을 새로 읽은 뒤 새 레슨을 선택한다.
+  const generateLesson = React.useCallback(async ({ topic, difficulty = 3, count = 5 } = {}) => {
+    if (generation.status === 'queued' || generation.status === 'running') return null;
+    const ai = window.__JINA_AI_CONFIG || {};
+    const provider = ai.provider || window.JINA_CONFIG?.provider || 'claude';
+    const model = ai.model?.[provider] || undefined;
+    setGeneration({ status: 'queued', job: null, error: null, result: null });
+    const created = await window.JINA_API.post('/api/ai-jobs', {
+      task: 'lesson_gen',
+      input: { part: 5, topic, difficulty: Number(difficulty), count: Number(count) },
+      client_request_id: crypto.randomUUID(),
+      provider,
+      ...(model ? { model } : {}),
+    });
+    if (!created.ok) {
+      const message = created.hint ? `${created.error} — ${created.hint}` : created.error;
+      setGeneration({ status: 'failed', job: null, error: message, result: null });
+      return created;
+    }
+    let job = created.job;
+    setGeneration({ status: job.status, job, error: null, result: job.result || null });
+    const deadline = Date.now() + 5 * 60_000;
+    while (Date.now() < deadline && ['queued', 'running'].includes(job.status)) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const polled = await window.JINA_API.get(`/api/ai-jobs/${job.id}`);
+      if (!polled.ok) {
+        const message = polled.hint ? `${polled.error} — ${polled.hint}` : polled.error;
+        setGeneration({ status: 'failed', job, error: message, result: null });
+        return polled;
+      }
+      job = polled.job;
+      setGeneration({
+        status: job.status, job,
+        error: job.error?.message || null,
+        result: job.result || null,
+      });
+    }
+    if (job.status === 'succeeded' && job.result?.lesson_id) {
+      await refresh();
+      await select(job.result.lesson_id);
+    } else if (['queued', 'running'].includes(job.status)) {
+      setGeneration({ status: 'failed', job, error: '생성 상태 확인 시간이 초과되었습니다. 작업은 서버에서 계속 진행됩니다.', result: null });
+    }
+    return { ok: job.status === 'succeeded', job };
+  }, [generation.status, refresh, select]);
+
   const value = React.useMemo(() => ({
     lessons, progress, listLoading, error,
     currentId, current, currentLoading,
     answers: (currentId && answersByLesson[currentId]) || {},
     result: (currentId && resultByLesson[currentId]) || null,
+    retaking: Boolean(currentId && retakingByLesson[currentId]),
     grading,
+    generation, generateLesson,
     refresh, select, setAnswer, submit, retake, next, askLesson,
   }), [lessons, progress, listLoading, error, currentId, current, currentLoading,
-       answersByLesson, resultByLesson, grading, refresh, select, setAnswer, submit, retake, next, askLesson]);
+       answersByLesson, resultByLesson, retakingByLesson, grading, generation, generateLesson,
+       refresh, select, setAnswer, submit, retake, next, askLesson]);
 
   return <LessonContext.Provider value={value}>{children}</LessonContext.Provider>;
 }
@@ -353,7 +407,9 @@ function useLessonFallback() {
     listLoading: false, error: null,
     currentId, current, currentLoading: false,
     answers: fallbackState.answersByLesson[currentId] || {},
-    result, grading: false,
+    result, grading: false, retaking: false,
+    generation: { status: 'idle', job: null, error: null, result: null },
+    generateLesson: () => Promise.resolve({ ok: false, code: 'READONLY', error: '캔버스에서는 생성이 비활성화되어 있습니다.' }),
     refresh: () => Promise.resolve({ ok: true }),
     select, setAnswer, submit, retake, next,
     // 캔버스에서는 AI 호출(non-GET)이 막혀 있다 — 패널이 이 봉투를 오류 말풍선으로 보여준다

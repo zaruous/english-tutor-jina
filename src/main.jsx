@@ -392,6 +392,7 @@ function JinaApp() {
       switch (page) {
         case 'dashboard':    return <MobileDashboard    {...mobileProps} />;
         case 'conversation': return <MobileConversation {...mobileProps} />;
+        case 'topics':       return <TopicsScreen        {...mobileProps} />;
         case 'lesson':       return <LessonMobile       {...mobileProps} />;
         case 'vocabulary':   return <MobileVocabulary   {...mobileProps} />;
         case 'progress':     return <MobileProgress     {...mobileProps} />;
@@ -401,6 +402,7 @@ function JinaApp() {
     switch (page) {
       case 'dashboard':    return <DashboardDesktop    {...commonProps} />;
       case 'conversation': return <ConversationDesktop {...commonProps} />;
+      case 'topics':       return <TopicsScreen         {...commonProps} />;
       case 'lesson':       return <LessonDesktop       {...commonProps} />;
       case 'vocabulary':   return <VocabularyDesktop   {...commonProps} />;
       case 'progress':     return <ProgressDesktop     {...commonProps} />;

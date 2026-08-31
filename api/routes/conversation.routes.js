@@ -19,6 +19,8 @@ export function registerConversationRoutes(router) {
     const { user } = await requireUser(req, res);
     const body = await readJson(req);
     const title = str(body.title, 'title', { min: 1, max: 80, optional: true });
+    const scenarioId = body.scenario_id === undefined || body.scenario_id === null
+      ? undefined : posInt(body.scenario_id, 'scenario_id');
     let scenario;
     if (body.scenario !== undefined && body.scenario !== null) {
       if (typeof body.scenario !== 'object' || Array.isArray(body.scenario)) {
@@ -27,7 +29,7 @@ export function registerConversationRoutes(router) {
       }
       scenario = body.scenario;
     }
-    sendJson(res, 201, { ok: true, ...(await convo.createSession(user, { title, scenario })) });
+    sendJson(res, 201, { ok: true, ...(await convo.createSession(user, { title, scenario, scenarioId })) });
   });
 
   router.get('/api/conversations/:session_id', async (req, res, { params }) => {
@@ -69,6 +71,9 @@ export function registerConversationRoutes(router) {
       history,
       sessionRef,
       userMessage: text,
+      context: session.scenario_system_prompt
+        ? `[역할극 지시]\n${session.scenario_system_prompt}`
+        : null,
       ollamaUrl: body.provider === 'ollama'
         ? str(body.ollamaUrl, 'ollamaUrl', { max: 200, optional: true })
         : undefined,

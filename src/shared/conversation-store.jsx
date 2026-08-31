@@ -158,6 +158,17 @@ function ConversationProvider({ children }) {
     setError(null);
   }, []);
 
+  const startScenario = React.useCallback(async (scenarioId) => {
+    const created = await window.JINA_API.post('/api/conversations', { scenario_id: scenarioId });
+    if (!created.ok) {
+      setError(created.hint ? `${created.error} — ${created.hint}` : created.error);
+      return created;
+    }
+    upsertSession(created.session);
+    await selectSession(created.session.id);
+    return created;
+  }, [selectSession, upsertSession]);
+
   const reset = React.useCallback((msgs = []) => {
     setMessages(msgs);
     setLoading(false);
@@ -212,9 +223,9 @@ function ConversationProvider({ children }) {
   const value = React.useMemo(() => ({
     messages, loading, error, send, reset,
     sessions, activeSessionId, sessionsLoading,
-    selectSession, newSession, activeSession, lastScored, formatSessionTime,
+    selectSession, newSession, startScenario, activeSession, lastScored, formatSessionTime,
   }), [messages, loading, error, send, reset, sessions, activeSessionId,
-       sessionsLoading, selectSession, newSession, activeSession, lastScored]);
+       sessionsLoading, selectSession, newSession, startScenario, activeSession, lastScored]);
 
   return <ConversationContext.Provider value={value}>{children}</ConversationContext.Provider>;
 }
@@ -304,7 +315,9 @@ function useConversationFallback() {
   return {
     messages, loading, error, send, reset,
     sessions: FALLBACK_SESSIONS, activeSessionId, sessionsLoading: false,
-    selectSession, newSession, activeSession, lastScored, formatSessionTime,
+    selectSession, newSession,
+    startScenario: () => Promise.resolve({ ok: false, code: 'READONLY', error: '캔버스에서는 새 시나리오를 저장할 수 없습니다.' }),
+    activeSession, lastScored, formatSessionTime,
   };
 }
 

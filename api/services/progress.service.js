@@ -200,7 +200,9 @@ async function fetchScoreInputs(t, params) {
       `SELECT avg(pct) FILTER (WHERE created_at > now() - interval '30 days') AS d30,
               avg(pct)                                                        AS dall
          FROM (SELECT ua.created_at, ua.correct_count::numeric / ua.total_count * 100 AS pct
-                 FROM public.user_lesson_attempts ua WHERE ua.user_id = $1) r`,
+                 FROM public.user_lesson_attempts ua
+                 JOIN public.lessons l ON l.id = ua.lesson_id AND l.source = 'seed'
+                WHERE ua.user_id = $1) r`,
       [params[0]],
     );
     out.lesson = r?.d30 ?? r?.dall ?? null;

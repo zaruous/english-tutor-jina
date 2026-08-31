@@ -86,6 +86,65 @@ export function normalizeLessonQa(data) {
   };
 }
 
+export function normalizeLessonGen(data) {
+  const items = (Array.isArray(data.items) ? data.items : []).slice(0, 10).map((item) => ({
+    stem: String(item?.stem || '').trim().slice(0, 1000),
+    options: (Array.isArray(item?.options) ? item.options : []).slice(0, 4).map((o) => ({
+      id: String(o?.id || '').trim().toUpperCase().slice(0, 1),
+      text: String(o?.text || '').trim().slice(0, 500),
+    })),
+    answer: String(item?.answer || '').trim().toUpperCase().slice(0, 1),
+    explanation: String(item?.explanation || '').trim().slice(0, 1500),
+    skill_code: ['grammar', 'vocab', 'detail', 'inference', 'main_idea'].includes(item?.skill_code)
+      ? item.skill_code : 'grammar',
+  }));
+  return {
+    title: String(data.title || 'TOEIC Part 5 — AI 레슨').trim().slice(0, 120),
+    subtitle: String(data.subtitle || '').trim().slice(0, 160),
+    items,
+  };
+}
+
+export function normalizeScenarioGen(data) {
+  return {
+    title: String(data.title || '').trim().slice(0, 120),
+    tag: String(data.tag || 'AI 회화').trim().slice(0, 60),
+    description: String(data.description || '').trim().slice(0, 500),
+    system_prompt: String(data.system_prompt || '').trim().slice(0, 4000),
+    opening_message: String(data.opening_message || '').trim().slice(0, 1000),
+    objectives: (Array.isArray(data.objectives) ? data.objectives : [])
+      .map((x) => String(x || '').trim().slice(0, 200)).filter(Boolean).slice(0, 5),
+  };
+}
+
+export function normalizeVocabSet(data) {
+  const seen = new Set();
+  const words = (Array.isArray(data.words) ? data.words : []).map((w) => ({
+    word: String(w?.word || '').trim().toLowerCase().slice(0, 64),
+    pos: String(w?.pos || '').trim().slice(0, 16),
+    ipa: String(w?.ipa || '').trim().slice(0, 64),
+    meaning_ko: String(w?.meaning_ko || '').trim().slice(0, 200),
+    example_en: String(w?.example_en || '').trim().slice(0, 400),
+    example_ko: String(w?.example_ko || '').trim().slice(0, 400),
+    difficulty: clampInt(w?.difficulty, 1, 5),
+  })).filter((w) => {
+    if (!w.word || !w.meaning_ko || seen.has(w.word)) return false;
+    seen.add(w.word);
+    return true;
+  }).slice(0, 20);
+  return {
+    title: String(data.title || '').trim().slice(0, 120),
+    description: String(data.description || '').trim().slice(0, 500),
+    words,
+  };
+}
+
 export const NORMALIZERS = {
-  tutor: normalizeTutor, vocab_entry: normalizeVocabEntry, vocab_quiz: normalizeVocabQuiz, lesson_qa: normalizeLessonQa,
+  tutor: normalizeTutor,
+  vocab_entry: normalizeVocabEntry,
+  vocab_quiz: normalizeVocabQuiz,
+  lesson_qa: normalizeLessonQa,
+  lesson_gen: normalizeLessonGen,
+  scenario_gen: normalizeScenarioGen,
+  vocab_set: normalizeVocabSet,
 };

@@ -52,6 +52,8 @@ Cursor ↔ Codex 2자 라운드 토론(4라운드 8턴, coworks `trio-chat --onl
 완료 판정: E2E — 미제출 시 프롬프트에 선택지·정답 미포함(서버 로그/스텁으로 검증), 제출 후 타인 `attempt_id` 요청 403, `citations.quote` 검증 실패 시 저장 0, 추천 규칙이 대시보드와 동일 함수(중복 0), 목록 필터 동작. 기존 141+ E2E 회귀 통과.
 
 ### Phase 2 (2주) — Part 5 AI 생성 파이프라인
+
+> **상태 (2026-08-31): 구현 완료.** codex 가 0012 마이그레이션 + `ai-job.service/worker/routes` + `lesson_gen` 스키마·프롬프트 + 목록 "AI로 Part 5 만들기" 패널(202 폴링)을 구현, Claude 가 `scripts/verify-lesson-gen.mjs` 35/35(실 AI 생성 1회 포함: 멱등 재사용·request_hash 재사용·409·대기 3건 초과 429·재시작 복구·검증 실패 저장 0·신고 비승격)로 완료 판정 충족 확인. 예상 점수 집계는 `source='seed'` attempt 만 포함(열린 질문 1 반영). 교차 채점(다른 provider 로 풀어보기)은 미구현 — 후속.
 | 산출물 | 세부 |
 |---|---|
 | `ai_jobs` | 테이블 + 인프로세스 큐(별도 워커 없음, `node:http` 프로세스 내) + 202/폴링 API, 멱등·`request_hash`·동시 2/사용자 대기 3, 재시작 복구 |
@@ -62,6 +64,8 @@ Cursor ↔ Codex 2자 라운드 토론(4라운드 8턴, coworks `trio-chat --onl
 완료 판정: 스키마 실패 저장 0건, 동시 3번째 job은 `queued`로 202(사용자 4번째 대기는 429), 서버 재시작 후 `running` 재대기 테스트, 같은 요청 재전송은 기존 job 재사용, 신고만으로 공용 승격 불가. `scripts/verify-lesson-gen.mjs` 단정 스크립트.
 
 ### Phase 3 (2주) — 토픽 진입점 (토픽 1개 완성까지)
+
+> **상태 (2026-08-31): 구현 완료.** 0013(topics·conversation_scenarios·vocab_sets·topic_contents 배타 FK·sessions.scenario_id) + 0014("비즈니스 면접" 시드: 레슨 3×3문항 · STAR 시나리오 1 · 단어 20) + `scenario_gen`/`vocab_set` task + `topics.jsx`(진행률 파생값·회화 시작·20단어 담기) + 사이드바/대시보드 진입점(임계치 충족 시에만). `scripts/e2e-topics.mjs` 22/22(임계치 미만 숨김·배타 FK 위반 0·진행률=attempts 집계·담기 멱등·모바일 탭 포함)로 완료 판정 충족.
 | 산출물 | 세부 |
 |---|---|
 | 스키마 | `topics` + `topic_contents`(배타 FK + CHECK) |
