@@ -31,12 +31,16 @@ async function main() {
   t('단어 중복 없음', new Set(q.words.map((w) => w.word.toLowerCase())).size === 10);
   t('예문/발음/품사 채워짐', q.words.every((w) => w.example_en && w.example_ko && w.ipa && w.pos && w.meaning_ko));
   // 어원·유의어·반의어 — 필드는 전 단어 존재(스키마 계약), 내용은 모델 재량("확실하지 않으면 빈 값")이라 완만하게 단정
-  t('어원/유의어/반의어 필드 형태', q.words.every((w) =>
+  const rels = q.words.flatMap((w) => [...w.synonyms, ...w.antonyms]);
+  t('어원/유의어/반의어 필드 형태 (관계어 = {word, ipa, meaning_ko})', q.words.every((w) =>
     typeof w.etymology === 'string' && Array.isArray(w.synonyms) && Array.isArray(w.antonyms)
-    && w.synonyms.length <= 3 && w.antonyms.length <= 3));
+    && w.synonyms.length <= 3 && w.antonyms.length <= 3)
+    && rels.every((r) => r && typeof r.word === 'string' && typeof r.ipa === 'string' && typeof r.meaning_ko === 'string'));
   const withEty = q.words.filter((w) => w.etymology.length >= 10).length;
   const withRel = q.words.filter((w) => w.synonyms.length + w.antonyms.length > 0).length;
   t('어원 채움 ≥5 단어 · 유의/반의 ≥5 단어', withEty >= 5 && withRel >= 5, `어원 ${withEty}/10 · 관계어 ${withRel}/10`);
+  const relFilled = rels.filter((r) => r.word && r.meaning_ko).length;
+  t('관계어 뜻 채움 ≥80%', rels.length > 0 && relFilled / rels.length >= 0.8, `${relFilled}/${rels.length}`);
   const owned = new Set((await get('/api/vocab')).cards.map((c) => c.word.toLowerCase()));
   t('보유 단어 미포함 (제외 목록 반영)', q.words.every((w) => !owned.has(w.word.toLowerCase())),
     q.words.filter((w) => owned.has(w.word.toLowerCase())).map((w) => w.word).join(', ') || '겹침 0');
@@ -53,14 +57,34 @@ async function main() {
   const dupAns = await post(`/api/vocab/quiz/${q.id}/answer`, { answers: [{ index: 0, choice: 'x' }, { index: 0, choice: 'y' }] });
   t('같은 문항 중복 답 거절 (400)', dupAns.ok === false && dupAns.code === 'BAD_REQUEST');
 
+  // 제외 목록은 프롬프트 지시라 드물게 보유 단어가 출제될 수 있다 — 추가 단정은 preOwned 만큼 보정
+  const preOwned = new Set(q.words.filter((w) => owned.has(w.word.toLowerCase())).map((w) => w.word.toLowerCase()));
   const addWrong = await post(`/api/vocab/quiz/${q.id}/add`, { indexes: [0] });
-  t('틀린 단어 1개 추가 (AI 재호출 없음)', addWrong.ok && addWrong.added === 1 && addWrong.cards[0].word === q.words[0].word, `added=${addWrong.added} dup=${addWrong.duplicates}`);
+  t('틀린 단어 1개 추가 (AI 재호출 없음)', addWrong.ok && addWrong.added + addWrong.duplicates === 1
+    && addWrong.cards[0].word === q.words[0].word, `added=${addWrong.added} dup=${addWrong.duplicates}`);
   const addAll = await post(`/api/vocab/quiz/${q.id}/add`, {});
-  t('전체 추가 → 9 추가 + 1 중복', addAll.ok && addAll.added === 9 && addAll.duplicates === 1, `added=${addAll.added} dup=${addAll.duplicates}`);
+  t('전체 추가 → 10단어 전부 처리 (재추가는 중복)', addAll.ok && addAll.added + addAll.duplicates === 10
+    && addAll.duplicates >= 1, `added=${addAll.added} dup=${addAll.duplicates}`);
   const after = (await get('/api/vocab')).cards;
-  t('단어장 +10', after.length === before + 10, `${before} → ${after.length}`);
+  t(`단어장 +${10 - preOwned.size} (기보유 ${preOwned.size} 제외)`, after.length === before + 10 - preOwned.size, `${before} → ${after.length}`);
   const added = after.filter((c) => q.words.some((w) => w.word.toLowerCase() === c.word.toLowerCase()));
-  t('추가된 카드 status=new · 예문 보존 · source 사전 재사용', added.length === 10 && added.every((c) => c.status === 'new' && c.examples.length >= 1));
+  t('추가된 카드 status=new · 예문 보존 · source 사전 재사용', added.length === 10
+    && added.filter((c) => !preOwned.has(c.word.toLowerCase())).every((c) => c.status === 'new' && c.examples.length >= 1));
+
+  // 유의어/반의어 → 단어장 추가 (뜻·IPA 는 저장된 퀴즈 데이터에서 — AI 재호출 없음)
+  const relTarget = q.words.map((w) => ({ i: w.index, rel: w.synonyms[0] || w.antonyms[0] })).find((x) => x.rel?.meaning_ko);
+  if (!relTarget) {
+    t('related 추가 (대상 관계어 존재)', false, '뜻 있는 유의어/반의어 0건');
+  } else {
+    const r1 = await post(`/api/vocab/quiz/${q.id}/related`, { index: relTarget.i, word: relTarget.rel.word });
+    t('POST /related · 단어장 추가 ok', r1.ok === true && (r1.added === true || r1.duplicate === true)
+      && r1.card?.word?.toLowerCase() === relTarget.rel.word.toLowerCase(),
+      `${relTarget.rel.word} added=${r1.added} dup=${r1.duplicate}`);
+    const r2 = await post(`/api/vocab/quiz/${q.id}/related`, { index: relTarget.i, word: relTarget.rel.word });
+    t('related 재추가 → duplicate', r2.ok === true && r2.duplicate === true);
+    const bad = await post(`/api/vocab/quiz/${q.id}/related`, { index: relTarget.i, word: 'zzznotinlist' });
+    t('목록에 없는 단어 → NOT_FOUND', bad.ok === false && bad.code === 'NOT_FOUND', bad.error);
+  }
 }
 
 await main();

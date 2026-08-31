@@ -125,6 +125,15 @@ export function registerVocabRoutes(router) {
     sendJson(res, 200, { ok: true, ...result, stats: await vocab.stats(user).then((s) => s.stats) });
   });
 
+  // 문항의 유의어/반의어 1개를 단어장에 — 저장된 퀴즈 데이터의 뜻·IPA 를 사용(AI 재호출 없음).
+  router.post('/api/vocab/quiz/:quiz_id/related', async (req, res, { params }) => {
+    const { user } = await requireUser(req, res);
+    const body = await readJson(req);
+    const word = str(body.word, 'word', { min: 1, max: 40 });
+    const result = await quiz.addRelatedWord(user, posInt(params.quiz_id, 'quiz_id'), { index: body.index, word });
+    sendJson(res, 201, { ok: true, ...result });
+  });
+
   router.post('/api/vocab/:card_id/review', async (req, res, { params }) => {
     const { user } = await requireUser(req, res);
     const cardId = posInt(params.card_id, 'card_id');

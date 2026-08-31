@@ -78,8 +78,32 @@ export const VOCAB_QUIZ_SCHEMA = {
           },
           difficulty: { type: 'integer', minimum: 1, maximum: 5, description: 'TOEIC 기준 난도' },
           etymology: { type: 'string', description: '어원·유래 이야기 1-2문장 (한국어) — 어근 분해(라틴/그리스 등)나 단어가 생긴 역사. 확실하지 않으면 빈 문자열' },
-          synonyms: { type: 'array', minItems: 0, maxItems: 3, items: { type: 'string' }, description: '유의어 (영어 단어, 0~3개)' },
-          antonyms: { type: 'array', minItems: 0, maxItems: 3, items: { type: 'string' }, description: '반의어 (영어 단어, 없으면 빈 배열)' },
+          synonyms: {
+            type: 'array', minItems: 0, maxItems: 2,
+            items: {
+              type: 'object', additionalProperties: false,
+              properties: {
+                word: { type: 'string', description: '유의어 (영어 소문자 원형)' },
+                ipa: { type: 'string', description: 'IPA 발음기호, 슬래시 포함' },
+                meaning_ko: { type: 'string', description: '간단한 한국어 뜻' },
+              },
+              required: ['word', 'ipa', 'meaning_ko'],
+            },
+            description: '유의어 0~2개 — 각각 뜻·발음기호 포함, 없으면 빈 배열',
+          },
+          antonyms: {
+            type: 'array', minItems: 0, maxItems: 2,
+            items: {
+              type: 'object', additionalProperties: false,
+              properties: {
+                word: { type: 'string', description: '반의어 (영어 소문자 원형)' },
+                ipa: { type: 'string', description: 'IPA 발음기호, 슬래시 포함' },
+                meaning_ko: { type: 'string', description: '간단한 한국어 뜻' },
+              },
+              required: ['word', 'ipa', 'meaning_ko'],
+            },
+            description: '반의어 0~2개 — 각각 뜻·발음기호 포함, 없으면 빈 배열',
+          },
         },
         required: ['word', 'pos', 'ipa', 'meaning_ko', 'example_en', 'example_ko', 'distractors_ko', 'difficulty', 'etymology', 'synonyms', 'antonyms'],
       },

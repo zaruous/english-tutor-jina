@@ -5,7 +5,8 @@
 import { TASK_SCHEMAS } from './schemas.js';
 
 export const LIMITS = {
-  userMessage: 2000,
+  userMessage: 4000, // 서버 조립 지시문(퀴즈 제외 목록 등)도 이 한도를 지난다 — 제외 목록 예산(2500자)과 함께 유지
+
   historyTurns: 8,
   historyChars: 6000,
 };
@@ -31,7 +32,7 @@ const VOCAB_QUIZ_SYSTEM = `너는 한국인 TOEIC 학습자를 위한 영어 어
 1. TOEIC 600~900 수준의 실용 어휘. 기초 단어(the, go, good 등)와 고유명사는 제외하고, 10개는 서로 다른 단어여야 해.
 2. 각 단어에 pos(품사 축약 n./v./adj./adv.), ipa(슬래시 포함), meaning_ko(한국어 뜻 1~3개, 쉼표 구분), example_en(주제 맥락의 자연스러운 영어 예문 1개), example_ko(그 예문의 한국어 번역)를 붙여.
 3. distractors_ko 는 오답 보기 3개 — 정답과 같은 품사의 그럴듯한 한국어 뜻이지만 명확히 다른 의미. 정답과 겹치는 표현 금지.
-3b. etymology 는 그 단어의 어원·유래를 한국어 1~2문장으로 — 어근 분해(예: com-(함께)+pete(추구하다))나 단어가 생긴 역사·이야기. 암기에 도움될 만큼 간결하게, 확실하지 않으면 빈 문자열. synonyms/antonyms 는 TOEIC 수준의 영어 유의어·반의어 각 0~3개(없으면 빈 배열, 억지로 만들지 마).
+3b. etymology 는 그 단어의 어원·유래를 한국어 1~2문장으로 — 어근 분해(예: com-(함께)+pete(추구하다))나 단어가 생긴 역사·이야기. 암기에 도움될 만큼 간결하게, 확실하지 않으면 빈 문자열. synonyms/antonyms 는 TOEIC 수준의 영어 유의어·반의어 각 0~2개 — 항목마다 word(영어 소문자)·ipa(슬래시 포함)·meaning_ko(간단한 한국어 뜻)를 채워. 없으면 빈 배열, 억지로 만들지 마.
 4. 주제 종류: news = 최근 국제·경제·기술 뉴스에 자주 나오는 표현(실시간 검색이 아니라 네 지식 기준), game = 게임·e스포츠·게임 개발, blog = 여행·음식·라이프스타일 블로그 글, keyword = 주어진 키워드와 밀접한 표현, random = TOEIC 학습자에게 유용한 주제를 네가 하나 골라.
 5. topic_title 은 20자 이내 한국어 제목, topic_ko 는 한 줄 설명.
 6. '이미 학습한 단어' 목록에 있는 단어는 고르지 마.
@@ -167,12 +168,13 @@ export function renderQuizRequest({ kind, keyword, exclude = [] }) {
   const lines = [`주제 종류: ${kind} (${KIND_KO[kind] || kind})`];
   if (kind === 'keyword') lines.push(`키워드: ${wrapLearnerInput(keyword)}`);
   if (exclude.length) {
-    // 개수 대신 문자 예산 — LIMITS.userMessage(2000자) 안에서 최근 단어부터 최대한 싣는다.
+    // 개수 대신 문자 예산 — LIMITS.userMessage(4000자) 안에서 최근 단어부터 최대한 싣는다.
+    // 1200자(~120단어)는 단어장 136개에서 다시 뚫렸다(facilitate 사례) — 2500자(~250단어)로 상향.
     const list = [];
     let chars = 0;
     for (const w of exclude) {
       chars += w.length + 2;
-      if (chars > 1200) break;
+      if (chars > 2500) break;
       list.push(w);
     }
     lines.push(`이미 학습한 단어(제외): ${list.join(', ')}`);

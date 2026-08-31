@@ -18,10 +18,11 @@ import { LIMITS, renderChatMessages, renderCliPrompt, renderRepairPrompt } from 
 import { TASK_SCHEMAS, validateAgainst } from './schemas.js';
 import { getProvider } from './registry.js';
 
-const HTTP_BUDGET_MS = 150_000;  // 브라우저 abort 180s > HTTP 150s > 프로세스 90~120s
-const PROCESS_TIMEOUT_MS = 120_000;
-const QUIZ_PROCESS_TIMEOUT_MS = 140_000; // 오늘의 단어 퀴즈 생성 전용 (브라우저 abort 180s > HTTP 150s > 140s)
-const GENERATION_PROCESS_TIMEOUT_MS = 140_000;
+// 타임아웃 체인: 브라우저 abort(api-client 31분) > HTTP 예산 30.5분 > CLI 프로세스 30분.
+// 2026-08-31 사용자 결정 — 퀴즈 보강(어원·관계어)으로 출력이 커져 140s 를 넘기자 기본을 30분으로 상향.
+// Node http 서버는 응답 지연에 자체 타임아웃이 없어(server.timeout=0 기본) 서버쪽 추가 설정은 불필요.
+const HTTP_BUDGET_MS = 1_830_000;
+const PROCESS_TIMEOUT_MS = Number(process.env.AI_PROCESS_TIMEOUT_MS) || 1_800_000;
 
 const globalSemaphore = new Semaphore(4, { queueMax: config.ai.queueMax });
 const providerSemaphores = new Map();
@@ -68,10 +69,8 @@ export async function askAI({
       messages: renderChatMessages({ task, history: withHistory ? history : [], userMessage, context }),
       jsonSchema: provider.supportsJsonSchema ? schema : null,
       model, sessionRef: ref, signal, baseUrl: ollamaUrl,
-      // vocab_quiz 는 출력 JSON 이 커서(10단어×예문·번역·오답 3) 단독 40~50초, 경합 시 60초+ — HTTP 예산(150s) 안에서 더 준다
-      timeoutMs: task === 'vocab_quiz' ? QUIZ_PROCESS_TIMEOUT_MS
-        : ['lesson_gen', 'scenario_gen', 'vocab_set'].includes(task) ? GENERATION_PROCESS_TIMEOUT_MS
-          : Math.min(PROCESS_TIMEOUT_MS, provider.timeoutMs),
+      // 모든 task 공통 30분 기본(AI_PROCESS_TIMEOUT_MS 로 조정) — provider 기본값(120s)으로 더 줄이지 않는다
+      timeoutMs: PROCESS_TIMEOUT_MS,
     });
 
     // ── 세션 resume (하이브리드) ──

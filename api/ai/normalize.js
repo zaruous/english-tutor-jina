@@ -37,6 +37,23 @@ export function normalizeVocabEntry(data) {
 
 // 퀴즈: 단어 중복 제거, 정답과 겹치는 오답 보기 제거 후 다른 단어의 뜻으로 3개 채움.
 // 10개 미달이면 createQuiz 가 SCHEMA_VIOLATION 으로 거절한다 (불량 퀴즈 저장 금지).
+// 유의어/반의어 — 각 항목에 뜻·IPA 동반. 구버전(문자열 배열) 데이터도 {word}만으로 수용한다.
+function normalizeRelatedWords(list) {
+  const seen = new Set();
+  return (Array.isArray(list) ? list : []).map((r) => {
+    const src = typeof r === 'string' ? { word: r } : (r || {});
+    return {
+      word: String(src.word || '').trim().toLowerCase().slice(0, 40),
+      ipa: String(src.ipa || '').trim().slice(0, 64),
+      meaning_ko: String(src.meaning_ko || '').trim().slice(0, 120),
+    };
+  }).filter((r) => {
+    if (!r.word || seen.has(r.word)) return false;
+    seen.add(r.word);
+    return true;
+  }).slice(0, 2); // 0~2개 — 출력 JSON이 커지면 CLI 140s 한도를 넘긴다 (2026-08-31 TIMEOUT 사례)
+}
+
 export function normalizeVocabQuiz(data) {
   const seen = new Set();
   const words = (Array.isArray(data.words) ? data.words : []).map((w) => {
@@ -54,10 +71,8 @@ export function normalizeVocabQuiz(data) {
         .slice(0, 3),
       difficulty: clampInt(w.difficulty, 1, 5),
       etymology: String(w.etymology || '').trim().slice(0, 300),
-      synonyms: (Array.isArray(w.synonyms) ? w.synonyms : [])
-        .map((s) => String(s).trim().slice(0, 40)).filter(Boolean).slice(0, 3),
-      antonyms: (Array.isArray(w.antonyms) ? w.antonyms : [])
-        .map((s) => String(s).trim().slice(0, 40)).filter(Boolean).slice(0, 3),
+      synonyms: normalizeRelatedWords(w.synonyms),
+      antonyms: normalizeRelatedWords(w.antonyms),
     };
   }).filter((w) => {
     const key = w.word.toLowerCase();

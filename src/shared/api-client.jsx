@@ -9,7 +9,8 @@
 const JINA_API_BASE =
   window.JINA_CONFIG?.apiBase || `http://${location.hostname}:3004`;
 
-async function apiFetch(path, { method = 'GET', body, signal, timeoutMs = 180000, headers } = {}) {
+// 기본 31분 — 서버 AI 타임아웃 체인(프로세스 30분 > HTTP 30.5분)보다 브라우저가 늦게 끊어야 오류 메시지가 서버에서 온다
+async function apiFetch(path, { method = 'GET', body, signal, timeoutMs = 1_860_000, headers } = {}) {
   const readonly = Boolean(window.JINA_READONLY);
   if (readonly && method !== 'GET' && path !== '/api/ai/chat') {
     return { ok: false, code: 'READONLY', error: '캔버스에서는 저장이 비활성화되어 있습니다.' };

@@ -104,6 +104,7 @@ check('jinaSpeak 전역 · 호출 시 예외 없음', await page.evaluate(() => 
 let answeredOk = 0;
 let etyShown = 0;
 let relShown = 0;
+let relBtns = 0;
 for (let i = 0; i < 10 && todayQuiz; i++) {
   const word = (await page.locator('[data-testid="quiz-word"]').textContent()).trim();
   const w = todayQuiz.words.find((x) => x.word === word);
@@ -113,12 +114,14 @@ for (let i = 0; i < 10 && todayQuiz; i++) {
   if ((await page.locator('[data-testid="quiz-feedback"]').textContent()).includes('정답!')) answeredOk += 1;
   etyShown += await page.locator('[data-testid="quiz-etymology"]').count();
   relShown += await page.locator('[data-testid="quiz-relations"]').count();
+  relBtns += await page.locator('[data-testid="quiz-rel-add"]').count();
   await page.locator('[data-testid="quiz-next"]').click();
   await page.waitForTimeout(i === 9 ? 2500 : 300);
 }
 check('정답 10개 클릭 → 즉시 피드백 10회', answeredOk === 10, `${answeredOk}/10`);
 // 어원/유의·반의어는 모델 재량 필드(빈 값이면 숨김) — verify-quiz와 같은 완만한 임계치
-check('피드백에 어원 ≥5 · 유의/반의 칩 ≥5', etyShown >= 5 && relShown >= 5, `어원 ${etyShown}/10 · 관계어 ${relShown}/10`);
+check('피드백에 어원 ≥5 · 유의/반의 행 ≥5 · 단어장 추가 버튼 렌더', etyShown >= 5 && relShown >= 5 && relBtns >= 1,
+  `어원 ${etyShown}/10 · 관계어 ${relShown}/10 · [+]버튼 ${relBtns}`);
 check('서버 채점 결과 10 / 10', /10\s*\/\s*10/.test((await page.locator('[data-testid="quiz-score"]').textContent().catch(() => '')).replace(/\s+/g, ' ')));
 if (quizShown) await page.locator('[data-testid="quiz-add-all"]').click(); // 퀴즈가 안 떴으면 후속 클릭 생략(예외로 스위트가 중단되지 않게)
 await page.waitForSelector('[data-testid="quiz-add-result"]', { timeout: 15000 }).catch(() => {});

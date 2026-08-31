@@ -15,6 +15,56 @@ const QUIZ_KIND_META = [
 ];
 const quizKindLabel = (id) => (QUIZ_KIND_META.find((k) => k.id === id) || {}).label || id;
 
+// 유의어(=)/반의어(↔) 행 — 뜻·IPA·발음과 함께, [+]로 단어장에 바로 추가(저장된 퀴즈 데이터 사용, AI 재호출 없음).
+// 구버전 퀴즈(문자열 배열)는 단어만 표시하고 추가 버튼을 숨긴다(뜻 정보 없음).
+function RelatedWordChips({ theme, quizId, index, synonyms, antonyms }) {
+  const [state, setState] = React.useState({}); // { [word]: 'adding' | 'added' | 'dup' | 'error' }
+  const rows = [
+    ...(synonyms || []).map((r) => ({ ...(typeof r === 'string' ? { word: r } : r), kind: 'syn' })),
+    ...(antonyms || []).map((r) => ({ ...(typeof r === 'string' ? { word: r } : r), kind: 'ant' })),
+  ].filter((r) => r.word);
+  if (!rows.length) return null;
+  const add = async (w) => {
+    setState((s) => ({ ...s, [w]: 'adding' }));
+    const res = await window.JINA_API.post(`/api/vocab/quiz/${quizId}/related`, { index, word: w });
+    setState((s) => ({ ...s, [w]: res.ok ? (res.duplicate ? 'dup' : 'added') : 'error' }));
+  };
+  return (
+    <div data-testid="quiz-relations" style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 10 }}>
+      {rows.map((r) => {
+        const color = r.kind === 'syn' ? theme.success : theme.error;
+        const st = state[r.word];
+        const done = st === 'added' || st === 'dup';
+        return (
+          <div key={`${r.kind}-${r.word}`} style={{
+            display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 9,
+            background: color + '0d', border: `1px solid ${color}26`, fontSize: 12,
+          }}>
+            <span title={r.kind === 'syn' ? '유의어' : '반의어'} style={{ color, fontWeight: 800, flex: '0 0 auto' }}>{r.kind === 'syn' ? '=' : '↔'}</span>
+            <span style={{ color: theme.text, fontWeight: 700 }}>{r.word}</span>
+            {r.ipa && <span style={{ color: theme.textMuted, fontStyle: 'italic' }}>{r.ipa}</span>}
+            <span style={{ color: theme.textMuted, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.meaning_ko || ''}</span>
+            <SpeakButton text={r.word} theme={theme} size={12} />
+            {r.meaning_ko && !window.JINA_READONLY && (
+              <button type="button" data-testid="quiz-rel-add" disabled={Boolean(st) && st !== 'error'} onClick={() => add(r.word)}
+                aria-label={`${r.word} 단어장에 추가`}
+                title={done ? (st === 'dup' ? '이미 단어장에 있어요' : '단어장에 추가됨') : st === 'error' ? '추가 실패 — 다시 시도' : '단어장에 추가'}
+                style={{
+                  width: 22, height: 22, borderRadius: 7, display: 'grid', placeItems: 'center', flex: '0 0 auto',
+                  background: done ? theme.success + '22' : theme.chipBg,
+                  color: done ? theme.success : st === 'error' ? theme.error : theme.textMuted,
+                  cursor: done ? 'default' : 'pointer',
+                }}>
+                {st === 'adding' ? '…' : done ? <Icons.Check size={12} /> : <Icons.Plus size={12} />}
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function DailyQuizPanel({ theme, aiConfig, compact = false }) {
   const { quiz, loadTodayQuiz, generateQuiz, cancelQuiz, answerQuiz, addQuizWords } = useVocab();
   const [kind, setKind] = React.useState('random');
@@ -271,16 +321,8 @@ function DailyQuizPanel({ theme, aiConfig, compact = false }) {
               <SpeakButton text={current.example_en} theme={theme} size={14} rate={0.9} label="예문 듣기" />
             </div>
             <div style={{ fontSize: 13, color: theme.textMuted, lineHeight: 1.6, marginTop: 4 }}>{current.example_ko}</div>
-            {(current.synonyms?.length > 0 || current.antonyms?.length > 0) && (
-              <div data-testid="quiz-relations" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-                {(current.synonyms || []).map((s) => (
-                  <span key={`s-${s}`} style={{ padding: '3px 9px', borderRadius: 999, fontSize: 11.5, background: theme.success + '18', color: theme.success, fontWeight: 600 }}>= {s}</span>
-                ))}
-                {(current.antonyms || []).map((a) => (
-                  <span key={`a-${a}`} style={{ padding: '3px 9px', borderRadius: 999, fontSize: 11.5, background: theme.error + '15', color: theme.error, fontWeight: 600 }}>↔ {a}</span>
-                ))}
-              </div>
-            )}
+            <RelatedWordChips theme={theme} quizId={q.id} index={current.index}
+              synonyms={current.synonyms} antonyms={current.antonyms} />
             {current.etymology && (
               // 틀린 단어일수록 어원 스토리가 기억 단서가 된다 — 오답이면 강조 톤
               <div data-testid="quiz-etymology" style={{
@@ -383,15 +425,9 @@ function DailyQuizPanel({ theme, aiConfig, compact = false }) {
                     <b style={{ color: theme.error, marginRight: 5 }}>어원</b>{w.etymology}
                   </div>
                 )}
-                {a && !a.correct && (w.synonyms?.length > 0 || w.antonyms?.length > 0) && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
-                    {(w.synonyms || []).map((s) => (
-                      <span key={`s-${s}`} style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, background: theme.success + '18', color: theme.success, fontWeight: 600 }}>= {s}</span>
-                    ))}
-                    {(w.antonyms || []).map((an) => (
-                      <span key={`a-${an}`} style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, background: theme.error + '15', color: theme.error, fontWeight: 600 }}>↔ {an}</span>
-                    ))}
-                  </div>
+                {a && !a.correct && (
+                  <RelatedWordChips theme={theme} quizId={q.id} index={w.index}
+                    synonyms={w.synonyms} antonyms={w.antonyms} />
                 )}
               </div>
             </div>

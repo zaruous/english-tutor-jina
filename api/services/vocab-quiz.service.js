@@ -147,3 +147,27 @@ export async function addQuizWords(user, quizId, indexes) {
   }
   return { added, duplicates, cards };
 }
+
+// 문항의 유의어/반의어 1개를 단어장에 — 클라이언트가 준 단어를 믿지 않고 저장된 퀴즈 데이터에서 찾는다.
+export async function addRelatedWord(user, quizId, { index, word }) {
+  const row = await getQuizRow(user, quizId);
+  const words = row.words || [];
+  const i = Number(index);
+  if (!Number.isInteger(i) || i < 0 || i >= words.length) {
+    throw new HttpError(400, 'BAD_REQUEST', `index 는 0~${words.length - 1} 정수여야 합니다.`);
+  }
+  const target = String(word || '').trim().toLowerCase();
+  const rel = [...(words[i].synonyms || []), ...(words[i].antonyms || [])]
+    .map((r) => (typeof r === 'string' ? { word: r } : r))
+    .find((r) => String(r.word || '').toLowerCase() === target);
+  if (!rel) throw new HttpError(404, 'NOT_FOUND', '이 문항의 유의어/반의어 목록에 없는 단어입니다.');
+  if (!rel.meaning_ko) {
+    throw new HttpError(400, 'BAD_REQUEST', '구버전 퀴즈라 이 단어의 뜻 정보가 없습니다. 새 퀴즈부터 추가할 수 있어요.');
+  }
+  const entry = {
+    word: rel.word, pos: null, ipa: rel.ipa || null, meaning_ko: rel.meaning_ko,
+    examples: [], difficulty: 3,
+  };
+  const r = await addCardFromEntry(user, { word: rel.word, entry, source: 'ai' });
+  return { added: !r.duplicate, duplicate: r.duplicate, card: r.card };
+}
