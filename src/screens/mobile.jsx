@@ -4,6 +4,22 @@
 // Mobile Dashboard
 // ─────────────────────────────────────────────────────
 function MobileDashboard({ theme, noNav = false, onNavigate }) {
+  // 데스크탑(dashboard-desktop.jsx)과 같은 Context·포맷터를 쓴다 — 수치/문자열 중복 정의 금지.
+  const { dash } = useDashboard();
+  const F = window.DASH_FMT;
+  const go = (nav) => onNavigate && nav && onNavigate(nav);
+  if (!dash) {
+    return (
+      <div className="jina-root" style={{ width: '100%', height: '100%', background: theme.bg, color: theme.textMuted,
+        display: 'grid', placeItems: 'center', fontSize: 13 }}>불러오는 중…</div>
+    );
+  }
+  const goal = dash.goal;
+  const plan = dash.today_plan;
+  const corr = dash.recent_correction;
+  const goalPct = goal.target_score ? Math.min(1, (goal.predicted_score || 0) / goal.target_score) : 0;
+  const planPct = plan.total ? plan.done / plan.total : 0;
+  const currentKey = plan.items.find((it) => !it.done)?.key;
   return (
     <div className="jina-root" style={{
       width: '100%', height: '100%',
@@ -14,9 +30,9 @@ function MobileDashboard({ theme, noNav = false, onNavigate }) {
       {/* Header */}
       <div style={{ padding: '12px 20px 8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
-          <div style={{ fontSize: 11, color: theme.textMuted, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>5월 26일 화요일</div>
-          <div className="jina-serif" style={{ fontSize: 28, color: theme.text, fontStyle: 'italic', fontWeight: 500, lineHeight: 1.1, marginTop: 2 }}>Good morning,</div>
-          <div style={{ fontSize: 22, color: theme.text, fontWeight: 700, lineHeight: 1.2 }}>수민님</div>
+          <div style={{ fontSize: 11, color: theme.textMuted, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{F.shortDate()}</div>
+          <div className="jina-serif" style={{ fontSize: 28, color: theme.text, fontStyle: 'italic', fontWeight: 500, lineHeight: 1.1, marginTop: 2 }}>{F.greeting()},</div>
+          <div style={{ fontSize: 22, color: theme.text, fontWeight: 700, lineHeight: 1.2 }}>{dash.user.display_name}님</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button style={{
@@ -26,7 +42,7 @@ function MobileDashboard({ theme, noNav = false, onNavigate }) {
             color: theme.text, fontSize: 13, fontWeight: 600,
           }}>
             <Icons.Flame size={14} style={{ color: theme.accent2 }} />
-            24
+            {dash.stats.streak_days}
           </button>
           <button style={{ width: 36, height: 36, borderRadius: '50%', background: theme.chipBg, display: 'grid', placeItems: 'center', color: theme.text, position: 'relative' }}>
             <Icons.Bell size={16} />
@@ -45,6 +61,7 @@ function MobileDashboard({ theme, noNav = false, onNavigate }) {
             : theme.surface,
           border: `1px solid ${theme.border}`,
           position: 'relative', overflow: 'hidden',
+          flexShrink: 0, // 스크롤 컬럼(flex column) 안에서 overflow:hidden 카드가 찌부러지지 않게 (데스크탑 HeroCard 와 같은 버그)
         }}>
           <div style={{
             position: 'absolute', right: -40, top: -40, width: 160, height: 160,
@@ -63,7 +80,7 @@ function MobileDashboard({ theme, noNav = false, onNavigate }) {
               </div>
             </div>
             <div style={{ fontSize: 15, color: theme.text, lineHeight: 1.5, fontWeight: 500, marginBottom: 12 }}>
-              오늘은 <span style={{ background: theme.accentGrad, WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent', fontWeight: 700 }}>비즈니스 회의</span> 표현을 8분만 연습해볼까요?
+              오늘은 <span style={{ backgroundImage: theme.accentGrad, WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent', fontWeight: 700 }}>비즈니스 회의</span> 표현을 8분만 연습해볼까요?
             </div>
             <button style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
@@ -97,17 +114,19 @@ function MobileDashboard({ theme, noNav = false, onNavigate }) {
                   <circle cx="38" cy="38" r="32" fill="none" stroke={theme.border} strokeWidth="6" />
                   <circle cx="38" cy="38" r="32" fill="none" stroke="url(#mgoalGrad)" strokeWidth="6"
                     strokeDasharray={2 * Math.PI * 32}
-                    strokeDashoffset={2 * Math.PI * 32 * (1 - 0.94)}
+                    strokeDashoffset={2 * Math.PI * 32 * (1 - goalPct)}
                     strokeLinecap="round" />
                 </svg>
                 <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
-                  <span className="jina-serif" style={{ fontSize: 22, color: theme.text, fontWeight: 500 }}>845</span>
+                  <span className="jina-serif" style={{ fontSize: 22, color: theme.text, fontWeight: 500 }}>{goal.predicted_score ?? '—'}</span>
                 </div>
               </div>
               <div>
                 <div style={{ fontSize: 11, color: theme.textMuted }}>목표</div>
-                <div style={{ fontSize: 18, color: theme.text, fontWeight: 700, lineHeight: 1.1 }}>900</div>
-                <div style={{ fontSize: 10.5, color: theme.success, fontWeight: 600, marginTop: 4 }}>↑ 20</div>
+                <div style={{ fontSize: 18, color: theme.text, fontWeight: 700, lineHeight: 1.1 }}>{goal.target_score}</div>
+                {goal.last_lesson_delta > 0 && (
+                  <div style={{ fontSize: 10.5, color: theme.success, fontWeight: 600, marginTop: 4 }}>↑ {goal.last_lesson_delta}</div>
+                )}
               </div>
             </div>
           </div>
@@ -115,8 +134,9 @@ function MobileDashboard({ theme, noNav = false, onNavigate }) {
           {/* Mini stats stack */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {[
-              { icon: Icons.Clock, label: '이번 주', value: '4.2h', color: theme.accent3 },
-              { icon: Icons.TrendUp, label: '정확도', value: '87%', color: theme.success },
+              { icon: Icons.Clock, label: '이번 주', value: `${F.hours(dash.stats.week_minutes)}h`, color: theme.accent3 },
+              { icon: Icons.TrendUp, label: '정확도',
+                value: dash.stats.accuracy_pct == null ? '—' : `${dash.stats.accuracy_pct}%`, color: theme.success },
             ].map((s, i) => (
               <div key={i} style={{
                 padding: 12, borderRadius: 14,
@@ -143,26 +163,27 @@ function MobileDashboard({ theme, noNav = false, onNavigate }) {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
             <div>
               <h3 style={{ fontSize: 15, color: theme.text, margin: 0, fontWeight: 700 }}>오늘의 학습</h3>
-              <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }}>2/4 완료 · 13분 남음</div>
+              <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1 }}>
+                {plan.done}/{plan.total} 완료 · {plan.items.filter((it) => !it.done).reduce((a, it) => a + (it.mins || 0), 0)}분 남음
+              </div>
             </div>
             <div style={{ position: 'relative', width: 32, height: 32 }}>
               <svg width="32" height="32" style={{ transform: 'rotate(-90deg)' }}>
                 <circle cx="16" cy="16" r="13" fill="none" stroke={theme.border} strokeWidth="3" />
                 <circle cx="16" cy="16" r="13" fill="none" stroke={theme.success} strokeWidth="3"
                   strokeDasharray={2 * Math.PI * 13}
-                  strokeDashoffset={2 * Math.PI * 13 * 0.5}
+                  strokeDashoffset={2 * Math.PI * 13 * (1 - planPct)}
                   strokeLinecap="round" />
               </svg>
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {[
-              { title: 'Jina와 8분 회화', sub: '비즈니스 미팅', icon: Icons.Chat, done: true, accent: theme.accent },
-              { title: 'TOEIC Part 5', sub: '20문항 · 약점 보강', icon: Icons.Bolt, done: true, accent: theme.accent3 },
-              { title: 'Shadowing — TED', sub: '"The puzzle..." 03:20', icon: Icons.Mic, current: true, accent: theme.accent2 },
-              { title: '단어 복습', sub: '12개 · SRS', icon: Icons.Book, accent: theme.warning },
-            ].map((it, i) => (
-              <div key={i} style={{
+            {plan.items.map((it) => {
+              const meta = dashPlanMeta(it.key, theme);
+              return { ...it, icon: meta.Icon, accent: meta.accent, current: it.key === currentKey };
+            }).map((it, i) => (
+              <div key={it.key || i} onClick={() => go(it.nav)} style={{
+                cursor: it.nav ? 'pointer' : 'default',
                 display: 'flex', alignItems: 'center', gap: 10,
                 padding: '8px 10px', borderRadius: 10,
                 background: it.current ? theme.chipBg : 'transparent',
@@ -191,26 +212,32 @@ function MobileDashboard({ theme, noNav = false, onNavigate }) {
           </div>
         </div>
 
-        {/* Latest correction */}
-        <div style={{
-          padding: 16, borderRadius: 18,
-          background: theme.accentGradSoft,
-          border: `1px solid ${theme.border}`,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-            <Icons.Sparkles size={14} style={{ color: theme.accent }} />
-            <span style={{ fontSize: 11.5, fontWeight: 700, color: theme.text, letterSpacing: '0.04em', textTransform: 'uppercase' }}>어제의 첨삭</span>
+        {/* Latest correction — 첨삭 기록이 없으면 카드를 숨긴다 */}
+        {corr && (
+          <div style={{
+            padding: 16, borderRadius: 18,
+            background: theme.accentGradSoft,
+            border: `1px solid ${theme.border}`,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+              <Icons.Sparkles size={14} style={{ color: theme.accent }} />
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: theme.text, letterSpacing: '0.04em', textTransform: 'uppercase' }}>첨삭</span>
+              <span style={{ fontSize: 10.5, color: theme.textDim, marginLeft: 'auto' }}>{F.relative(corr.created_at)}</span>
+            </div>
+            <div style={{ fontSize: 13, color: theme.textMuted, marginBottom: 6, lineHeight: 1.4, textDecoration: 'line-through' }}>
+              "{corr.original}"
+            </div>
+            <div style={{ fontSize: 14, color: theme.text, lineHeight: 1.45, fontWeight: 500 }}>
+              "<span style={{ background: theme.success + '22', color: theme.success, padding: '0 4px', borderRadius: 3, fontWeight: 700 }}>{corr.corrected}</span>"
+            </div>
+            {corr.explanation && (
+              <div style={{ fontSize: 11.5, color: theme.textMuted, marginTop: 6, lineHeight: 1.5 }}>{corr.explanation}</div>
+            )}
+            <button onClick={() => go('progress')} style={{ marginTop: 10, padding: '6px 10px', borderRadius: 8, background: theme.text, color: theme.bg, fontSize: 11.5, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              전체 {corr.total_count}개 보기 <Icons.ArrowRight size={11} />
+            </button>
           </div>
-          <div style={{ fontSize: 13, color: theme.textMuted, marginBottom: 6, lineHeight: 1.4 }}>
-            "If I <span style={{ textDecoration: 'line-through', color: theme.error }}>would have</span> known..."
-          </div>
-          <div style={{ fontSize: 14, color: theme.text, lineHeight: 1.45, fontWeight: 500 }}>
-            "If I <span style={{ background: theme.success + '22', color: theme.success, padding: '0 4px', borderRadius: 3, fontWeight: 700 }}>had known</span>..."
-          </div>
-          <button style={{ marginTop: 10, padding: '6px 10px', borderRadius: 8, background: theme.text, color: theme.bg, fontSize: 11.5, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            전체 보기 <Icons.ArrowRight size={11} />
-          </button>
-        </div>
+        )}
 
         {/* Recommended */}
         <div>
@@ -219,11 +246,8 @@ function MobileDashboard({ theme, noNav = false, onNavigate }) {
             <span style={{ fontSize: 11, color: theme.textMuted }}>전체 →</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {[
-              { tag: '시험', title: 'TOEIC Speaking Q11 — 가정법', sub: '7개 레슨 · 35분', accent: theme.accent },
-              { tag: '회화', title: '비즈니스 이메일 표현 50선', sub: '받아쓰기 포함', accent: theme.accent2 },
-            ].map((it, i) => (
-              <button key={i} style={{
+            {dash.recommendations.slice(0, 3).map((r) => ({ ...r, accent: dashRecAccent(r.tag, theme) })).map((it, i) => (
+              <button key={i} onClick={() => go(it.nav)} style={{
                 display: 'flex', alignItems: 'center', gap: 12, padding: 12, borderRadius: 14,
                 background: theme.card, border: `1px solid ${theme.border}`,
                 textAlign: 'left', width: '100%',
@@ -257,12 +281,13 @@ function MobileDashboard({ theme, noNav = false, onNavigate }) {
 // Mobile Conversation
 // ─────────────────────────────────────────────────────
 function MobileConversation({ theme, aiConfig }) {
-  const { messages, loading, send } = useJinaChat([]);
+  // 세션 사이드바 없음 — 스토어가 가장 최근 active 세션을 자동 선택해 이어간다 (v1)
+  const { messages, loading, send, lastScored, activeSession } = useConversation();
   const scrollRef = React.useRef(null);
   React.useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages.length, loading]);
-  const modelInfo = aiConfig?.provider === 'ollama' ? aiConfig.ollamaModel : 'haiku-4-5';
+  const modelInfo = window.JINA_AI.modelLabel(aiConfig);
 
   return (
     <div className="jina-root" style={{
@@ -288,7 +313,7 @@ function MobileConversation({ theme, aiConfig }) {
             <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: theme.success + '22', color: theme.success, fontWeight: 700 }}>LIVE</span>
           </div>
           <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            TOEIC Speaking Q11 · 비즈니스 미팅
+            {activeSession?.title ?? '새 회화'}
           </div>
         </div>
         <button style={{ width: 32, height: 32, borderRadius: 9, color: theme.textMuted, display: 'grid', placeItems: 'center' }}>
@@ -296,112 +321,48 @@ function MobileConversation({ theme, aiConfig }) {
         </button>
       </div>
 
-      {/* Live score bar */}
-      <div style={{
-        padding: '10px 16px',
-        borderBottom: `1px solid ${theme.border}`,
-        background: theme.bgSoft,
-        display: 'flex', alignItems: 'center', gap: 10,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-          <span style={{ fontSize: 11, color: theme.textMuted }}>실시간 점수</span>
-          <span className="jina-serif" style={{ fontSize: 22, fontWeight: 500, color: theme.text, lineHeight: 1 }}>83</span>
+      {/* Live score bar — lastScored 실데이터 (없으면 숨김) */}
+      {lastScored && (
+        <div style={{
+          padding: '10px 16px',
+          borderBottom: `1px solid ${theme.border}`,
+          background: theme.bgSoft,
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+            <span style={{ fontSize: 11, color: theme.textMuted }}>실시간 점수</span>
+            <span className="jina-serif" style={{ fontSize: 22, fontWeight: 500, color: theme.text, lineHeight: 1 }}>{lastScored.average}</span>
+          </div>
+          <div style={{ flex: 1, height: 4, borderRadius: 999, background: theme.border, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${lastScored.average}%`, background: theme.accentGrad, borderRadius: 999 }} />
+          </div>
+          {lastScored.delta != null && lastScored.delta !== 0 && (
+            <span style={{
+              fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999,
+              color: lastScored.delta > 0 ? theme.success : theme.error,
+              background: (lastScored.delta > 0 ? theme.success : theme.error) + '22',
+            }}>
+              {lastScored.delta > 0 ? `↑ ${lastScored.delta}` : `↓ ${-lastScored.delta}`}
+            </span>
+          )}
         </div>
-        <div style={{ flex: 1, height: 4, borderRadius: 999, background: theme.border, overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: '83%', background: theme.accentGrad, borderRadius: 999 }} />
-        </div>
-        <span style={{ fontSize: 11, color: theme.success, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: theme.success + '22' }}>↑ 6</span>
-      </div>
+      )}
 
       {/* Messages */}
       <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', padding: '16px 14px 8px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {/* Jina */}
-        <div style={{ display: 'flex', gap: 8 }}>
-          <JinaAvatar size={28} theme={theme} />
-          <div style={{ maxWidth: '85%' }}>
-            <div style={{
-              padding: '11px 13px', borderRadius: 16, borderTopLeftRadius: 4,
-              background: theme.chipBg, border: `1px solid ${theme.border}`,
-              fontSize: 13.5, color: theme.text, lineHeight: 1.5,
-            }}>
-              Hi Sumin! Imagine your boss asked you to recommend a vendor. Tell Mark which one — and <b>why</b>.
+        {messages.length === 0 && !loading && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, paddingTop: 48, textAlign: 'center' }}>
+            <JinaAvatar size={48} theme={theme} />
+            <div className="jina-serif" style={{ fontSize: 20, fontStyle: 'italic', color: theme.text }}>새 회화를 시작해요!</div>
+            <div style={{ fontSize: 12.5, color: theme.textMuted, lineHeight: 1.6 }}>
+              Jina에게 어떤 주제로 연습하고 싶은지 말해보세요.
             </div>
-            <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 4, lineHeight: 1.4, padding: '0 4px' }}>
-              상사가 거래처 추천을 요청했어요. Mark에게 어디를, 그리고 왜인지 말해보세요.
-            </div>
-          </div>
-        </div>
-
-        {/* User bubble with corrections */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <div style={{
-            maxWidth: '88%',
-            padding: '11px 13px', borderRadius: 16, borderTopRightRadius: 4,
-            background: theme.accentGradSoft,
-            border: `1px solid ${theme.border}`,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, paddingBottom: 8, borderBottom: `1px dashed ${theme.border}` }}>
-              <button style={{ width: 22, height: 22, borderRadius: '50%', background: theme.text, color: theme.bg, display: 'grid', placeItems: 'center', flex: '0 0 auto' }}>
-                <Icons.Play size={9} />
-              </button>
-              <Waveform theme={theme} height={16} bars={20} />
-              <span style={{ fontSize: 10, color: theme.textMuted, fontVariantNumeric: 'tabular-nums' }}>0:18</span>
-            </div>
-            <div style={{ fontSize: 13.5, color: theme.text, lineHeight: 1.6 }}>
-              Hi Mark, I think we{' '}
-              <span style={{ color: theme.error, textDecoration: 'line-through' }}>should to go</span>
-              {' '}<span style={{ background: theme.success + '22', color: theme.success, padding: '0 4px', borderRadius: 3, fontWeight: 600 }}>should go</span>
-              {' '}with OfficeMart. They <span style={{ borderBottom: `2px wavy ${theme.warning}` }}>have good prices</span> and offer next-day delivery.
-            </div>
-            <div style={{ display: 'flex', gap: 4, marginTop: 8, flexWrap: 'wrap' }}>
-              {[
-                { l: '발음', v: 92 }, { l: '유창성', v: 88 }, { l: '문법', v: 74, warn: true }, { l: '어휘', v: 81 },
-              ].map((s) => (
-                <div key={s.l} style={{
-                  fontSize: 10, padding: '2px 6px', borderRadius: 999,
-                  background: theme.surface, border: `1px solid ${theme.border}`,
-                  display: 'inline-flex', alignItems: 'center', gap: 3,
-                }}>
-                  <span style={{ color: theme.textMuted }}>{s.l}</span>
-                  <span style={{ color: s.warn ? theme.warning : theme.success, fontWeight: 700 }}>{s.v}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Correction card (expanded) */}
-        <div style={{
-          padding: 12, borderRadius: 14,
-          background: theme.surface, border: `1px solid ${theme.borderStrong}`,
-          marginLeft: 36,
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-            <Icons.Sparkles size={13} style={{ color: theme.accent }} />
-            <span style={{ fontSize: 11, color: theme.text, fontWeight: 700, letterSpacing: '0.04em' }}>JINA의 첨삭</span>
-          </div>
-          <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 8, lineHeight: 1.5 }}>
-            <em>"have good prices"</em>를 더 비즈니스다운 표현으로 바꿔보세요.
-          </div>
-          <button style={{
-            padding: '6px 10px', borderRadius: 8,
-            background: theme.chipBg, color: theme.text, fontSize: 11.5, fontWeight: 600,
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-          }}>
-            <Icons.Sparkle size={11} style={{ color: theme.accent }} />
-            offer competitive pricing
-          </button>
-        </div>
-
-        {messages.length > 0 && (
-          <div style={{ textAlign: 'center', fontSize: 10, color: theme.accent, padding: '2px 0', fontWeight: 600 }}>
-            <span style={{ padding: '3px 10px', borderRadius: 999, background: theme.accentGradSoft }}>↓ 실제 AI 응답</span>
           </div>
         )}
         {messages.map((m, i) => (
           m.role === 'user'
-            ? <LiveUserMessage key={i} theme={theme} msg={m} compact />
-            : <LiveJinaMessage key={i} theme={theme} msg={m} compact />
+            ? <LiveUserMessage key={m.id != null ? `srv-${m.id}` : `local-${i}`} theme={theme} msg={m} compact />
+            : <LiveJinaMessage key={m.id != null ? `srv-${m.id}` : `local-${i}`} theme={theme} msg={m} compact />
         ))}
 
         {loading && (

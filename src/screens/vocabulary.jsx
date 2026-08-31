@@ -1,246 +1,56 @@
 // vocabulary.jsx — 단어장 화면 (Desktop + Mobile)
 // SRS 플래시카드 복습 + 단어 목록 + AI 예문 생성
 
-const INITIAL_VOCAB = [
-  {
-    id: 1, word: 'accommodate', pos: 'v.', ipa: '/əˈkɒmədeɪt/',
-    meaning_ko: '수용하다, 맞추다',
-    examples: [
-      'The schedule was changed to accommodate the regional conference.',
-      'We can accommodate up to 200 guests in the main hall.',
-    ],
-    difficulty: 3,
-    status: 'due',    // 'due' | 'learned' | 'new'
-    next_review: 'Today',
-    interval_days: 1,
-    ease_factor: 2.5,
-    review_count: 3,
-    fail_count: 1,
-  },
-  {
-    id: 2, word: 'facilitate', pos: 'v.', ipa: '/fəˈsɪlɪteɪt/',
-    meaning_ko: '촉진하다, 용이하게 하다',
-    examples: [
-      'The new system will facilitate communication between departments.',
-      'Our goal is to facilitate a smooth transition.',
-    ],
-    difficulty: 3,
-    status: 'due',
-    next_review: 'Today',
-    interval_days: 3,
-    ease_factor: 2.6,
-    review_count: 5,
-    fail_count: 0,
-  },
-  {
-    id: 3, word: 'procurement', pos: 'n.', ipa: '/prəˈkjʊərmənt/',
-    meaning_ko: '조달, 구매',
-    examples: [
-      'The procurement department handles all supplier contracts.',
-      'Procurement costs increased by 8% this quarter.',
-    ],
-    difficulty: 4,
-    status: 'due',
-    next_review: 'Today',
-    interval_days: 1,
-    ease_factor: 2.3,
-    review_count: 2,
-    fail_count: 2,
-  },
-  {
-    id: 4, word: 'discrepancy', pos: 'n.', ipa: '/dɪˈskrepənsi/',
-    meaning_ko: '불일치, 차이',
-    examples: [
-      'There is a discrepancy between the invoice and the purchase order.',
-      'Please investigate the discrepancy in the report figures.',
-    ],
-    difficulty: 4,
-    status: 'learned',
-    next_review: 'In 3 days',
-    interval_days: 3,
-    ease_factor: 2.8,
-    review_count: 7,
-    fail_count: 1,
-  },
-  {
-    id: 5, word: 'reimburse', pos: 'v.', ipa: '/ˌriːɪmˈbɜːrs/',
-    meaning_ko: '환급하다, 변제하다',
-    examples: [
-      'The company will reimburse all travel expenses within 30 days.',
-      'Please submit your receipts to be reimbursed.',
-    ],
-    difficulty: 3,
-    status: 'learned',
-    next_review: 'In 5 days',
-    interval_days: 5,
-    ease_factor: 2.7,
-    review_count: 9,
-    fail_count: 0,
-  },
-  {
-    id: 6, word: 'compliance', pos: 'n.', ipa: '/kəmˈplaɪəns/',
-    meaning_ko: '준수, 규정 이행',
-    examples: [
-      'All employees must complete the annual compliance training.',
-      'The audit confirmed full compliance with safety regulations.',
-    ],
-    difficulty: 3,
-    status: 'new',
-    next_review: 'New',
-    interval_days: 1,
-    ease_factor: 2.5,
-    review_count: 0,
-    fail_count: 0,
-  },
-  {
-    id: 7, word: 'scrutinize', pos: 'v.', ipa: '/ˈskruːtɪnaɪz/',
-    meaning_ko: '면밀히 검토하다, 조사하다',
-    examples: [
-      'The committee will scrutinize the proposed budget carefully.',
-      'Analysts scrutinized the quarterly earnings report.',
-    ],
-    difficulty: 4,
-    status: 'new',
-    next_review: 'New',
-    interval_days: 1,
-    ease_factor: 2.5,
-    review_count: 0,
-    fail_count: 0,
-  },
-  {
-    id: 8, word: 'allocate', pos: 'v.', ipa: '/ˈæləkeɪt/',
-    meaning_ko: '배분하다, 할당하다',
-    examples: [
-      'The manager allocated resources evenly across all projects.',
-      '$50,000 was allocated to the marketing budget.',
-    ],
-    difficulty: 2,
-    status: 'learned',
-    next_review: 'In 7 days',
-    interval_days: 7,
-    ease_factor: 3.0,
-    review_count: 12,
-    fail_count: 0,
-  },
-];
-
 const SRS_RESULTS = ['again', 'hard', 'good', 'easy'];
 const SRS_LABELS = { again: '다시', hard: '어려움', good: '보통', easy: '쉬움' };
 const SRS_COLORS = {
   again: '#FC8181', hard: '#F6AD55', good: '#4FD1C5', easy: '#68D391',
 };
 
-function applyReview(word, result) {
-  let { interval_days, ease_factor, review_count, fail_count } = word;
-  review_count++;
-  let newEF = ease_factor, newInterval = interval_days;
-  if (result === 'again') {
-    newInterval = 1; newEF = Math.max(1.3, ease_factor - 0.2); fail_count++;
-  } else if (result === 'hard') {
-    newInterval = Math.max(1, Math.round(interval_days * 1.2));
-    newEF = Math.max(1.3, ease_factor - 0.15);
-  } else if (result === 'good') {
-    newInterval = Math.max(2, Math.round(interval_days * ease_factor));
-  } else {
-    newInterval = Math.max(4, Math.round(interval_days * ease_factor * 1.3));
-    newEF = Math.min(3.0, ease_factor + 0.15);
-  }
-  const newStatus = result === 'again' ? 'due' : 'learned';
-  const next_review = newStatus === 'due' ? 'Today'
-    : newInterval <= 1 ? 'Tomorrow' : `In ${newInterval} days`;
-  return { ...word, interval_days: newInterval, ease_factor: +newEF.toFixed(2),
-    review_count, fail_count, status: newStatus, next_review };
-}
-
-function useVocabStore() {
-  const [vocabList, setVocabList] = React.useState(() => {
-    try {
-      const s = localStorage.getItem('jina_vocab_v1');
-      return s ? JSON.parse(s) : INITIAL_VOCAB;
-    } catch { return INITIAL_VOCAB; }
-  });
-  const persist = (list) => {
-    try { localStorage.setItem('jina_vocab_v1', JSON.stringify(list)); } catch {}
-  };
-  const updateWord = React.useCallback((id, result) => {
-    setVocabList((prev) => {
-      const next = prev.map((w) => w.id === id ? applyReview(w, result) : w);
-      persist(next);
-      return next;
-    });
-  }, []);
-  const addWordToVocab = React.useCallback((wordData) => {
-    setVocabList((prev) => {
-      const next = [...prev, wordData];
-      persist(next);
-      return next;
-    });
-  }, []);
-  return { vocabList, updateWord, addWordToVocab };
-}
 
 // ─────────────────────────────────────────────────────
 // Desktop Vocabulary
 // ─────────────────────────────────────────────────────
-function VocabularyDesktop({ theme, aiConfig }) {
-  const { vocabList, updateWord, addWordToVocab } = useVocabStore();
+function VocabularyDesktop({ theme, aiConfig, onNavigate }) {
+  const {
+    cards: vocabList, stats: srvStats, error: storeError,
+    updateWord, addWord: addWordApi, cancelAdd, addState,
+  } = useVocab();
   const [tab, setTab] = React.useState('review'); // 'review' | 'list' | 'add'
   const [reviewIdx, setReviewIdx] = React.useState(0);
   const [flipped, setFlipped] = React.useState(false);
   const [reviewed, setReviewed] = React.useState({}); // { id: result }
   const [addWord, setAddWord] = React.useState('');
-  const [addLoading, setAddLoading] = React.useState(false);
-  const [addResult, setAddResult] = React.useState(null);
   const [listFilter, setListFilter] = React.useState('all'); // 'all' | 'due' | 'learned' | 'new'
 
-  const dueCards = vocabList.filter((w) => w.status === 'due');
+  // 복습 큐 = new + due (status는 서버 파생값)
+  const dueCards = vocabList.filter((w) => w.status === 'due' || w.status === 'new');
   const currentCard = dueCards[reviewIdx];
   const reviewDone = reviewIdx >= dueCards.length;
 
   const handleReview = (result) => {
     if (!currentCard) return;
-    updateWord(currentCard.id, result);
+    updateWord(currentCard.id, result); // 낙관적 — 스토어가 실패 시 롤백
     setReviewed((r) => ({ ...r, [currentCard.id]: result }));
     setFlipped(false);
     setReviewIdx((i) => i + 1);
   };
 
+  // 중복·정규화·SRS 초기값·저장은 전부 서버. 여기는 입력만 넘긴다.
+  const addLoading = addState.pending !== null;
+  const addResult = addState.result;
   const handleAddWord = async () => {
-    if (!addWord.trim()) return;
-    setAddLoading(true);
-    setAddResult(null);
-    const res = await window.JINA_AI.askJina({
-      history: [],
-      userMessage: `단어장에 단어를 추가해줘: "${addWord.trim()}". 이 단어의 품사, IPA 발음기호, 한국어 의미, 영어 예문 2개를 알려줘. JSON 형식으로 답해줘: { "reply_en": "...", "reply_ko": "...", "corrections": [], "scores": null, "suggestion": null }. reply_en에는 "Word: ${addWord.trim()}\n[pos] [ipa]\n의미: [한국어 뜻]\n예문1: ...\n예문2: ..."처럼 정리해줘.`,
-    });
-    setAddLoading(false);
-    if (res.ok) {
-      const reply = res.data?.reply_en || '';
-      const newEntry = {
-        id: Date.now(), word: addWord.trim(), pos: '—', ipa: '—',
-        meaning_ko: '(AI 추가)',
-        examples: reply.split('\n').filter((l) => l.match(/^예문\d+:/)).map((l) => l.replace(/^예문\d+:\s*/, '')).slice(0, 2),
-        difficulty: 3, status: 'new', next_review: 'Today',
-        interval_days: 1, ease_factor: 2.5, review_count: 0, fail_count: 0,
-      };
-      if (!newEntry.examples.length) newEntry.examples = [reply.substring(0, 100)];
-      addWordToVocab(newEntry);
-      setAddResult({ ok: true, word: addWord.trim(), reply });
-    } else {
-      setAddResult({ ok: false, error: res.error });
-    }
+    if (!addWord.trim() || addLoading) return;
+    const word = addWord.trim();
     setAddWord('');
+    await addWordApi(word, { provider: aiConfig?.provider });
   };
 
   const filteredList = listFilter === 'all'
     ? vocabList
     : vocabList.filter((w) => w.status === listFilter);
 
-  const stats = {
-    due: vocabList.filter((w) => w.status === 'due').length,
-    learned: vocabList.filter((w) => w.status === 'learned').length,
-    newWords: vocabList.filter((w) => w.status === 'new').length,
-  };
+  const stats = { due: srvStats.due, learned: srvStats.learned, newWords: srvStats.new };
 
   return (
     <div className="jina-root" style={{
@@ -249,19 +59,22 @@ function VocabularyDesktop({ theme, aiConfig }) {
       display: 'flex',
     }}>
       {/* Sidebar */}
-      <aside style={{
+      <aside aria-label="단어장 메뉴" style={{
         width: 240, padding: '24px 16px',
         borderRight: `1px solid ${theme.border}`,
         background: theme.bgSoft,
         display: 'flex', flexDirection: 'column', gap: 4,
         flexShrink: 0,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px 20px' }}>
+        {/* 로고 — 클릭하면 홈(대시보드). 공통 사이드바 로고와 같은 동작 */}
+        <button type="button" onClick={() => onNavigate && onNavigate('dashboard')} aria-label="홈(대시보드)으로" title="홈으로"
+          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px 20px', width: '100%', textAlign: 'left' }}>
           <JinaAvatar size={32} theme={theme} />
           <span className="jina-serif" style={{ fontSize: 20, fontStyle: 'italic', color: theme.text }}>Jina</span>
-        </div>
+        </button>
         {[
-          { id: 'review', label: '오늘의 복습', badge: stats.due },
+          { id: 'review', label: '오늘의 복습', badge: dueCards.length },
+          { id: 'daily', label: '오늘의 단어 (AI 퀴즈)' },
           { id: 'list', label: '전체 단어장' },
           { id: 'add', label: '단어 추가 (+AI)' },
         ].map(({ id, label, badge }) => (
@@ -310,7 +123,8 @@ function VocabularyDesktop({ theme, aiConfig }) {
           <div>
             <div style={{ fontSize: 11, color: theme.textDim, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>단어장</div>
             <h1 style={{ fontSize: 26, fontWeight: 700, color: theme.text, margin: 0 }}>
-              {tab === 'review' && `오늘의 복습 · ${stats.due}개`}
+              {tab === 'review' && `오늘의 복습 · ${dueCards.length}개`}
+              {tab === 'daily' && '오늘의 단어 · AI 퀴즈'}
               {tab === 'list' && '전체 단어장'}
               {tab === 'add' && 'AI 단어 추가'}
             </h1>
@@ -328,6 +142,16 @@ function VocabularyDesktop({ theme, aiConfig }) {
         </header>
 
         <div style={{ flex: 1, overflow: 'auto' }}>
+          {/* 서버 연결 실패 배너 — 캐시 폴백 중임을 알린다 */}
+          {storeError && (
+            <div style={{
+              margin: '16px 40px 0', padding: '10px 14px', borderRadius: 10,
+              background: theme.warning + '18', border: `1px solid ${theme.warning}40`,
+              fontSize: 12.5, color: theme.warning, fontWeight: 600,
+            }}>
+              ⚠︎ 서버 연결 실패 — 마지막으로 불러온 목록을 표시 중입니다. ({storeError})
+            </div>
+          )}
           {/* ── REVIEW TAB ── */}
           {tab === 'review' && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100%', padding: 40 }}>
@@ -348,6 +172,10 @@ function VocabularyDesktop({ theme, aiConfig }) {
           )}
 
           {/* ── LIST TAB ── */}
+          {/* ── DAILY QUIZ TAB — 패널(src/screens/vocab-quiz.jsx)이 스토어의 quiz 액션을 직접 쓴다 ── */}
+          {tab === 'daily' && (
+            <DailyQuizPanel theme={theme} aiConfig={aiConfig} />
+          )}
           {tab === 'list' && (
             <div style={{ padding: '28px 40px' }}>
               {/* Filter tabs */}
@@ -402,19 +230,29 @@ function VocabularyDesktop({ theme, aiConfig }) {
                   }}
                 />
                 <button
-                  onClick={handleAddWord}
-                  disabled={!addWord.trim() || addLoading}
+                  onClick={addLoading ? cancelAdd : handleAddWord}
+                  disabled={!addLoading && !addWord.trim()}
                   style={{
                     padding: '12px 20px', borderRadius: 12,
-                    background: !addWord.trim() || addLoading ? theme.chipBg : theme.accentGrad,
-                    color: !addWord.trim() || addLoading ? theme.textMuted : '#fff',
+                    background: addLoading ? theme.error + '22' : !addWord.trim() ? theme.chipBg : theme.accentGrad,
+                    color: addLoading ? theme.error : !addWord.trim() ? theme.textMuted : '#fff',
                     fontSize: 14, fontWeight: 700,
-                    cursor: !addWord.trim() || addLoading ? 'not-allowed' : 'pointer',
+                    cursor: !addLoading && !addWord.trim() ? 'not-allowed' : 'pointer',
                   }}
                 >
-                  {addLoading ? '생성 중…' : 'AI 추가'}
+                  {addLoading ? '취소' : 'AI 추가'}
                 </button>
               </div>
+              {addLoading && (
+                <div style={{
+                  padding: '14px 18px', borderRadius: 14, marginBottom: 20,
+                  background: theme.surface, border: `1px solid ${theme.border}`,
+                  fontSize: 13, color: theme.textMuted, display: 'flex', alignItems: 'center', gap: 8,
+                }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: theme.accent, animation: 'jina-pulse 1s infinite' }} />
+                  "{addState.pending}" 사전 항목을 AI가 생성하는 중… (5~15초)
+                </div>
+              )}
               {addResult && (
                 <div style={{
                   padding: '18px 20px', borderRadius: 14,
@@ -423,16 +261,38 @@ function VocabularyDesktop({ theme, aiConfig }) {
                 }}>
                   {addResult.ok ? (
                     <React.Fragment>
-                      <div style={{ fontSize: 12, color: theme.success, fontWeight: 700, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ fontSize: 12, color: theme.success, fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
-                        단어 생성 완료 — 단어장에 추가됨
+                        {addResult.duplicate ? '이미 단어장에 있는 단어예요' : '단어 생성 완료 — 단어장에 추가됨'}
                       </div>
-                      <div style={{ fontSize: 14, color: theme.text, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
-                        {addResult.reply}
+                      {/* 실제 저장된 카드를 렌더 — 정규식 스크래핑/원문 덤프 폐기 */}
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
+                        <span style={{ fontSize: 24, fontWeight: 800, color: theme.text }}>{addResult.card.word}</span>
+                        <span style={{ fontSize: 13, color: theme.textMuted }}>{addResult.card.pos}</span>
+                        <span style={{ fontSize: 13, color: theme.textMuted, fontStyle: 'italic' }}>{addResult.card.ipa}</span>
+                        <SpeakButton text={addResult.card.word} theme={theme} size={14} />
+                        <span style={{ display: 'inline-flex', gap: 3, marginLeft: 'auto' }}>
+                          {[1, 2, 3, 4, 5].map((d) => (
+                            <span key={d} style={{ width: 6, height: 6, borderRadius: '50%', background: d <= addResult.card.difficulty ? theme.accent : theme.chipBg }} />
+                          ))}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: theme.text, marginBottom: 10 }}>{addResult.card.meaning_ko}</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {addResult.card.examples.map((ex, i) => (
+                          <div key={i} style={{
+                            padding: '9px 13px', borderRadius: 10,
+                            background: theme.card, border: `1px solid ${theme.border}`,
+                            fontSize: 13, color: theme.textMuted, fontStyle: 'italic', lineHeight: 1.55,
+                          }}>"{ex}"</div>
+                        ))}
                       </div>
                     </React.Fragment>
                   ) : (
-                    <div style={{ fontSize: 13, color: theme.error }}>오류: {addResult.error}</div>
+                    <div style={{ fontSize: 13, color: theme.error, lineHeight: 1.6 }}>
+                      오류: {addResult.error}
+                      {addResult.hint && <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 6 }}>해결법: {addResult.hint}</div>}
+                    </div>
                   )}
                 </div>
               )}
@@ -488,6 +348,7 @@ function FlashCard({ theme, card, flipped, onFlip, onResult, idx, total }) {
           </div>
           <div style={{ fontSize: 16, color: theme.textMuted, letterSpacing: '0.01em' }}>
             {card.pos} &nbsp; <span style={{ fontStyle: 'italic', opacity: 0.7 }}>{card.ipa}</span>
+            <SpeakButton text={card.word} theme={theme} size={16} style={{ verticalAlign: 'middle', marginLeft: 8 }} />
           </div>
           {/* Difficulty dots */}
           <div style={{ display: 'flex', justifyContent: 'center', gap: 5, marginTop: 18 }}>
@@ -549,7 +410,7 @@ function FlashCard({ theme, card, flipped, onFlip, onResult, idx, total }) {
             }}>
               <span>{SRS_LABELS[r]}</span>
               <span style={{ fontSize: 10, opacity: 0.7, fontWeight: 500 }}>
-                {r === 'again' ? '1분' : r === 'hard' ? '1일' : r === 'good' ? '3일' : '7일'}
+                {card.preview?.[r]?.label || ''}
               </span>
             </button>
           ))}
@@ -635,6 +496,7 @@ function VocabListRow({ word: w, theme, compact = false }) {
             <span style={{ fontSize: compact ? 16 : 18, fontWeight: 700, color: theme.text }}>{w.word}</span>
             <span style={{ fontSize: 12, color: theme.textDim, marginLeft: 8 }}>{w.pos}</span>
             <span style={{ fontSize: 12, color: theme.textDim, marginLeft: 6, fontStyle: 'italic' }}>{w.ipa}</span>
+            <SpeakButton text={w.word} theme={theme} size={13} style={{ verticalAlign: 'middle', marginLeft: 4 }} />
           </div>
           <span style={{ fontSize: 14, color: theme.textMuted, marginLeft: 4 }}>{w.meaning_ko}</span>
         </div>
@@ -679,14 +541,14 @@ function VocabListRow({ word: w, theme, compact = false }) {
 // ─────────────────────────────────────────────────────
 // Mobile Vocabulary
 // ─────────────────────────────────────────────────────
-function MobileVocabulary({ theme, noNav = false, onNavigate }) {
-  const { vocabList, updateWord } = useVocabStore();
+function MobileVocabulary({ theme, aiConfig, noNav = false, onNavigate }) {
+  const { cards: vocabList, updateWord } = useVocab(); // Desktop과 같은 Context — state 분리 해소
   const [tab, setTab] = React.useState('review'); // 'review' | 'list'
   const [reviewIdx, setReviewIdx] = React.useState(0);
   const [flipped, setFlipped] = React.useState(false);
   const [reviewed, setReviewed] = React.useState({});
 
-  const dueCards = vocabList.filter((w) => w.status === 'due');
+  const dueCards = vocabList.filter((w) => w.status === 'due' || w.status === 'new');
   const currentCard = dueCards[reviewIdx];
   const reviewDone = reviewIdx >= dueCards.length;
 
@@ -710,7 +572,7 @@ function MobileVocabulary({ theme, noNav = false, onNavigate }) {
         <div>
           <div style={{ fontSize: 11, color: theme.textDim, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 2 }}>단어장</div>
           <div style={{ fontSize: 22, fontWeight: 700, color: theme.text }}>
-            {tab === 'review' ? `복습 대기 ${dueCards.length}개` : '전체 단어'}
+            {tab === 'review' ? `복습 대기 ${dueCards.length}개` : tab === 'daily' ? '오늘의 단어 · AI 퀴즈' : '전체 단어'}
           </div>
         </div>
         <div style={{
@@ -725,6 +587,7 @@ function MobileVocabulary({ theme, noNav = false, onNavigate }) {
       <div style={{ display: 'flex', padding: '0 16px 12px', gap: 8 }}>
         {[
           { id: 'review', label: '복습', badge: dueCards.length },
+          { id: 'daily', label: '오늘의 단어' },
           { id: 'list', label: '전체 목록' },
         ].map(({ id, label, badge }) => (
           <button key={id} onClick={() => setTab(id)} style={{
@@ -778,6 +641,7 @@ function MobileVocabulary({ theme, noNav = false, onNavigate }) {
                   <div style={{ fontSize: 40, fontWeight: 800, color: theme.text, marginBottom: 8 }}>{currentCard.word}</div>
                   <div style={{ fontSize: 14, color: theme.textMuted }}>
                     {currentCard.pos} · <span style={{ fontStyle: 'italic' }}>{currentCard.ipa}</span>
+                    <SpeakButton text={currentCard.word} theme={theme} size={15} style={{ verticalAlign: 'middle', marginLeft: 6 }} />
                   </div>
                 </div>
                 <div style={{ borderTop: `1px solid ${theme.border}` }} />
@@ -816,7 +680,7 @@ function MobileVocabulary({ theme, noNav = false, onNavigate }) {
                     }}>
                       <span>{SRS_LABELS[r]}</span>
                       <span style={{ fontSize: 9, opacity: 0.7 }}>
-                        {r === 'again' ? '1분' : r === 'hard' ? '1일' : r === 'good' ? '3일' : '7일'}
+                        {currentCard.preview?.[r]?.label || ''}
                       </span>
                     </button>
                   ))}
@@ -826,6 +690,7 @@ function MobileVocabulary({ theme, noNav = false, onNavigate }) {
           )
         )}
 
+        {tab === 'daily' && <DailyQuizPanel theme={theme} aiConfig={aiConfig} compact />}
         {tab === 'list' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 4 }}>
             {vocabList.map((w) => (

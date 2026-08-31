@@ -43,18 +43,25 @@ ollama pull qwen2.5:3b
 ollama pull llama3.1:8b
 ```
 
-### 3. 프로토타입 열기
-
-`index.html`을 브라우저에서 열거나 로컬 서버로 서빙:
+### 3. 서버 실행 (정적 3003 + API 3004 동시)
 
 ```bash
-# Python
-python3 -m http.server 8000
-# 또는 Node
-npx serve
+npm install                 # pg / dotenv / playwright
+cp .env.example .env        # PGHOST 등 실제 접속정보를 채운다 (.env는 git 미추적)
+npm run db:migrate          # 최초 1회 — 0001~0008 마이그레이션
+npm run db:seed             # 개발 계정(DEV_USER_EMAIL/PASSWORD) 생성
+npm run dev                 # server.js(3003) + api/server.js(3004) 동시 실행, Ctrl+C로 둘 다 종료
 
-# 그 다음 http://localhost:8000 접속
+# 그 다음 http://localhost:3003 접속
 ```
+
+한쪽만 띄우려면 `npm run dev:web`(정적) / `npm run dev:api`(API). `npm run dev:all`은 `dev`와 동일(구 문서 호환).
+
+**E2E (Playwright, 141개)** — `npm run dev`가 떠 있는 상태에서 `node scripts/e2e-{vocab,conversation,lesson,dashboard,progress,auth}.mjs`.
+브라우저·CDN 설정은 `scripts/e2e-env.mjs`가 환경에 맞게 고른다: 기본은 Playwright 번들 chromium(`channel: chromium`),
+`PW_CHROMIUM=<실행파일>`로 교체 가능, unpkg가 막힌 환경은 `E2E_VENDOR=<react/react-dom/babel 로컬 디렉터리>`. 회화·단어장 스위트는 실제 AI provider(CLI) 호출이 필요하다.
+다른 포트의 인스턴스를 검증할 때는 `E2E_BASE=http://localhost:3103 E2E_API=http://localhost:3104`처럼 대상 주소를 넘긴다(기본 3003/3004). 데스크탑 페이지 이동은 `aside[aria-label="주요 메뉴"]`(공통 사이드바) 기준이다.
+CLI 세션 resume 하이브리드는 `node scripts/verify-resume.mjs [provider]`로 따로 검증한다 — 턴1(새 세션) → 턴2(히스토리 없이 resume, 맥락 기억) → 핸들 훼손 후 턴3(히스토리 폴백) 12개 단정, 끝나면 검증 세션을 삭제한다.
 
 ### 4. 설정 확인
 
@@ -183,16 +190,28 @@ launchctl setenv OLLAMA_ORIGINS "*"
 
 ### Phase 1 — 백엔드 (4-6주)
 
-- [ ] **사용자 인증** — NextAuth / Clerk / Supabase Auth
-- [ ] **DB 스키마**:
-  - `users` — 프로필, 목표 점수, 가입일
-  - `lessons` — 콘텐츠 (지문, 문제, 어휘)
-  - `sessions` — 회화 세션 (메시지 배열, 점수, scenario_id)
-  - `corrections` — 누적 첨삭 기록 (SRS 복습용)
-  - `vocab_cards` — 사용자 단어장 (간격 반복 알고리즘)
-  - `progress` — 일별 학습량, 정확도, 연속 학습일
-- [ ] **AI 프록시 서버** — 프론트가 직접 LLM 호출하지 않고 백엔드 경유 (rate-limit / 비용 제어 / 로깅)
-- [ ] **TOEIC 점수 추정 모델** — 최근 N개 세션의 점수 가중평균 + 보정
+- [x] **사용자 인증** — `api/` 자체 구현 (scrypt + 세션 쿠키, `docs/PLAN-vocab-backend.md` Phase 2)
+- [ ] **DB 스키마** (구현된 것은 체크, 명명은 실제 마이그레이션 기준):
+  - [x] `users` / `auth_sessions` — 인증 (`db/migrations/0001_auth.sql`)
+  - [x] `vocab_words` / `user_vocab_cards` / `vocab_reviews` — 단어장 + SRS (`0002_vocab.sql`)
+  - [x] `lessons` / `lesson_items` / `user_lesson_attempts` — 콘텐츠 + 서버 채점 (`0005_lessons.sql`, `0006_lessons_seed.sql`)
+  - [x] `lesson_qa_sessions` + `user_lesson_attempts.skill_code` — 레슨 Jina Q&A(`0011_lesson_qa.sql`, `docs/plan/07-…md` Phase 1). `POST /api/lessons/:id/qa`는 서버가 지문(제출 전)·문항+내 답(제출 후)만 조립해 AI task `lesson_qa`에 넘기고 정답·해설은 어떤 경로로도 미전송, 인용은 지문 부분문자열 검증, 제출 후엔 CLI 세션 resume. `GET /api/lessons?kind=&status=`, `GET /api/lessons/recommended`(대시보드와 같은 `recommendLessons`), 레슨 목록 뷰
+  - [x] `conversation_sessions` / `conversation_messages` — 회화 (`0004_conversation.sql`)
+  - [x] `corrections` — 누적 첨삭 기록 (`0004_conversation.sql`)
+  - [x] `correction_reviews` / `user_goals` — 첨삭 SRS + 목표 (`0007_user_goals.sql`, `0008_progress.sql`)
+  - [x] `vocab_quizzes` — 단어장 '오늘의 단어' AI 퀴즈 (`0010_vocab_quizzes.sql`, `docs/plan/06-vocab-daily-quiz.md`).
+        주제(랜덤/최신 뉴스/게임/블로그/키워드)로 AI가 10단어 4지선다 퀴즈를 만들고(`POST /api/vocab/quiz`, task `vocab_quiz`),
+        서버가 채점(`…/answer`)하며 틀린 단어/전체를 AI 재호출 없이 단어장에 추가(`…/add`). 뉴스·블로그는 AI 지식 기준(실시간 검색 아님)
+  - [x] **단어 발음(🔊)** — `src/shared/speech.jsx`: 브라우저 Web Speech API(외부 TTS 없음)로 퀴즈 단어·예문, 플래시카드, 단어 목록, 회화 '오늘의 단어', 학습 지문 '듣기'를 읽어준다. 퀴즈는 '자동 발음' 토글(기기 설정). Phase 2 TTS(ElevenLabs/Azure)로 갈 때 `jinaSpeak` 구현만 교체
+  - [x] `conversation_sessions.provider_ref` + `provider_ref_provider` — CLI 세션 resume 핸들 (`0009_provider_session.sql`).
+        같은 provider 로 이어지는 턴은 히스토리 없이 `--resume`(claude) / `exec resume`(codex) / `--conversation`(agy) / `--resume`(cursor)로 보내고,
+        resume 실패·provider 전환·ollama 는 예전처럼 최근 8턴 히스토리를 새 세션에 재전송 (DB 가 단일 소스, 응답 `meta.resumed`)
+  - [ ] `daily_progress` — 일별 학습량/정확도/연속일수의 **적재**. v1은 저장 없이
+        `vocab_reviews`/`user_lesson_attempts`/`conversation_messages` 실시간 집계
+        (`api/services/dashboard.service.js`, `progress.service.js`) — 데이터가 커지면 후속 과제
+- [x] **AI 프록시 서버** — `api/ai/` CLI 프록시 5종 (claude/agy/codex/cursor/ollama), 브라우저 직결 폐기
+- [x] **TOEIC 점수 추정 (v1)** — 레슨 정답률 기반 단일 산식 `200 + 790 × accuracy`
+      (문항 3개 미만이면 `null` + 빈 상태). 세션 가중평균·보정은 후속 과제
 
 ### Phase 2 — 음성 기능 (3-4주)
 

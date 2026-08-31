@@ -31,3 +31,6 @@ uploads/
 
 # CLI provider 전용 작업 디렉터리 (Phase 3)
 .jina-agent-cwd/
+
+# Playwright MCP 브라우저 캡처 (리뷰용 임시)
+.playwright-mcp/

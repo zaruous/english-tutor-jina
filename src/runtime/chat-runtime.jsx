@@ -5,8 +5,12 @@ function useJinaChat(initialMessages = []) {
   const [messages, setMessages] = React.useState(initialMessages);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState(null);
+  // 서버가 돌려준 CLI 세션 핸들(conversationId). 다음 턴에 되돌려주면 서버가 히스토리 없이 세션을 이어간다.
+  // provider 를 바꾸면 핸들이 안 맞아 서버가 히스토리(아래 hist)로 폴백하므로 hist 는 계속 보낸다.
+  const convRef = React.useRef(null);
 
   const reset = React.useCallback((msgs = []) => {
+    convRef.current = null;
     setMessages(msgs);
     setLoading(false);
     setError(null);
@@ -22,16 +26,17 @@ function useJinaChat(initialMessages = []) {
     const hist = [...messages, userMsg]
       .filter((m) => m.role === 'user' || m.role === 'assistant')
       .map((m) => ({ role: m.role, content: m.contentForModel || m.content }));
-    const res = await window.JINA_AI.askJina({ history: hist.slice(0, -1), userMessage: text.trim() });
+    const res = await window.JINA_AI.askJina({ history: hist.slice(0, -1), userMessage: text.trim(), conversationId: convRef.current });
     setLoading(false);
     if (!res.ok) {
       setError(res.error || '응답 실패');
       setMessages((m) => [...m, {
         role: 'assistant', kind: 'jina-error',
-        content: res.error, provider: res.provider, time: nowHHMM(),
+        content: res.error, hint: res.hint || null, provider: res.provider, time: nowHHMM(),
       }]);
       return;
     }
+    if (res.conversationId) convRef.current = res.conversationId;
     const d = res.data || {};
     setMessages((m) => [...m, {
       role: 'assistant', kind: 'jina-ai',
@@ -49,10 +54,11 @@ function useJinaChat(initialMessages = []) {
   return { messages, loading, error, send, reset };
 }
 
-function nowHHMM() {
-  const d = new Date();
+function nowHHMM(date) {
+  const d = date ? new Date(date) : new Date();
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
+window.jinaHHMM = nowHHMM; // conversation-store 매퍼가 재사용 — 시각 포맷터 중복 구현 금지
 
 // JinaInputBar — text-input bar that calls onSend; falls back to mic mode visually
 function JinaInputBar({ theme, onSend, loading, suggestions, provider, modelInfo, compact = false }) {
@@ -71,17 +77,17 @@ function JinaInputBar({ theme, onSend, loading, suggestions, provider, modelInfo
       borderTop: `1px solid ${theme.border}`,
       background: theme.bg,
     }}>
-      {/* Provider badge */}
+      {/* Provider badge — 5종 공통 (PROVIDER_META) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
         <span style={{
           fontSize: 10.5, padding: '3px 8px', borderRadius: 999,
-          background: provider === 'ollama' ? '#22b07d22' : '#c9644222',
-          color: provider === 'ollama' ? '#22b07d' : '#c96442',
+          background: (window.JINA_AI.PROVIDER_META[provider]?.color || '#888') + '22',
+          color: window.JINA_AI.PROVIDER_META[provider]?.color || '#888',
           fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase',
           display: 'inline-flex', alignItems: 'center', gap: 5,
         }}>
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
-          {provider === 'ollama' ? `Ollama · ${modelInfo}` : `Claude · ${modelInfo}`}
+          {`${window.JINA_AI.PROVIDER_META[provider]?.label || provider} · ${modelInfo}`}
         </span>
         <div style={{ display: 'inline-flex', borderRadius: 8, background: theme.chipBg, padding: 2 }}>
           {['text', 'mic'].map((m) => (
@@ -196,16 +202,15 @@ function LiveJinaMessage({ theme, msg, compact = false }) {
             background: theme.error + '15', border: `1px solid ${theme.error}40`,
           }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: theme.error, marginBottom: 4 }}>
-              ⚠︎ {msg.provider === 'ollama' ? 'Ollama 연결 실패' : 'Claude 호출 실패'}
+              ⚠︎ {(window.JINA_AI.PROVIDER_META[msg.provider]?.label || msg.provider || 'AI')} 호출 실패
             </div>
             <div style={{ fontSize: 12, color: theme.textMuted, lineHeight: 1.5 }}>
               {msg.content}
             </div>
-            {msg.provider === 'ollama' && (
+            {/* 해결법은 서버가 준 hint가 있을 때만 — 프론트 provider 분기 0 */}
+            {msg.hint && (
               <div style={{ fontSize: 11, color: theme.textDim, marginTop: 8, padding: 8, borderRadius: 6, background: theme.bgSoft }}>
-                <b style={{ color: theme.text }}>해결법:</b> Ollama가 실행 중인지 확인하세요.<br/>
-                <code style={{ fontSize: 10.5 }}>OLLAMA_ORIGINS="*" ollama serve</code><br/>
-                Tweaks에서 URL/모델을 변경하거나 Claude로 전환할 수 있어요.
+                <b style={{ color: theme.text }}>해결법:</b> {msg.hint}
               </div>
             )}
           </div>
@@ -220,7 +225,7 @@ function LiveJinaMessage({ theme, msg, compact = false }) {
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6 }}>
           <span className="jina-serif" style={{ fontSize: compact ? 14 : 15, fontStyle: 'italic', color: theme.text, fontWeight: 500 }}>Jina</span>
           <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: theme.accent + '20', color: theme.accent, fontWeight: 700, letterSpacing: '0.04em' }}>
-            {msg.provider?.toUpperCase()}
+            {(window.JINA_AI.PROVIDER_META[msg.provider]?.label || msg.provider || '').toUpperCase()}
           </span>
           <span style={{ fontSize: 10.5, color: theme.textDim }}>{msg.time}</span>
         </div>

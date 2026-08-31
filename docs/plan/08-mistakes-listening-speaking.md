@@ -1,0 +1,124 @@
+# 08 — 오답 노트 · 리스닝(LC) · 스피킹 플랜 (2026-08-31)
+
+사이드바 '준비 중' 3항목(`app-nav.jsx`의 `mistakes`/`listening`/`speaking`)을 실기능으로 전환하는 플랜.
+플랜 07이 미룬 항목("타이머·오답 노트 테이블, LC/TTS 문항")의 후속이며, 07의 합의(파생값 우선·정답 비노출·draft 검증)를 계승한다.
+
+## 0. 화면 자산 검토 — 결론: 디자인 이미지 없음
+
+| 자산 | 검토 결과 |
+|---|---|
+| 저장소 이미지 파일 | `ss-real-*.png`·`ss-lesson-*.png`(루트, 미추적) — **기존 화면의 검증 스크린샷**일 뿐, 신규 화면 목업 아님 |
+| 캔버스 아트보드 | 10개(회화·학습·대시보드·단어장·통계 × 데스크탑/모바일) — 세 화면 해당 없음 |
+| `docs/HANDOFF.md` §7 | 이미지가 아닌 **규격 텍스트**: MediaRecorder 캡처 패턴, 발음 단어별 점수 색상 매핑(`≥85 success / ≥65 warning / 미만 error`) — 스피킹 UI에 그대로 채용 |
+| 기존 화면 내 음성 데모 | 없음(모바일 대시보드 히어로의 Mic 아이콘 1개뿐) |
+
+→ **본 문서의 ASCII 와이어프레임이 시각 기준**이다. 스타일은 기존 화면 문법(카드 `theme.card`+15px 라운드, 칩, `data-testid`)을 따른다.
+
+## 1. 현재 상태 — 무엇이 이미 준비돼 있나
+
+| 영역 | 준비된 것 | 없는 것 |
+|---|---|---|
+| 오답 노트 | `user_lesson_attempts.answers`(문항별 답)·`skill_code`(문항·attempt 약점 코드, Phase 1~2 반영 완료), 채점 결과에 정답·해설 노출은 제출 후 허용 규범 확립 | 화면·API 전부 |
+| 리스닝 | 레슨 엔진 전체(정답 비노출·서버 채점·진도·목록·Q&A·AI 생성 파이프라인), `speech.jsx` Web Speech TTS(`jinaSpeak`, rate 옵션) | LC 콘텐츠, `kind` 확장, 스크립트 숨김 UI, listening 통계(03/04 플랜이 'v1 데이터 없음'으로 비워둔 자리) |
+| 스피킹 | 회화 엔진(세션·grammar/fluency 채점·첨삭 SRS·시나리오), HANDOFF §7 규격, Web Speech `SpeechRecognition`(브라우저 STT, 비용 0) | 화면·읽기 문장 은행·STT 연결 |
+
+## 2. 설계 결정
+
+1. **순서: 오답 노트 → 리스닝 → 스피킹** (데이터 준비도 순. 오답 노트는 스키마 변경 0으로 시작 가능)
+2. **오답 노트는 파생 뷰** — `attempts`의 answers vs `lesson_items.answer` 비교로 매 요청 계산. `wrong_notes` 테이블 신설 금지(07 §2.6 계승, 메모 UX 확정 전). "극복" 판정: **레슨별 최신 attempt** 기준 — 최신 시도에서 맞힌 문항은 목록에서 제외.
+3. **리스닝은 레슨 엔진 재사용** — 새 엔진 금지. `lessons.kind='toeic_lc'` 추가(새 마이그레이션으로 `lessons_kind_ck` 확장 — 적용된 0005 수정 금지), 스크립트는 `passage.body`에 저장. **v1은 '연습 모드'로 규정**: 클라이언트 TTS(`jinaSpeak`)로 재생하려면 스크립트가 클라이언트에 가야 하므로 완전 비노출은 불가 — 화면에 렌더하지 않는 수준만 보장하고, 시험 모드(서버 TTS·완전 비노출)는 Phase 2 TTS 도입과 함께.
+4. **스피킹 v1은 외부 API 0원** — ① 읽기 연습(read-aloud): 화면의 문장을 읽으면 `SpeechRecognition` 결과와 목표 문장을 단어 매칭 → HANDOFF §7 색상 규격으로 단어별 표시. ② 회화 탭 마이크 입력: STT 텍스트를 기존 send()로 전송(응답 자동 발음은 `useAutoSpeak` 기존 기능). Whisper·발음 평가 API는 Phase 2(비용, HANDOFF §6).
+5. **통계 연결** — LC 정답률이 대시보드/통계의 listening 스킬 'v1 데이터 없음' 자리를 채운다(03-dashboard §skills·04-progress 규격 그대로, 소스만 추가). 오답 노트의 skill_code 집계는 통계 탭 약점 카드와 후속 연결.
+6. **사이드바 활성화는 Phase 완료 시점에 하나씩** (`soon` 해제). 모바일은 오답 노트만 v2에서 검토, 리스닝/스피킹은 데스크탑 우선(`mobile:false` 유지 — STT 모바일 브라우저 제약).
+
+## 3. Phase 플랜
+
+### Phase A (3~4일) — 오답 노트
+
+```
+┌ 오답 노트 ──────────────────────────────────────────────┐
+│ [전체] [문법] [어휘] [세부사항] [추론] [주제]   12문항 · 극복 4 │
+│ ┌────────────────────────────────────────────────────┐ │
+│ │ PART 5 · 면접 문법 · 2026-08-31        [grammar] 2회 틀림 │ │
+│ │ Applicants are encouraged ___ specific examples.    │ │
+│ │ 내 답 (A) provide ✗   정답 (C) to provide ✓          │ │
+│ │ 해설: (C) to provide가 be encouraged to do 구조를…    │ │
+│ │              [Jina에게 물어보기]  [레슨 다시 풀기 →]      │ │
+│ └────────────────────────────────────────────────────┘ │
+│ (빈 상태: "아직 오답이 없어요 — 레슨을 풀면 여기 모입니다")     │
+└─────────────────────────────────────────────────────────┘
+```
+
+| 산출물 | 세부 |
+|---|---|
+| `GET /api/mistakes?skill=&lesson_id=` | 파생 쿼리: 사용자 attempts × lesson_items 조인, 레슨별 최신 attempt에서 틀린 문항만. 행 = `{lesson_id, lesson_title, kind, position, stem, options, my_answer, answer, explanation, skill_code, times_wrong, last_wrong_at}`. 제출한 본인 데이터만이므로 정답·해설 포함 가능(제출 후 규범) |
+| 화면 `src/screens/mistakes.jsx` | skill_code 필터 칩 · 오답 카드 리스트 · [레슨 다시 풀기]=`select(lesson_id)`+학습 탭 이동 · [Jina에게 물어보기]=학습 탭 Q&A로 이동(attempt 문맥 유지) · 빈 상태 |
+| 내비 | `mistakes` soon 해제(데스크탑) |
+| 검증 | `e2e-mistakes.mjs`: 오답 생성 → 목록 일치 → 재도전에서 정답 → 목록에서 사라짐(극복) → 필터 동작 → 타 사용자 데이터 미노출 |
+
+완료 판정: 극복 로직(최신 attempt 기준) 단정 통과, `skill_code` 필터 = DB 집계 일치, 스키마 변경 0.
+
+### Phase B (1주) — 리스닝 (LC 연습)
+
+```
+┌ LC · 짧은 대화 ──────────────┬ 문제 ──────────────────────┐
+│  ▶ 재생 (jinaSpeak)          │ 1. What does the man ask…  │
+│  속도 [0.8x][1.0x][1.2x]     │  (A)… (B)… (C)… (D)…       │
+│  재생 2회 · 스크립트는          │ 2. …                       │
+│  제출 후 공개                  │        [채점하기]            │
+│ (제출 후) ─ 스크립트 ─────────  │ (제출 후 기존 채점 UI 그대로)  │
+│  M: Could you check the…     │                            │
+└──────────────────────────────┴────────────────────────────┘
+```
+
+| 산출물 | 세부 |
+|---|---|
+| 마이그레이션 `0015` | `lessons_kind_ck`에 `'toeic_lc'` 추가 + LC 시드 2개(짧은 대화·설명문, 각 3문항 — 0014 방식의 ON CONFLICT 시드) |
+| 상세 API 변형 | `kind='toeic_lc'`이고 미제출이면 DTO에 `passage.body` 대신 `script_hidden:true` + 재생용 `script` 별도 필드(연습 모드 한계 명시) — 렌더는 재생 컨트롤만 |
+| 화면 | `lesson.jsx` LC 변형: 지문 컬럼 → 재생 카드(`jinaSpeak(script, {rate})`, 속도 칩, 재생 횟수 카운트 표시), 제출 후 스크립트 공개. 문항 컬럼·채점·Q&A는 기존 그대로 |
+| AI 생성 | `lesson_gen` input `part: 5→5\|'lc'` 확장 — LC는 script(화자 라벨 M:/W: 대화 4~8줄)+문항 3. draft 자동 검증에 script 길이·화자 형식 추가. 목록 생성 패널에 유형 선택 추가 |
+| 통계 | listening 스킬 = LC 레슨 정답률(레슨 정답률과 같은 30일 창) → 03/04의 `pct:null` 자리 교체 |
+| 검증 | `e2e-listening.mjs`: 미제출 DTO에 body 미노출 → 재생 버튼(jinaSpeak 호출 스텁) → 채점 → 스크립트 공개 → 대시보드 listening 스킬 갱신. verify-lesson-gen에 lc 생성 1회 추가 |
+
+완료 판정: 미제출 화면에 스크립트 텍스트 미렌더, LC 정답률이 통계 listening과 일치, Part 5 회귀(37) 통과.
+
+### Phase C (1~2주) — 스피킹 (v1: 브라우저 STT)
+
+```
+┌ 스피킹 연습 ─────────────────────────────────────────────┐
+│ [문장 읽기]  [자유 회화(회화 탭 연결)]                        │
+│ ┌ Q1. 읽어보세요 ────────────────────────────────────────┐ │
+│ │ "I would recommend the new vendor because…"    ▶ 듣기 │ │
+│ │        ⏺ 녹음 시작 / ⏹ 멈춤                            │ │
+│ │ 인식 결과: I would recommend the new bender because…   │ │
+│ │            (단어별 색: 일치=success · 불일치=error)       │ │
+│ │ 일치율 87% · [다시] [다음 문장]                           │ │
+│ └───────────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────┘
+```
+
+| 산출물 | 세부 |
+|---|---|
+| 읽기 문장 은행 | 별도 테이블 없이 v1은 **기존 콘텐츠 재사용**: 시나리오 opening/objectives 문장 + 레슨 예문(lessons.vocab 예문) + 고정 시드 20문장(JS 상수) |
+| 화면 `src/screens/speaking.jsx` | 문장 카드(듣기=jinaSpeak) → `SpeechRecognition`(en-US, 미지원 브라우저 안내) → 단어 매칭(소문자·구두점 제거 후 LCS) → HANDOFF §7 `wordColor` 색상, 일치율 % |
+| 회화 연결 | `conversation-desktop.jsx` 입력부에 🎤 버튼 — STT 결과를 입력창에 채움(전송은 사용자가). 자동 발음은 기존 `useAutoSpeak` |
+| 저장 | v1 무저장(연습 모드). 이력·점수 추이는 열린 질문 4 확정 후 |
+| 검증 | `e2e-speaking.mjs`: `window.SpeechRecognition` 모킹 주입 → 인식 결과 단어 색상·일치율 단정 → 미지원 브라우저 빈 상태 |
+
+완료 판정: STT 모킹 E2E 통과, 마이크 권한 거부/미지원 시 안내 렌더, 회화 탭 회귀(14) 통과.
+
+## 4. 구현자 메모
+
+- **적용된 마이그레이션 수정 금지**(체크섬, 0010 사례) — `lessons_kind_ck` 확장은 반드시 새 파일(DROP CONSTRAINT + ADD).
+- LC 문항 `skill_code`는 기존 5종 중 detail/inference/main_idea 재사용 — CHECK 확장 불필요.
+- `SpeechRecognition`은 Chrome/Edge 계열만, localhost/https 필요. E2E는 반드시 모킹(실마이크 불가). `jinaSpeak`는 이미 rate 옵션 지원(SpeakButton rate={0.9} 사용례 있음).
+- 레슨 목록/추천/진도는 kind 무관하게 동작(kind 칩은 동적 생성) — LC 추가 시 목록·진도 자동 반영, e2e-lesson의 진도 분모는 이미 동적화돼 있어 안전.
+- 오답 노트 쿼리는 `answers` jsonb를 문항별로 풀어야 함 — `jsonb_each_text(a.answers)` × `lesson_items.position` 조인, 인덱스는 기존 `(user_id, lesson_id)`로 충분(사용자당 attempt 수백 건 규모).
+- Q&A 연결: 오답 카드의 attempt_id·item_id(position)를 그대로 `POST /api/lessons/:id/qa`에 — 기존 post_submit 경로·resume 세션 재사용, 신규 백엔드 0.
+
+## 5. 열린 질문
+1. LC 재생 횟수 제한(시험 모드) — v1은 무제한 연습, 카운트만 표시. 제한은 서버 TTS 도입 시.
+2. 스크립트의 클라이언트 전송(개발자도구로 열람 가능)을 연습 모드에서 허용 — 시험 모드 요구가 생기면 서버 TTS(ElevenLabs/Azure)와 함께 재설계.
+3. 오답 노트를 SRS 복습 큐(첨삭 SRS처럼)에 통합할지 — v1은 목록+재도전만.
+4. 스피킹 결과 저장(`speaking_attempts` 테이블) 여부 — 점수 추이·통계 연결 요구 확정 후.
+5. TOEIC Speaking 공식 문형(Q1~Q11) 커버 범위 — v1은 읽기(Q1~2 유사)만.

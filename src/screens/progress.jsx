@@ -1,64 +1,76 @@
 // progress.jsx — 학습 통계 화면 (Desktop + Mobile)
-// 일별 진도, 스킬 점수, 연속 학습, 첨삭 패턴, 예상 TOEIC 점수
-
-const PROGRESS_DATA = {
-  user: {
-    name: '수민',
-    target_test: 'TOEIC',
-    target_score: 850,
-    current_score: 720,
-    streak: 24,
-    total_minutes: 1840,
-    sessions_done: 48,
-    words_learned: 243,
-  },
-  skills: [
-    { label: 'Grammar', value: 74, delta: +3, color: '#B794F4' },
-    { label: 'Fluency', value: 68, delta: +5, color: '#F687B3' },
-    { label: 'Vocabulary', value: 81, delta: +2, color: '#4FD1C5' },
-    { label: 'Listening', value: 62, delta: +8, color: '#F6AD55' },
-    { label: 'Reading', value: 79, delta: +1, color: '#68D391' },
-  ],
-  weekly: [
-    { day: '월', minutes: 28, sessions: 2, accuracy: 72 },
-    { day: '화', minutes: 45, sessions: 3, accuracy: 78 },
-    { day: '수', minutes: 20, sessions: 1, accuracy: 65 },
-    { day: '목', minutes: 52, sessions: 4, accuracy: 82 },
-    { day: '금', minutes: 35, sessions: 2, accuracy: 75 },
-    { day: '토', minutes: 60, sessions: 5, accuracy: 88 },
-    { day: '일', minutes: 15, sessions: 1, accuracy: 70 },
-  ],
-  monthly_scores: [
-    { month: '12월', score: 645 },
-    { month: '1월', score: 668 },
-    { month: '2월', score: 690 },
-    { month: '3월', score: 705 },
-    { month: '4월', score: 718 },
-    { month: '5월', score: 720 },
-  ],
-  corrections_due: [
-    { id: 1, original: 'I am agree with you', corrected: 'I agree with you', type: 'grammar', reason: "'am agree'는 틀린 표현. agree는 일반 동사", next_review: 'Today' },
-    { id: 2, original: 'make a decision about going', corrected: 'decide whether to go', type: 'usage', reason: '더 자연스러운 영어 표현', next_review: 'Today' },
-    { id: 3, original: 'discuss about the issue', corrected: 'discuss the issue', type: 'grammar', reason: 'discuss는 전치사 없이 바로 목적어', next_review: 'Today' },
-  ],
-  recent_sessions: [
-    { id: 1, title: 'TOEIC Speaking Q5-7', date: '오늘', duration: 12, score: 82, corrections: 2 },
-    { id: 2, title: '비즈니스 회의 표현', date: '어제', duration: 20, score: 75, corrections: 4 },
-    { id: 3, title: 'TOEIC Part 7 리딩', date: '5월 25일', duration: 18, score: 88, corrections: 1 },
-    { id: 4, title: '자기소개 영어', date: '5월 24일', duration: 15, score: 70, corrections: 5 },
-  ],
-};
+// 일별 진도, 스킬 점수, 연속 학습, 첨삭 SRS 복습, 예상 TOEIC 점수
+//
+// 수치는 전부 서버 집계(GET /api/progress) — 이 파일에 mock 리터럴은 없다.
+// (구현 전 mock 객체는 src/shared/progress-store.jsx의 FALLBACK_PROGRESS로 이사했다.
+//  캔버스는 Provider가 없어 그 fallback으로 기존과 동일하게 렌더된다.)
+// Desktop/Mobile이 같은 useProgress()를 소비하므로 창 크기 전환에도 수치·복습 진행이 이어진다.
 
 const SCORE_MILESTONES = [600, 700, 750, 800, 850, 900, 990];
+
+// SRS 라벨/색/순서는 vocabulary.jsx가 정의한 단일 소스를 재사용한다 (두 화면의 복습 버튼이
+// 갈라지지 않게). 부제는 하드코딩하지 않고 서버 preview[r].label을 그대로 쓴다.
+const CORR_SRS_ORDER = typeof SRS_RESULTS !== 'undefined' ? SRS_RESULTS : ['again', 'hard', 'good', 'easy'];
+const CORR_SRS_LABELS = typeof SRS_LABELS !== 'undefined'
+  ? SRS_LABELS : { again: '다시', hard: '어려움', good: '보통', easy: '쉬움' };
+const CORR_SRS_COLORS = typeof SRS_COLORS !== 'undefined'
+  ? SRS_COLORS : { again: '#FC8181', hard: '#F6AD55', good: '#4FD1C5', easy: '#68D391' };
+
+// ─────────────────────────────────────────────────────
+// 공용 빈 상태 / 로딩 / 에러 (빈 화면 금지 규범)
+// ─────────────────────────────────────────────────────
+function ProgressEmpty({ theme, children, pad = 18 }) {
+  return (
+    <div style={{
+      padding: pad, borderRadius: 12,
+      background: theme.card, border: `1px dashed ${theme.border}`,
+      fontSize: 12.5, color: theme.textMuted, textAlign: 'center', lineHeight: 1.6,
+    }}>{children}</div>
+  );
+}
+
+function ProgressLoading({ theme, error }) {
+  return (
+    <div className="jina-root" style={{
+      width: '100%', height: '100%',
+      background: theme.bg, color: theme.text,
+      display: 'grid', placeItems: 'center',
+    }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center', maxWidth: 380, padding: 24 }}>
+        <div style={{ fontSize: 13, color: theme.textMuted }}>학습 통계를 불러오는 중…</div>
+        {error && (
+          <div style={{ fontSize: 12, color: theme.error, textAlign: 'center', lineHeight: 1.6 }}>{error}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProgressErrorBanner({ theme, error }) {
+  if (!error) return null;
+  return (
+    <div style={{
+      padding: '10px 14px', borderRadius: 12,
+      background: theme.error + '18', border: `1px solid ${theme.error}44`,
+      color: theme.error, fontSize: 12, lineHeight: 1.5,
+    }}>{error}</div>
+  );
+}
 
 // ─────────────────────────────────────────────────────
 // Desktop Progress
 // ─────────────────────────────────────────────────────
-function ProgressDesktop({ theme }) {
-  const [corrTab, setCorrTab] = React.useState('due'); // 'due' | 'history'
-  const d = PROGRESS_DATA;
-  const maxWeeklyMinutes = Math.max(...d.weekly.map((w) => w.minutes));
-  const scoreProgress = (d.user.current_score - 600) / (d.user.target_score - 600);
+function ProgressDesktop({ theme, onNavigate }) {
+  const { data: d, error, reviewCorrection } = useProgress();
+  const [reviewing, setReviewing] = React.useState(false);
+
+  if (!d) return <ProgressLoading theme={theme} error={error} />;
+
+  const maxWeeklyMinutes = Math.max(0, ...d.weekly.map((w) => w.minutes));
+  const hasScore = d.user.current_score != null;
+  const scoreProgress = hasScore
+    ? (d.user.current_score - 600) / Math.max(1, d.user.target_score - 600)
+    : 0;
   const clampedProgress = Math.max(0, Math.min(1, scoreProgress));
 
   return (
@@ -68,17 +80,19 @@ function ProgressDesktop({ theme }) {
       display: 'flex',
     }}>
       {/* Sidebar */}
-      <aside style={{
+      <aside aria-label="통계 메뉴" style={{
         width: 240, padding: '24px 16px',
         borderRight: `1px solid ${theme.border}`,
         background: theme.bgSoft,
         display: 'flex', flexDirection: 'column', gap: 4,
         flexShrink: 0,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px 20px' }}>
+        {/* 로고 — 클릭하면 홈(대시보드). 공통 사이드바 로고와 같은 동작 */}
+        <button type="button" onClick={() => onNavigate && onNavigate('dashboard')} aria-label="홈(대시보드)으로" title="홈으로"
+          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px 20px', width: '100%', textAlign: 'left' }}>
           <JinaAvatar size={32} theme={theme} />
           <span className="jina-serif" style={{ fontSize: 20, fontStyle: 'italic', color: theme.text }}>Jina</span>
-        </div>
+        </button>
         {[
           { id: 'overview', label: '학습 개요', active: true },
           { id: 'sessions', label: '세션 기록' },
@@ -120,6 +134,8 @@ function ProgressDesktop({ theme }) {
       <main style={{ flex: 1, overflow: 'auto' }}>
         <div style={{ padding: '32px 40px', display: 'flex', flexDirection: 'column', gap: 28 }}>
 
+          <ProgressErrorBanner theme={theme} error={error} />
+
           {/* Top row: Score + Streak */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
             {/* TOEIC Score card */}
@@ -135,21 +151,24 @@ function ProgressDesktop({ theme }) {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
                     <span style={{ fontSize: 52, fontWeight: 800, color: theme.text, letterSpacing: '-0.03em', lineHeight: 1 }}>
-                      {d.user.current_score}
+                      {hasScore ? d.user.current_score : '—'}
                     </span>
                     <span style={{ fontSize: 18, color: theme.textMuted }}>/ {d.user.target_score}</span>
                     <span style={{ fontSize: 13, color: theme.success, fontWeight: 700, marginLeft: 4 }}>목표</span>
                   </div>
                 </div>
-                <div style={{
-                  padding: '8px 14px', borderRadius: 12,
-                  background: theme.success + '18', color: theme.success,
-                  fontSize: 14, fontWeight: 700,
-                  display: 'flex', alignItems: 'center', gap: 6,
-                }}>
-                  <Icons.TrendUp size={16} />
-                  +{d.user.current_score - PROGRESS_DATA.monthly_scores[0].score}
-                </div>
+                {/* 델타 칩은 월별 스냅샷이 있을 때만 — monthly_scores가 비면 근거가 없다 */}
+                {hasScore && d.monthly_scores.length > 0 && (
+                  <div style={{
+                    padding: '8px 14px', borderRadius: 12,
+                    background: theme.success + '18', color: theme.success,
+                    fontSize: 14, fontWeight: 700,
+                    display: 'flex', alignItems: 'center', gap: 6,
+                  }}>
+                    <Icons.TrendUp size={16} />
+                    +{d.user.current_score - d.monthly_scores[0].score}
+                  </div>
+                )}
               </div>
 
               {/* Progress road */}
@@ -157,8 +176,8 @@ function ProgressDesktop({ theme }) {
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                   {SCORE_MILESTONES.map((ms) => (
                     <span key={ms} style={{
-                      fontSize: 10.5, color: ms <= d.user.current_score ? theme.text : theme.textDim,
-                      fontWeight: ms === d.user.target_score ? 800 : ms <= d.user.current_score ? 700 : 400,
+                      fontSize: 10.5, color: ms <= (d.user.current_score ?? 0) ? theme.text : theme.textDim,
+                      fontWeight: ms === d.user.target_score ? 800 : ms <= (d.user.current_score ?? 0) ? 700 : 400,
                     }}>{ms}</span>
                   ))}
                 </div>
@@ -180,7 +199,19 @@ function ProgressDesktop({ theme }) {
                 </div>
               </div>
               <div style={{ fontSize: 12, color: theme.textMuted }}>
-                목표까지 <span style={{ fontWeight: 700, color: theme.text }}>{d.user.target_score - d.user.current_score}점</span> 남았어요. 현재 페이스로는 약 <span style={{ fontWeight: 700, color: theme.success }}>8주</span> 후 달성 가능해요.
+                {hasScore ? (
+                  <React.Fragment>
+                    목표까지 <span style={{ fontWeight: 700, color: theme.text }}>
+                      {Math.max(0, d.user.target_score - d.user.current_score)}점
+                    </span> 남았어요.
+                    {/* weeks_to_target이 null이면(스냅샷 미도입) 예측 절을 렌더하지 않는다 */}
+                    {d.weeks_to_target != null && (
+                      <React.Fragment>
+                        {' '}현재 페이스로는 약 <span style={{ fontWeight: 700, color: theme.success }}>{d.weeks_to_target}주</span> 후 달성 가능해요.
+                      </React.Fragment>
+                    )}
+                  </React.Fragment>
+                ) : '회화·학습 데이터가 쌓이면 예상 점수를 계산해요.'}
               </div>
             </div>
 
@@ -197,7 +228,8 @@ function ProgressDesktop({ theme }) {
               </div>
               <div style={{ fontSize: 13, color: theme.textMuted, fontWeight: 600 }}>연속 학습일</div>
               <div style={{ fontSize: 11, color: theme.textDim, textAlign: 'center', lineHeight: 1.5 }}>
-                이번 달 최고 기록 🏆<br/>계속 유지해요!
+                {d.user.streak > 0 ? '오늘도 이어가고 있어요 🔥' : '오늘 한 세션으로 다시 시작해요'}<br/>
+                누적 {d.user.total_minutes}분 · {d.user.sessions_done}세션
               </div>
             </div>
           </div>
@@ -214,11 +246,15 @@ function ProgressDesktop({ theme }) {
               </div>
               <div style={{ fontSize: 12, color: theme.textMuted }}>최근 7일 대비</div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {d.skills.map((sk) => (
-                <SkillBar key={sk.label} skill={sk} theme={theme} />
-              ))}
-            </div>
+            {d.skills.length === 0 ? (
+              <ProgressEmpty theme={theme}>AI 회화를 시작하면 스킬 분석이 표시돼요.</ProgressEmpty>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {d.skills.map((sk) => (
+                  <SkillBar key={sk.label} skill={sk} theme={theme} />
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Weekly activity chart */}
@@ -241,7 +277,9 @@ function ProgressDesktop({ theme }) {
               <div style={{ fontSize: 11, color: theme.textDim, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>최근 세션</div>
               <div style={{ fontSize: 18, fontWeight: 700, color: theme.text, marginBottom: 20 }}>세션 기록</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {d.recent_sessions.map((s) => (
+                {d.recent_sessions.length === 0 ? (
+                  <ProgressEmpty theme={theme}>아직 세션 기록이 없어요. 회화나 학습을 시작해보세요.</ProgressEmpty>
+                ) : d.recent_sessions.map((s) => (
                   <SessionRow key={s.id} session={s} theme={theme} />
                 ))}
               </div>
@@ -261,17 +299,28 @@ function ProgressDesktop({ theme }) {
               </div>
               <div style={{ fontSize: 18, fontWeight: 700, color: theme.text, marginBottom: 20 }}>오늘 복습할 패턴</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {d.corrections_due.map((c) => (
-                  <CorrectionCard key={c.id} correction={c} theme={theme} />
+                {d.corrections_due.length === 0 ? (
+                  <ProgressEmpty theme={theme}>복습할 첨삭이 없어요 🎉</ProgressEmpty>
+                ) : d.corrections_due.map((c) => (
+                  <CorrectionCard
+                    key={c.id} correction={c} theme={theme}
+                    reviewing={reviewing}
+                    onResult={(r) => reviewCorrection(c.id, r)}
+                  />
                 ))}
               </div>
               <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
-                <button style={{
-                  flex: 1, padding: '11px 16px', borderRadius: 10,
-                  background: theme.accentGrad, color: '#fff',
-                  fontSize: 13, fontWeight: 700,
-                }}>
-                  지금 복습 시작
+                <button
+                  onClick={() => setReviewing((v) => !v)}
+                  disabled={d.corrections_due.length === 0}
+                  style={{
+                    flex: 1, padding: '11px 16px', borderRadius: 10,
+                    background: theme.accentGrad, color: '#fff',
+                    fontSize: 13, fontWeight: 700,
+                    opacity: d.corrections_due.length === 0 ? 0.45 : 1,
+                    cursor: d.corrections_due.length === 0 ? 'not-allowed' : 'pointer',
+                  }}>
+                  {reviewing ? '복습 종료' : '지금 복습 시작'}
                 </button>
               </div>
             </div>
@@ -284,7 +333,12 @@ function ProgressDesktop({ theme }) {
           }}>
             <div style={{ fontSize: 11, color: theme.textDim, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 4 }}>점수 추이</div>
             <div style={{ fontSize: 18, fontWeight: 700, color: theme.text, marginBottom: 24 }}>월별 TOEIC 예상 점수</div>
-            <ScoreTrend data={d.monthly_scores} theme={theme} target={d.user.target_score} />
+            {/* 2점 미만이면 ScoreTrend의 Math.min(...[])·100/(length-1)이 깨진다 → 빈 상태 */}
+            {d.monthly_scores.length >= 2 ? (
+              <ScoreTrend data={d.monthly_scores} theme={theme} target={d.user.target_score} />
+            ) : (
+              <ProgressEmpty theme={theme}>월별 추이는 데이터가 쌓이면 표시돼요.</ProgressEmpty>
+            )}
           </div>
         </div>
       </main>
@@ -358,7 +412,7 @@ function ProgressWeeklyChart({ data, theme, maxMinutes }) {
 }
 
 // ─────────────────────────────────────────────────────
-// Score Trend
+// Score Trend — 호출부가 data.length >= 2 를 보장한다
 // ─────────────────────────────────────────────────────
 function ScoreTrend({ data, theme, target }) {
   const minScore = Math.min(...data.map((d) => d.score)) - 30;
@@ -416,7 +470,11 @@ function ScoreTrend({ data, theme, target }) {
 // Session Row
 // ─────────────────────────────────────────────────────
 function SessionRow({ session: s, theme }) {
-  const scoreColor = s.score >= 80 ? theme.success : s.score >= 65 ? theme.warning : theme.error;
+  // score는 null 가능(점수 없는 degraded 세션) — null을 숫자 비교에 넣으면 error색이 된다
+  const scoreColor = s.score == null ? theme.textDim
+    : s.score >= 80 ? theme.success
+    : s.score >= 65 ? theme.warning
+    : theme.error;
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 14,
@@ -436,15 +494,22 @@ function SessionRow({ session: s, theme }) {
         background: scoreColor + '18', border: `1px solid ${scoreColor}30`,
         display: 'grid', placeItems: 'center',
         fontSize: 16, fontWeight: 800, color: scoreColor,
-      }}>{s.score}</div>
+      }}>{s.score ?? '—'}</div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────
-// Correction Card
+// Correction Card — reviewing이면 SRS 버튼 4개.
+// 버튼 부제는 서버 preview[r].label (하드코딩 금지 — 실제 계산의 dry-run이다)
 // ─────────────────────────────────────────────────────
-function CorrectionCard({ correction: c, theme }) {
+function CorrectionCard({ correction: c, theme, reviewing = false, onResult }) {
+  const [busy, setBusy] = React.useState(false);
+  const handle = async (r) => {
+    if (busy || !onResult) return;
+    setBusy(true);
+    try { await onResult(r); } finally { setBusy(false); }
+  };
   return (
     <div style={{
       padding: '12px 14px', borderRadius: 12,
@@ -463,16 +528,46 @@ function CorrectionCard({ correction: c, theme }) {
         }}>{c.type}</span>
       </div>
       <div style={{ fontSize: 11.5, color: theme.textMuted, lineHeight: 1.5 }}>{c.reason}</div>
+      {reviewing && c.preview && (
+        <div style={{
+          marginTop: 10, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6,
+        }}>
+          {CORR_SRS_ORDER.map((r) => (
+            <button key={r} onClick={() => handle(r)} disabled={busy} style={{
+              padding: '8px 4px', borderRadius: 10,
+              background: CORR_SRS_COLORS[r] + '22',
+              color: CORR_SRS_COLORS[r],
+              border: `1.5px solid ${CORR_SRS_COLORS[r]}44`,
+              fontSize: 12, fontWeight: 700,
+              opacity: busy ? 0.5 : 1,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+            }}>
+              <span>{CORR_SRS_LABELS[r]}</span>
+              <span style={{ fontSize: 9.5, opacity: 0.7, fontWeight: 500 }}>
+                {c.preview?.[r]?.label || ''}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────
-// Mobile Progress
+// Mobile Progress — 데스크탑과 같은 useProgress()를 소비한다 (수치 일치 보장)
 // ─────────────────────────────────────────────────────
 function MobileProgress({ theme, noNav = false, onNavigate }) {
-  const d = PROGRESS_DATA;
-  const maxWeeklyMinutes = Math.max(...d.weekly.map((w) => w.minutes));
+  const { data: d, error, reviewCorrection } = useProgress();
+  const [reviewing, setReviewing] = React.useState(false);
+
+  if (!d) return <ProgressLoading theme={theme} error={error} />;
+
+  const maxWeeklyMinutes = Math.max(0, ...d.weekly.map((w) => w.minutes));
+  const hasScore = d.user.current_score != null;
+  const scorePct = hasScore
+    ? Math.max(0, Math.min(1, (d.user.current_score - 600) / Math.max(1, d.user.target_score - 600))) * 100
+    : 0;
 
   return (
     <div className="jina-root" style={{
@@ -499,28 +594,41 @@ function MobileProgress({ theme, noNav = false, onNavigate }) {
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '4px 16px 100px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <ProgressErrorBanner theme={theme} error={error} />
+
         {/* Score card */}
         <div style={{
           padding: '20px', borderRadius: 20,
           background: theme.surface, border: `1px solid ${theme.border}`,
         }}>
           <div style={{ fontSize: 11, color: theme.textDim, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>
-            TOEIC 예상 점수
+            {d.user.target_test} 예상 점수
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 16 }}>
             <span style={{ fontSize: 44, fontWeight: 800, color: theme.text, letterSpacing: '-0.03em', lineHeight: 1 }}>
-              {d.user.current_score}
+              {hasScore ? d.user.current_score : '—'}
             </span>
             <span style={{ fontSize: 16, color: theme.textMuted }}>/ {d.user.target_score}점 목표</span>
           </div>
           <div style={{ height: 6, borderRadius: 99, background: theme.chipBg, overflow: 'hidden', marginBottom: 10 }}>
             <div style={{
               height: '100%', borderRadius: 99, background: theme.accentGrad,
-              width: `${((d.user.current_score - 600) / (d.user.target_score - 600)) * 100}%`,
+              width: `${scorePct}%`,
             }} />
           </div>
           <div style={{ fontSize: 12, color: theme.textMuted }}>
-            목표까지 <span style={{ fontWeight: 700, color: theme.text }}>{d.user.target_score - d.user.current_score}점</span> · 예상 <span style={{ color: theme.success, fontWeight: 700 }}>8주</span> 후 달성
+            {hasScore ? (
+              <React.Fragment>
+                목표까지 <span style={{ fontWeight: 700, color: theme.text }}>
+                  {Math.max(0, d.user.target_score - d.user.current_score)}점
+                </span>
+                {d.weeks_to_target != null && (
+                  <React.Fragment>
+                    {' '}· 예상 <span style={{ color: theme.success, fontWeight: 700 }}>{d.weeks_to_target}주</span> 후 달성
+                  </React.Fragment>
+                )}
+              </React.Fragment>
+            ) : '회화·학습 데이터가 쌓이면 예상 점수를 계산해요.'}
           </div>
         </div>
 
@@ -547,17 +655,21 @@ function MobileProgress({ theme, noNav = false, onNavigate }) {
           background: theme.surface, border: `1px solid ${theme.border}`,
         }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: theme.text, marginBottom: 16 }}>스킬 점수</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {d.skills.map((sk) => (
-              <div key={sk.label} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ width: 72, fontSize: 12, color: theme.textMuted, fontWeight: 600 }}>{sk.label}</div>
-                <div style={{ flex: 1, height: 6, borderRadius: 99, background: theme.chipBg }}>
-                  <div style={{ height: '100%', borderRadius: 99, background: sk.color, width: `${sk.value}%` }} />
+          {d.skills.length === 0 ? (
+            <ProgressEmpty theme={theme}>AI 회화를 시작하면 스킬 분석이 표시돼요.</ProgressEmpty>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {d.skills.map((sk) => (
+                <div key={sk.label} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 72, fontSize: 12, color: theme.textMuted, fontWeight: 600 }}>{sk.label}</div>
+                  <div style={{ flex: 1, height: 6, borderRadius: 99, background: theme.chipBg }}>
+                    <div style={{ height: '100%', borderRadius: 99, background: sk.color, width: `${sk.value}%` }} />
+                  </div>
+                  <div style={{ width: 36, textAlign: 'right', fontWeight: 700, fontSize: 14, color: theme.text }}>{sk.value}</div>
                 </div>
-                <div style={{ width: 36, textAlign: 'right', fontWeight: 700, fontSize: 14, color: theme.text }}>{sk.value}</div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Weekly chart */}
@@ -576,7 +688,9 @@ function MobileProgress({ theme, noNav = false, onNavigate }) {
         }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: theme.text, marginBottom: 14 }}>최근 세션</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {d.recent_sessions.slice(0, 3).map((s) => (
+            {d.recent_sessions.length === 0 ? (
+              <ProgressEmpty theme={theme}>아직 세션 기록이 없어요.</ProgressEmpty>
+            ) : d.recent_sessions.slice(0, 3).map((s) => (
               <SessionRow key={s.id} session={s} theme={theme} />
             ))}
           </div>
@@ -595,17 +709,28 @@ function MobileProgress({ theme, noNav = false, onNavigate }) {
             }}>{d.corrections_due.length}개</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {d.corrections_due.map((c) => (
-              <CorrectionCard key={c.id} correction={c} theme={theme} />
+            {d.corrections_due.length === 0 ? (
+              <ProgressEmpty theme={theme}>복습할 첨삭이 없어요 🎉</ProgressEmpty>
+            ) : d.corrections_due.map((c) => (
+              <CorrectionCard
+                key={c.id} correction={c} theme={theme}
+                reviewing={reviewing}
+                onResult={(r) => reviewCorrection(c.id, r)}
+              />
             ))}
           </div>
-          <button style={{
-            width: '100%', marginTop: 14,
-            padding: '12px', borderRadius: 12,
-            background: theme.accentGrad, color: '#fff',
-            fontSize: 14, fontWeight: 700,
-          }}>
-            지금 복습 시작
+          <button
+            onClick={() => setReviewing((v) => !v)}
+            disabled={d.corrections_due.length === 0}
+            style={{
+              width: '100%', marginTop: 14,
+              padding: '12px', borderRadius: 12,
+              background: theme.accentGrad, color: '#fff',
+              fontSize: 14, fontWeight: 700,
+              opacity: d.corrections_due.length === 0 ? 0.45 : 1,
+              cursor: d.corrections_due.length === 0 ? 'not-allowed' : 'pointer',
+            }}>
+            {reviewing ? '복습 종료' : '지금 복습 시작'}
           </button>
         </div>
       </div>
