@@ -54,7 +54,7 @@ export const config = {
     models: {
       ollama: process.env.OLLAMA_MODEL || 'gemma4:e2b',
       claude: process.env.CLAUDE_MODEL || 'claude-haiku-4-5',
-      agy: process.env.AGY_MODEL || 'gemini-3.7-flash-low',
+      agy: process.env.AGY_MODEL || 'gemini-3.7-flash-medium',
       cursor: process.env.CURSOR_MODEL || 'gpt-5',
       codex: process.env.CODEX_MODEL || null,
     },

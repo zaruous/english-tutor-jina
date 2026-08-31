@@ -50,9 +50,11 @@ export const agy = {
       throw new HttpError(413, 'PROMPT_TOO_LONG', `agy 프롬프트 상한(${PROMPT_MAX}자)을 넘었습니다.`, { provider: 'agy' });
     }
     const { command } = resolveAgy();
+    // agy 내부 print 타임아웃은 우리 프로세스 타임아웃보다 10초 먼저 — SIGKILL 전에 agy가 스스로 정리한다
+    const printTimeoutSec = Math.max(30, Math.floor(((timeoutMs ?? this.timeoutMs) - 10_000) / 1000));
     const args = [
       '--output-format', 'json', '--sandbox', '--mode', 'plan', '--disable-slash-commands',
-      '--print-timeout', '110s',
+      '--print-timeout', `${printTimeoutSec}s`,
       '--model', model || this.defaultModel,
       ...(jsonSchema ? ['--json-schema', JSON.stringify(jsonSchema)] : []),
       // -c/--continue 는 "가장 최근 대화"라 서버에서 위험 → --conversation만 사용
@@ -70,6 +72,13 @@ export const agy = {
       }
       throw new HttpError(502, 'CLI_FAILED',
         `agy 실패 (exit ${exitCode}, status ${envelope?.status}): ${(stderr || stdout).slice(0, 300)}`,
+        { provider: 'agy' });
+    }
+    // 모르는 conversation id 를 주면 agy 는 에러 대신 조용히 다른(최근/새) 대화로 이어간다 —
+    // 다른 세션의 맥락이 섞이는 오염이므로 resume 실패로 취급해 askAI 의 히스토리 폴백을 태운다.
+    if (sessionRef && envelope.conversation_id && envelope.conversation_id !== sessionRef) {
+      throw new HttpError(502, 'RESUME_FAILED',
+        `agy가 요청한 conversation(${sessionRef.slice(0, 8)}…)이 아닌 다른 세션으로 응답했습니다.`,
         { provider: 'agy' });
     }
     return {
