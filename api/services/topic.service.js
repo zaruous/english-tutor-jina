@@ -85,15 +85,20 @@ export async function getTopic(user, topicId) {
     ),
     pool.query(
       `WITH topic_lessons AS (
-         SELECT tc.lesson_id FROM public.topic_contents tc WHERE tc.topic_id = $2 AND tc.lesson_id IS NOT NULL
+         -- 분모도 화면 목록과 같은 가시성 규칙 — 남의 private 생성물이 진행률 분모에 섞이면 안 된다.
+         SELECT tc.lesson_id FROM public.topic_contents tc
+           JOIN public.lessons l ON l.id = tc.lesson_id
+          WHERE tc.topic_id = $2 AND l.published AND (l.visibility = 'public' OR l.created_by = $1)
        ), topic_scenarios AS (
-         SELECT tc.scenario_id FROM public.topic_contents tc WHERE tc.topic_id = $2 AND tc.scenario_id IS NOT NULL
+         SELECT tc.scenario_id FROM public.topic_contents tc
+           JOIN public.conversation_scenarios s ON s.id = tc.scenario_id
+          WHERE tc.topic_id = $2 AND (s.visibility = 'public' OR s.created_by = $1)
        ), topic_words AS (
          SELECT DISTINCT lower(x.word->>'word') AS word
            FROM public.topic_contents tc
            JOIN public.vocab_sets vs ON vs.id = tc.vocab_set_id
            CROSS JOIN LATERAL jsonb_array_elements(vs.words) x(word)
-          WHERE tc.topic_id = $2
+          WHERE tc.topic_id = $2 AND (vs.visibility = 'public' OR vs.created_by = $1)
        )
        SELECT
          (SELECT count(*)::int FROM topic_lessons) AS lesson_total,

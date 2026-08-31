@@ -71,6 +71,27 @@ check('토픽 독해 진행률 = attempts 집계', P.lesson.done === lp.done, `$
 const scen = await getJson(`/api/scenarios?topic_id=${T.id}`);
 check('GET /api/scenarios?topic_id — 토픽 시나리오만', scen.ok && scen.scenarios.length === T.scenario_count);
 
+// 진행률 분모 = 가시성 규칙 — 비소유자 계정에는 남의 private 생성물이 분모에 들어가면 안 된다.
+// (dev 계정은 AI 생성물의 소유자라 필터 유무가 안 드러난다 — 새 계정으로 검증)
+const guestEmail = `e2e-topics-${Date.now()}@test.dev`;
+const signupRes = await fetch(`${API}/api/auth/signup`, {
+  method: 'POST', headers: H,
+  body: JSON.stringify({ email: guestEmail, password: 'e2e-pass-1234', display_name: '토픽검증' }),
+});
+const guestCookie = (signupRes.headers.getSetCookie?.() || []).map((c) => c.split(';')[0]).join('; ');
+const GH = { ...H, Cookie: guestCookie };
+const guestDetail = await (await fetch(`${API}/api/topics/${T.id}`, { headers: GH })).json();
+const gp = guestDetail.progress || {};
+check('비소유자 진행률 분모 = 보이는 목록 수 (private 생성물 제외)',
+  guestDetail.ok === true
+  && gp.lesson?.total === guestDetail.lessons.length
+  && gp.conversation?.total === guestDetail.scenarios.length,
+  `레슨 ${gp.lesson?.total}=${guestDetail.lessons?.length} · 회화 ${gp.conversation?.total}=${guestDetail.scenarios?.length}`);
+const guestWords = new Set((guestDetail.vocab_sets || []).flatMap((s) => (s.words || []).map((w) => String(w.word).toLowerCase())));
+check('비소유자 단어 분모 = 보이는 세트의 중복 제거 단어 수',
+  gp.vocabulary?.total === guestWords.size, `${gp.vocabulary?.total} = ${guestWords.size}`);
+await pool.query(`DELETE FROM public.users WHERE email = $1`, [guestEmail]);
+
 // 단어 세트 담기 — 멱등(두 번째 호출은 전부 duplicates)
 const setId = detail.vocab_sets[0].id;
 const add1 = await (await fetch(`${API}/api/vocab-sets/${setId}/add`, { method: 'POST', headers: H, body: '{}' })).json();

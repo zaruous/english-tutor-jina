@@ -30,7 +30,7 @@ function Pill({ children, theme, color, bg }) {
 // Lesson top bar with progress + AI mode
 // 콘텐츠(title/subtitle/difficulty)는 LessonCtx(=서버 LessonDetail), 진도는 스토어 파생값.
 function LessonTopBar({ theme, askingAI, setAskingAI, onBack, listOpen = false, onToggleList }) {
-  const { title, subtitle, difficulty, est_minutes: estMinutes } = React.useContext(LessonCtx);
+  const { title, subtitle, difficulty, est_minutes: estMinutes, passage } = React.useContext(LessonCtx);
   const { progress } = useLesson();
   const stars = '★'.repeat(difficulty || 0) + '☆'.repeat(Math.max(0, 5 - (difficulty || 0)));
   const pct = progress.total ? (progress.done / progress.total) * 100 : 0;
@@ -46,7 +46,7 @@ function LessonTopBar({ theme, askingAI, setAskingAI, onBack, listOpen = false, 
       </button>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-          <Pill theme={theme} color={theme.accent} bg={theme.accent + '20'}>READING · PART 7</Pill>
+          <Pill theme={theme} color={theme.accent} bg={theme.accent + '20'}>READING · {passage?.type || 'PART 7'}</Pill>
           <span style={{ fontSize: 11, color: theme.textMuted }}>난이도 {stars} · 권장 {estMinutes}분</span>
         </div>
         <div style={{ fontSize: 15, color: theme.text, fontWeight: 600 }}>
@@ -132,15 +132,24 @@ function PassageColumn({ theme, highlighted, setHighlighted }) {
           <Pill theme={theme} color={theme.accent2} bg={theme.accent2 + '20'}>{p.type}</Pill>
           <span style={{ color: theme.textDim, fontSize: 11 }}>{p.date}</span>
         </div>
+        {/* Part 5 등 헤더 없는 지문에서 빈 From/To/Cc 라벨이 남지 않게 값 있는 행만 렌더 */}
         <div style={{ display: 'grid', gridTemplateColumns: '60px 1fr', rowGap: 5, color: theme.textMuted }}>
-          <span style={{ color: theme.textDim, fontWeight: 600 }}>From</span>
-          <span style={{ color: theme.text }}>{p.from}</span>
-          <span style={{ color: theme.textDim, fontWeight: 600 }}>To</span>
-          <span>{p.to}</span>
-          <span style={{ color: theme.textDim, fontWeight: 600 }}>Cc</span>
-          <span>{p.cc}</span>
-          <span style={{ color: theme.textDim, fontWeight: 600 }}>Subject</span>
-          <span className="jina-serif" style={{ fontStyle: 'italic', color: theme.text, fontSize: 15, fontWeight: 500 }}>{p.subject}</span>
+          {p.from && <React.Fragment>
+            <span style={{ color: theme.textDim, fontWeight: 600 }}>From</span>
+            <span style={{ color: theme.text }}>{p.from}</span>
+          </React.Fragment>}
+          {p.to && <React.Fragment>
+            <span style={{ color: theme.textDim, fontWeight: 600 }}>To</span>
+            <span>{p.to}</span>
+          </React.Fragment>}
+          {p.cc && <React.Fragment>
+            <span style={{ color: theme.textDim, fontWeight: 600 }}>Cc</span>
+            <span>{p.cc}</span>
+          </React.Fragment>}
+          {p.subject && <React.Fragment>
+            <span style={{ color: theme.textDim, fontWeight: 600 }}>Subject</span>
+            <span className="jina-serif" style={{ fontStyle: 'italic', color: theme.text, fontSize: 15, fontWeight: 500 }}>{p.subject}</span>
+          </React.Fragment>}
         </div>
       </div>
 
@@ -771,7 +780,7 @@ function LessonMobile({ theme, aiConfig, onNavigate }) {
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 1 }}>
-            <Pill theme={theme} color={theme.accent} bg={theme.accent + '20'}>PART 7</Pill>
+            <Pill theme={theme} color={theme.accent} bg={theme.accent + '20'}>{currentLesson.passage?.type || 'PART 7'}</Pill>
             <span style={{ fontSize: 10, color: theme.textMuted }}>{progress.done}/{progress.total}</span>
           </div>
           <div style={{ fontSize: 13, color: theme.text, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -820,10 +829,12 @@ function LessonMobile({ theme, aiConfig, onNavigate }) {
                 <Pill theme={theme} color={theme.accent2} bg={theme.accent2 + '20'}>{currentLesson.passage.type}</Pill>
                 <span style={{ color: theme.textDim, fontSize: 10 }}>{currentLesson.passage.date}</span>
               </div>
-              <div style={{ color: theme.textMuted, lineHeight: 1.5 }}>
-                <div><b style={{ color: theme.textDim }}>From</b> {currentLesson.passage.from}</div>
-                <div><b style={{ color: theme.textDim }}>To</b> {currentLesson.passage.to}</div>
-              </div>
+              {(currentLesson.passage.from || currentLesson.passage.to) && (
+                <div style={{ color: theme.textMuted, lineHeight: 1.5 }}>
+                  {currentLesson.passage.from && <div><b style={{ color: theme.textDim }}>From</b> {currentLesson.passage.from}</div>}
+                  {currentLesson.passage.to && <div><b style={{ color: theme.textDim }}>To</b> {currentLesson.passage.to}</div>}
+                </div>
+              )}
               <div className="jina-serif" style={{ fontSize: 15, color: theme.text, fontWeight: 500, fontStyle: 'italic', marginTop: 6 }}>
                 {currentLesson.passage.subject}
               </div>
