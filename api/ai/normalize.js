@@ -53,6 +53,11 @@ export function normalizeVocabQuiz(data) {
         .filter((d, i, arr) => d && d !== meaning && arr.indexOf(d) === i)
         .slice(0, 3),
       difficulty: clampInt(w.difficulty, 1, 5),
+      etymology: String(w.etymology || '').trim().slice(0, 300),
+      synonyms: (Array.isArray(w.synonyms) ? w.synonyms : [])
+        .map((s) => String(s).trim().slice(0, 40)).filter(Boolean).slice(0, 3),
+      antonyms: (Array.isArray(w.antonyms) ? w.antonyms : [])
+        .map((s) => String(s).trim().slice(0, 40)).filter(Boolean).slice(0, 3),
     };
   }).filter((w) => {
     const key = w.word.toLowerCase();

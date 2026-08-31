@@ -28,6 +28,8 @@ export function quizDto(row) {
     index,
     word: w.word, pos: w.pos, ipa: w.ipa, meaning_ko: w.meaning_ko,
     example_en: w.example_en, example_ko: w.example_ko, difficulty: w.difficulty,
+    // 어원·유의어·반의어 — 답변 후 피드백에서 노출 (구버전 퀴즈 행에는 없을 수 있어 기본값 처리)
+    etymology: w.etymology || '', synonyms: w.synonyms || [], antonyms: w.antonyms || [],
     options: shuffledOptions(row.id, index, w),
   }));
   return {

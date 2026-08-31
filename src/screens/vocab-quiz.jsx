@@ -271,6 +271,27 @@ function DailyQuizPanel({ theme, aiConfig, compact = false }) {
               <SpeakButton text={current.example_en} theme={theme} size={14} rate={0.9} label="예문 듣기" />
             </div>
             <div style={{ fontSize: 13, color: theme.textMuted, lineHeight: 1.6, marginTop: 4 }}>{current.example_ko}</div>
+            {(current.synonyms?.length > 0 || current.antonyms?.length > 0) && (
+              <div data-testid="quiz-relations" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                {(current.synonyms || []).map((s) => (
+                  <span key={`s-${s}`} style={{ padding: '3px 9px', borderRadius: 999, fontSize: 11.5, background: theme.success + '18', color: theme.success, fontWeight: 600 }}>= {s}</span>
+                ))}
+                {(current.antonyms || []).map((a) => (
+                  <span key={`a-${a}`} style={{ padding: '3px 9px', borderRadius: 999, fontSize: 11.5, background: theme.error + '15', color: theme.error, fontWeight: 600 }}>↔ {a}</span>
+                ))}
+              </div>
+            )}
+            {current.etymology && (
+              // 틀린 단어일수록 어원 스토리가 기억 단서가 된다 — 오답이면 강조 톤
+              <div data-testid="quiz-etymology" style={{
+                marginTop: 10, padding: '9px 12px', borderRadius: 9, fontSize: 12.5, lineHeight: 1.65,
+                background: isCorrect ? theme.chipBg : theme.error + '0d',
+                border: `1px solid ${isCorrect ? theme.border : theme.error + '33'}`,
+                color: theme.textMuted,
+              }}>
+                <b style={{ color: isCorrect ? theme.text : theme.error, marginRight: 6 }}>어원</b>{current.etymology}
+              </div>
+            )}
             <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end' }}>
               <button data-testid="quiz-next" onClick={next} disabled={submitting} style={primaryBtn(submitting)}>
                 {submitting ? '채점 중…' : pos < total - 1 ? '다음 문항 →' : '결과 보기'}
@@ -356,6 +377,22 @@ function DailyQuizPanel({ theme, aiConfig, compact = false }) {
                 </div>
                 <div style={{ fontSize: 13.5, color: theme.text, marginTop: 2 }}>{w.meaning_ko}</div>
                 {a && !a.correct && <div style={{ fontSize: 12, color: theme.error, marginTop: 2 }}>내 답: {a.choice}</div>}
+                {/* 틀린 단어는 어원·유의어·반의어를 결과에서 바로 복기 — 기억 단서 */}
+                {a && !a.correct && w.etymology && (
+                  <div data-testid="quiz-result-etymology" style={{ fontSize: 12, color: theme.textMuted, lineHeight: 1.6, marginTop: 5, padding: '7px 10px', borderRadius: 8, background: theme.error + '0d', border: `1px solid ${theme.error}26` }}>
+                    <b style={{ color: theme.error, marginRight: 5 }}>어원</b>{w.etymology}
+                  </div>
+                )}
+                {a && !a.correct && (w.synonyms?.length > 0 || w.antonyms?.length > 0) && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
+                    {(w.synonyms || []).map((s) => (
+                      <span key={`s-${s}`} style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, background: theme.success + '18', color: theme.success, fontWeight: 600 }}>= {s}</span>
+                    ))}
+                    {(w.antonyms || []).map((an) => (
+                      <span key={`a-${an}`} style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, background: theme.error + '15', color: theme.error, fontWeight: 600 }}>↔ {an}</span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           );

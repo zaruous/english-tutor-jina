@@ -30,6 +30,13 @@ async function main() {
   t('보기 4개 × 정답 포함 × 중복 없음', q.words.every((w) => w.options.length === 4 && w.options.includes(w.meaning_ko) && new Set(w.options).size === 4));
   t('단어 중복 없음', new Set(q.words.map((w) => w.word.toLowerCase())).size === 10);
   t('예문/발음/품사 채워짐', q.words.every((w) => w.example_en && w.example_ko && w.ipa && w.pos && w.meaning_ko));
+  // 어원·유의어·반의어 — 필드는 전 단어 존재(스키마 계약), 내용은 모델 재량("확실하지 않으면 빈 값")이라 완만하게 단정
+  t('어원/유의어/반의어 필드 형태', q.words.every((w) =>
+    typeof w.etymology === 'string' && Array.isArray(w.synonyms) && Array.isArray(w.antonyms)
+    && w.synonyms.length <= 3 && w.antonyms.length <= 3));
+  const withEty = q.words.filter((w) => w.etymology.length >= 10).length;
+  const withRel = q.words.filter((w) => w.synonyms.length + w.antonyms.length > 0).length;
+  t('어원 채움 ≥5 단어 · 유의/반의 ≥5 단어', withEty >= 5 && withRel >= 5, `어원 ${withEty}/10 · 관계어 ${withRel}/10`);
   const owned = new Set((await get('/api/vocab')).cards.map((c) => c.word.toLowerCase()));
   t('보유 단어 미포함 (제외 목록 반영)', q.words.every((w) => !owned.has(w.word.toLowerCase())),
     q.words.filter((w) => owned.has(w.word.toLowerCase())).map((w) => w.word).join(', ') || '겹침 0');
