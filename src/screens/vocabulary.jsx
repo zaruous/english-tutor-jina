@@ -72,10 +72,12 @@ function VocabularyDesktop({ theme, aiConfig, onNavigate }) {
           <JinaAvatar size={32} theme={theme} />
           <span className="jina-serif" style={{ fontSize: 20, fontStyle: 'italic', color: theme.text }}>Jina</span>
         </button>
+        {/* 용어(플랜 09 §2.1): "나만의 단어장" = 내 SRS 카드, "전체 단어장" = vocab_words 풀 탐색 */}
         {[
           { id: 'review', label: '오늘의 복습', badge: dueCards.length },
           { id: 'daily', label: '오늘의 단어 (AI 퀴즈)' },
-          { id: 'list', label: '전체 단어장' },
+          { id: 'list', label: '나만의 단어장' },
+          { id: 'pool', label: '전체 단어장' },
           { id: 'add', label: '단어 추가 (+AI)' },
         ].map(({ id, label, badge }) => (
           <button key={id} onClick={() => setTab(id)} style={{
@@ -125,7 +127,8 @@ function VocabularyDesktop({ theme, aiConfig, onNavigate }) {
             <h1 style={{ fontSize: 26, fontWeight: 700, color: theme.text, margin: 0 }}>
               {tab === 'review' && `오늘의 복습 · ${dueCards.length}개`}
               {tab === 'daily' && '오늘의 단어 · AI 퀴즈'}
-              {tab === 'list' && '전체 단어장'}
+              {tab === 'list' && '나만의 단어장'}
+              {tab === 'pool' && '전체 단어장'}
               {tab === 'add' && 'AI 단어 추가'}
             </h1>
           </div>
@@ -176,6 +179,8 @@ function VocabularyDesktop({ theme, aiConfig, onNavigate }) {
           {tab === 'daily' && (
             <DailyQuizPanel theme={theme} aiConfig={aiConfig} />
           )}
+          {/* ── POOL TAB — 전체 단어장(vocab_words) 탐색 (플랜 09 Phase 2) ── */}
+          {tab === 'pool' && <VocabPoolPanel theme={theme} />}
           {tab === 'list' && (
             <div style={{ padding: '28px 40px' }}>
               {/* Filter tabs */}
@@ -214,7 +219,7 @@ function VocabularyDesktop({ theme, aiConfig, onNavigate }) {
           {tab === 'add' && (
             <div style={{ padding: '40px', maxWidth: 640 }}>
               <p style={{ fontSize: 15, color: theme.textMuted, lineHeight: 1.6, marginTop: 0, marginBottom: 28 }}>
-                단어를 입력하면 AI가 자동으로 품사·발음기호·의미·예문을 생성해 단어장에 추가합니다.
+                단어를 입력하면 AI가 자동으로 품사·발음기호·의미·예문을 생성해 내 단어장에 담습니다.
               </p>
               <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
                 <input
@@ -263,7 +268,7 @@ function VocabularyDesktop({ theme, aiConfig, onNavigate }) {
                     <React.Fragment>
                       <div style={{ fontSize: 12, color: theme.success, fontWeight: 700, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'currentColor' }} />
-                        {addResult.duplicate ? '이미 단어장에 있는 단어예요' : '단어 생성 완료 — 단어장에 추가됨'}
+                        {addResult.duplicate ? '이미 내 단어장에 있는 단어예요' : '단어 생성 완료 — 내 단어장에 담김'}
                       </div>
                       {/* 실제 저장된 카드를 렌더 — 정규식 스크래핑/원문 덤프 폐기 */}
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 6 }}>
@@ -539,6 +544,159 @@ function VocabListRow({ word: w, theme, compact = false }) {
 }
 
 // ─────────────────────────────────────────────────────
+// Vocab Pool Panel — 전체 단어장(vocab_words) 탐색 (플랜 09 Phase 2)
+// 검색·출처 필터·페이지는 서버 쿼리, 화면은 필터 상태만 가진다.
+// ─────────────────────────────────────────────────────
+const POOL_SOURCE_LABELS = { seed: '시드', ai: 'AI', manual: '수동', lesson: '레슨', conversation: '회화' };
+
+function VocabPoolPanel({ theme }) {
+  const { pool, loadPool, addFromPool } = useVocab();
+  const [q, setQ] = React.useState('');
+  const [source, setSource] = React.useState('all'); // 'all' | 'seed' | 'ai'
+  const [page, setPage] = React.useState(1);
+  const [adding, setAdding] = React.useState({}); // { [word]: 'adding' | 'error' }
+
+  // 검색은 350ms 디바운스, 필터/페이지 변경은 즉시 반영 (같은 이펙트 — 최신 인자만 유효)
+  React.useEffect(() => {
+    const run = () => loadPool({ q: q.trim(), source: source === 'all' ? '' : source, page });
+    const id = setTimeout(run, q ? 350 : 0);
+    return () => clearTimeout(id);
+  }, [q, source, page, loadPool]);
+
+  const handleAdd = async (word) => {
+    setAdding((a) => ({ ...a, [word]: 'adding' }));
+    const res = await addFromPool(word);
+    setAdding((a) => ({ ...a, [word]: res.ok ? undefined : 'error' }));
+  };
+
+  const summary = pool.summary;
+  const lastPage = Math.max(1, Math.ceil(pool.total / (pool.page_size || 50)));
+  const chips = [
+    { id: 'all', label: '전체', count: summary?.total },
+    { id: 'seed', label: '시드', count: summary?.by_source?.seed },
+    { id: 'ai', label: 'AI', count: summary?.by_source?.ai },
+  ];
+
+  return (
+    <div style={{ padding: '28px 40px' }}>
+      {/* 헤더 집계 — 풀 크기 · 내가 담은 수 (플랜 09 Phase 2) */}
+      {summary && (
+        <div data-testid="pool-summary" style={{ fontSize: 13, color: theme.textMuted, marginBottom: 16 }}>
+          모든 출처의 사전 항목 <b style={{ color: theme.text }}>{summary.total}단어</b>
+          {' · '}내 단어장 <b style={{ color: theme.accent }}>{summary.mine}</b>
+          <span style={{ marginLeft: 8, color: theme.textDim, fontSize: 12 }}>
+            — 담은 단어만 SRS 복습 대상이 됩니다
+          </span>
+        </div>
+      )}
+
+      {/* 검색 + 출처 필터 칩 */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 20, alignItems: 'center', flexWrap: 'wrap' }}>
+        <input
+          data-testid="pool-search"
+          value={q}
+          onChange={(e) => { setQ(e.target.value); setPage(1); }}
+          placeholder="단어·뜻 검색…"
+          style={{
+            width: 260, padding: '9px 14px', borderRadius: 10,
+            background: theme.card, border: `1px solid ${theme.borderStrong}`,
+            color: theme.text, fontSize: 14, outline: 'none', fontFamily: 'inherit',
+          }}
+        />
+        {chips.map(({ id, label, count }) => (
+          <button key={id} data-testid={`pool-chip-${id}`} onClick={() => { setSource(id); setPage(1); }} style={{
+            padding: '7px 14px', borderRadius: 999,
+            background: source === id ? theme.text : theme.chipBg,
+            color: source === id ? theme.bg : theme.textMuted,
+            fontSize: 13, fontWeight: source === id ? 700 : 500,
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+          }}>
+            {label}
+            {count !== undefined && (
+              <span style={{
+                fontSize: 11, padding: '1px 6px', borderRadius: 999,
+                background: source === id ? 'rgba(255,255,255,0.2)' : theme.surface,
+                color: source === id ? 'inherit' : theme.textDim,
+              }}>{count}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {pool.error && (
+        <div style={{
+          padding: '10px 14px', borderRadius: 10, marginBottom: 16,
+          background: theme.warning + '18', border: `1px solid ${theme.warning}40`,
+          fontSize: 12.5, color: theme.warning, fontWeight: 600,
+        }}>
+          ⚠︎ 풀 목록을 불러오지 못했습니다. ({pool.error})
+        </div>
+      )}
+
+      {/* 목록 — 행마다 [내 단어장에 담기] / 담김 ✓ */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {pool.words.map((w) => {
+          const st = adding[w.word];
+          return (
+            <div key={w.id} data-testid="pool-row" style={{
+              display: 'flex', alignItems: 'center', gap: 14, padding: '13px 18px',
+              borderRadius: 14, background: theme.surface, border: `1px solid ${theme.border}`,
+            }}>
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 16, fontWeight: 700, color: theme.text }}>{w.word}</span>
+                <span style={{ fontSize: 12, color: theme.textDim }}>{w.pos}</span>
+                <span style={{ fontSize: 12, color: theme.textDim, fontStyle: 'italic' }}>{w.ipa}</span>
+                <SpeakButton text={w.word} theme={theme} size={13} style={{ verticalAlign: 'middle' }} />
+                <span style={{ fontSize: 13.5, color: theme.textMuted }}>{w.meaning_ko}</span>
+              </div>
+              <span style={{
+                fontSize: 10.5, padding: '3px 8px', borderRadius: 999, flexShrink: 0,
+                background: theme.chipBg, color: theme.textDim, fontWeight: 700,
+              }}>{POOL_SOURCE_LABELS[w.source] || w.source}</span>
+              {w.in_my_vocab ? (
+                <span data-testid="pool-added" style={{
+                  fontSize: 12, fontWeight: 700, color: theme.success, flexShrink: 0,
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                }}><Icons.Check size={13} /> 담김</span>
+              ) : (
+                <button data-testid="pool-add" disabled={st === 'adding'} onClick={() => handleAdd(w.word)} style={{
+                  padding: '7px 13px', borderRadius: 9, flexShrink: 0,
+                  background: st === 'error' ? theme.error + '22' : theme.chipBg,
+                  color: st === 'error' ? theme.error : theme.text,
+                  fontSize: 12, fontWeight: 700,
+                }}>
+                  {st === 'adding' ? '담는 중…' : st === 'error' ? '실패 — 다시' : '내 단어장에 담기'}
+                </button>
+              )}
+            </div>
+          );
+        })}
+        {!pool.loading && pool.loaded && pool.words.length === 0 && (
+          <div style={{ padding: '32px 0', textAlign: 'center', fontSize: 13.5, color: theme.textDim }}>
+            검색 결과가 없습니다.
+          </div>
+        )}
+      </div>
+
+      {/* 페이지네이션 — 50개 단위 */}
+      {lastPage > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, marginTop: 20 }}>
+          <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)} style={{
+            padding: '7px 14px', borderRadius: 9, background: theme.chipBg,
+            color: page <= 1 ? theme.textDim : theme.text, fontSize: 12.5, fontWeight: 700,
+          }}>← 이전</button>
+          <span style={{ fontSize: 12.5, color: theme.textMuted }}>{page} / {lastPage}</span>
+          <button disabled={page >= lastPage} onClick={() => setPage((p) => p + 1)} style={{
+            padding: '7px 14px', borderRadius: 9, background: theme.chipBg,
+            color: page >= lastPage ? theme.textDim : theme.text, fontSize: 12.5, fontWeight: 700,
+          }}>다음 →</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────
 // Mobile Vocabulary
 // ─────────────────────────────────────────────────────
 function MobileVocabulary({ theme, aiConfig, noNav = false, onNavigate }) {
@@ -572,7 +730,7 @@ function MobileVocabulary({ theme, aiConfig, noNav = false, onNavigate }) {
         <div>
           <div style={{ fontSize: 11, color: theme.textDim, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 2 }}>단어장</div>
           <div style={{ fontSize: 22, fontWeight: 700, color: theme.text }}>
-            {tab === 'review' ? `복습 대기 ${dueCards.length}개` : tab === 'daily' ? '오늘의 단어 · AI 퀴즈' : '전체 단어'}
+            {tab === 'review' ? `복습 대기 ${dueCards.length}개` : tab === 'daily' ? '오늘의 단어 · AI 퀴즈' : '나만의 단어장'}
           </div>
         </div>
         <div style={{
@@ -588,7 +746,7 @@ function MobileVocabulary({ theme, aiConfig, noNav = false, onNavigate }) {
         {[
           { id: 'review', label: '복습', badge: dueCards.length },
           { id: 'daily', label: '오늘의 단어' },
-          { id: 'list', label: '전체 목록' },
+          { id: 'list', label: '내 단어장' },
         ].map(({ id, label, badge }) => (
           <button key={id} onClick={() => setTab(id)} style={{
             padding: '8px 14px', borderRadius: 999,

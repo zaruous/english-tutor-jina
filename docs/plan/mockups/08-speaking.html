@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<!-- 플랜 08 Phase C — 스피킹 연습 디자인 미리보기 (src/screens/speaking.jsx 시각 기준: 읽기 연습 v1, 브라우저 STT) -->
+<html lang="ko"><head><meta charset="utf-8"><link rel="stylesheet" href="shared.css">
+<style>
+  .head { padding: 22px 40px 0; background: var(--bg-soft); border-bottom: 1px solid var(--border); }
+  .head-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .tabs { display: flex; gap: 8px; padding-bottom: 14px; }
+  .content { padding: 20px 0; display: flex; flex-direction: column; align-items: center; }
+  .wrap { width: 720px; }
+  .progress-row { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+  .pbar { flex: 1; height: 5px; border-radius: 99px; background: var(--surface); overflow: hidden; }
+  .pbar i { display: block; height: 100%; width: 30%; background: var(--grad); border-radius: 99px; }
+  .pnum { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+  .scard { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; box-shadow: var(--shadow); overflow: hidden; }
+  .scard .top { padding: 24px 36px 20px; text-align: center; }
+  .sentence { font-size: 20px; font-weight: 600; line-height: 1.5; margin: 10px 0 12px; }
+  .listen { display: inline-flex; align-items: center; gap: 7px; }
+  .divider { border-top: 1px solid var(--border); }
+  .rec-area { padding: 16px 36px; display: flex; align-items: center; gap: 20px; justify-content: center; }
+  .rec { width: 64px; height: 64px; border-radius: 50%; background: rgba(252,129,129,0.14);
+         border: 2px solid rgba(252,129,129,0.55); display: grid; place-items: center; }
+  .rec .dot { width: 22px; height: 22px; border-radius: 6px; background: var(--error); }
+  .rec-meta { text-align: left; }
+  .rec-meta .t { font-size: 14px; font-weight: 700; color: var(--error); margin-bottom: 3px; }
+  .rec-meta .d { font-size: 12px; color: var(--text-dim); }
+  .rwave { display: flex; gap: 3px; align-items: center; height: 26px; }
+  .rwave i { width: 3.5px; border-radius: 99px; background: var(--error); opacity: 0.8; }
+  .result { padding: 16px 36px 22px; }
+  .result .lbl { font-size: 11px; color: var(--text-dim); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 10px; }
+  .words { font-size: 16.5px; line-height: 2; }
+  .w-ok { color: var(--success); }
+  .w-bad { color: var(--error); font-weight: 700; text-decoration: underline wavy rgba(252,129,129,0.6); text-underline-offset: 4px; }
+  .w-miss { color: var(--text-dim); text-decoration: line-through; }
+  .score-row { display: flex; align-items: center; gap: 18px; margin-top: 18px; }
+  .score { display: flex; align-items: baseline; gap: 6px; }
+  .score b { font-size: 38px; font-weight: 800; color: var(--success); }
+  .score span { font-size: 13px; color: var(--text-muted); }
+  .hint { flex: 1; font-size: 12.5px; color: var(--text-muted); line-height: 1.6;
+          padding: 10px 14px; border-radius: 10px; background: rgba(79,209,197,0.08); border: 1px solid rgba(79,209,197,0.25); }
+  .acts { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+  .foot { width: 720px; display: flex; gap: 10px; margin-top: 18px; }
+  .fstat { flex: 1; padding: 14px 18px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border); }
+  .fstat .v { font-size: 20px; font-weight: 800; }
+  .fstat .k { font-size: 11.5px; color: var(--text-dim); margin-top: 3px; }
+  .note { width: 720px; margin-top: 14px; font-size: 11.5px; color: var(--text-dim); text-align: center; }
+  .note b { color: var(--warning); }
+</style></head>
+<body>
+  <nav class="topnav">
+    <span class="logo"><span class="avatar">J</span><span class="name serif">Jina</span></span>
+    <span class="pill"><span class="ic">⌂</span>대시보드</span>
+    <span class="pill"><span class="ic">💬</span>AI 회화 <span class="live">LIVE</span></span>
+    <span class="pill active"><span class="ic">🎙</span>스피킹 연습</span>
+    <span class="pill"><span class="ic">📖</span>TOEIC 학습</span>
+    <span class="pill"><span class="ic">🗂</span>단어장</span>
+    <span class="pill"><span class="ic">📈</span>학습 통계</span>
+    <span class="gear">⚙</span>
+  </nav>
+
+  <header class="head">
+    <div class="head-row">
+      <div>
+        <div class="eyebrow" style="margin-bottom:4px">학습</div>
+        <div class="h1">스피킹 연습</div>
+      </div>
+      <span class="chip">오늘 연습 <b style="color:var(--accent);margin-left:4px">3문장</b></span>
+    </div>
+    <div class="tabs">
+      <span class="chip on">문장 읽기</span>
+      <span class="chip">자유 회화 → AI 회화 탭</span>
+    </div>
+  </header>
+
+  <main class="content">
+    <div class="wrap">
+      <div class="progress-row">
+        <span class="pnum">Q3</span>
+        <span class="pbar"><i></i></span>
+        <span class="pnum">3/10 문장</span>
+      </div>
+
+      <div class="scard">
+        <div class="top">
+          <div class="eyebrow">아래 문장을 소리 내어 읽어보세요</div>
+          <p class="sentence">"I would recommend the new vendor because their pricing is more competitive."</p>
+          <span class="chip listen">🔊 원어민 발음 듣기</span>
+        </div>
+        <div class="divider"></div>
+        <div class="rec-area">
+          <span class="rec"><span class="dot"></span></span>
+          <div class="rec-meta">
+            <div class="t">녹음 멈춤 · 0:06</div>
+            <div class="d">브라우저 음성 인식(SpeechRecognition) · en-US</div>
+          </div>
+          <span class="rwave">
+            <i style="height:8px"></i><i style="height:16px"></i><i style="height:22px"></i><i style="height:12px"></i>
+            <i style="height:24px"></i><i style="height:18px"></i><i style="height:9px"></i><i style="height:20px"></i>
+            <i style="height:14px"></i><i style="height:23px"></i><i style="height:11px"></i>
+          </span>
+        </div>
+        <div class="divider"></div>
+        <div class="result">
+          <div class="lbl">인식 결과 — 단어별 일치</div>
+          <p class="words">
+            <span class="w-ok">I</span> <span class="w-ok">would</span> <span class="w-ok">recommend</span>
+            <span class="w-ok">the</span> <span class="w-ok">new</span> <span class="w-bad">bender</span>
+            <span class="w-ok">because</span> <span class="w-ok">their</span> <span class="w-ok">pricing</span>
+            <span class="w-ok">is</span> <span class="w-miss">more</span> <span class="w-ok">competitive</span>
+          </p>
+          <div class="score-row">
+            <span class="score"><b>87%</b><span>일치율</span></span>
+            <div class="hint">🎯 <b style="color:var(--text)">vendor</b>가 "bender"로 인식됐어요 — <i>v</i> 발음에서 윗니를 아랫입술에 붙여보세요. "more"는 인식되지 않았어요.</div>
+          </div>
+          <div class="acts">
+            <button class="btn-ghost">↺ 다시 읽기</button>
+            <button class="btn-primary">다음 문장 →</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="foot">
+        <div class="fstat"><div class="v" style="color:var(--success)">82%</div><div class="k">오늘 평균 일치율</div></div>
+        <div class="fstat"><div class="v">7</div><div class="k">연속 연습일</div></div>
+        <div class="fstat"><div class="v" style="color:var(--accent)">시나리오 · 레슨 예문</div><div class="k">문장 출처 — 학습한 콘텐츠 재사용</div></div>
+      </div>
+      <div class="note"><b>v1 무저장 연습 모드</b> — 발음 평가 API(Whisper 등)와 이력 저장은 Phase 2 · 미지원 브라우저에서는 안내 화면 표시</div>
+    </div>
+  </main>
+</body></html>

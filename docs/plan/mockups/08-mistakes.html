@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<!-- 플랜 08 Phase A — 오답 노트 디자인 미리보기 (src/screens/mistakes.jsx 시각 기준) -->
+<html lang="ko"><head><meta charset="utf-8"><link rel="stylesheet" href="shared.css">
+<style>
+  .head { padding: 22px 40px 18px; border-bottom: 1px solid var(--border); background: var(--bg-soft);
+          display: flex; align-items: center; justify-content: space-between; }
+  .stats { display: flex; gap: 8px; }
+  .stat { padding: 8px 16px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border);
+          font-size: 13px; color: var(--text-muted); }
+  .stat b { font-weight: 700; }
+  .content { padding: 26px 40px; }
+  .filters { display: flex; gap: 8px; margin-bottom: 22px; align-items: center; }
+  .mcard { background: var(--surface); border: 1px solid var(--border); border-radius: 15px; padding: 20px 24px; margin-bottom: 12px; }
+  .mtop { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .part { background: rgba(183,148,244,0.16); color: var(--accent); }
+  .skill { background: var(--chip); color: var(--text-muted); font-family: ui-monospace, Consolas, monospace; font-weight: 600; }
+  .wrongs { margin-left: auto; font-size: 12px; color: var(--error); font-weight: 700; }
+  .stem { font-size: 16.5px; font-weight: 600; line-height: 1.55; margin-bottom: 14px; }
+  .stem .blank { border-bottom: 2px solid var(--accent); padding: 0 22px; }
+  .answers { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .ans { display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 10px; font-size: 13.5px; font-weight: 600; }
+  .ans.mine { background: rgba(252,129,129,0.10); border: 1px solid rgba(252,129,129,0.35); color: var(--error); }
+  .ans.correct { background: rgba(79,209,197,0.10); border: 1px solid rgba(79,209,197,0.35); color: var(--success); }
+  .ans .lbl { font-size: 10.5px; font-weight: 700; opacity: 0.75; letter-spacing: 0.05em; }
+  .expl { padding: 12px 16px; border-radius: 10px; background: var(--card); border: 1px solid var(--border);
+          font-size: 13px; color: var(--text-muted); line-height: 1.65; margin-bottom: 16px; }
+  .expl b { color: var(--text); font-weight: 700; }
+  .acts { display: flex; gap: 10px; justify-content: flex-end; align-items: center; }
+  .meta { margin-right: auto; font-size: 11.5px; color: var(--text-dim); }
+  .overcome { text-align: center; padding: 16px; font-size: 13px; color: var(--text-dim); }
+  .overcome b { color: var(--success); }
+</style></head>
+<body>
+  <nav class="topnav">
+    <span class="logo"><span class="avatar">J</span><span class="name serif">Jina</span></span>
+    <span class="pill"><span class="ic">⌂</span>대시보드</span>
+    <span class="pill"><span class="ic">💬</span>AI 회화 <span class="live">LIVE</span></span>
+    <span class="pill"><span class="ic">📖</span>TOEIC 학습</span>
+    <span class="pill"><span class="ic">🗂</span>단어장</span>
+    <span class="pill"><span class="ic">📈</span>학습 통계</span>
+    <span class="pill active"><span class="ic">📁</span>오답 노트</span>
+    <span class="gear">⚙</span>
+  </nav>
+
+  <header class="head">
+    <div>
+      <div class="eyebrow" style="margin-bottom:4px">시험 대비</div>
+      <div class="h1">오답 노트</div>
+    </div>
+    <div class="stats">
+      <span class="stat">미극복 <b style="color:var(--warning)">12</b>문항</span>
+      <span class="stat">극복 <b style="color:var(--success)">4</b>문항</span>
+    </div>
+  </header>
+
+  <main class="content">
+    <div class="filters">
+      <span class="chip on">전체 <span class="n">12</span></span>
+      <span class="chip">문법 <span class="n">4</span></span>
+      <span class="chip">어휘 <span class="n">3</span></span>
+      <span class="chip">세부사항 <span class="n">2</span></span>
+      <span class="chip">추론 <span class="n">2</span></span>
+      <span class="chip">주제 <span class="n">1</span></span>
+      <span style="margin-left:auto;font-size:12px;color:var(--text-dim)">레슨별 최신 답안 기준 — 다시 풀어 맞히면 자동으로 극복 처리됩니다</span>
+    </div>
+
+    <article class="mcard">
+      <div class="mtop">
+        <span class="badge part">PART 5 · 문법</span>
+        <span style="font-size:13px;color:var(--text-muted);font-weight:600">면접 빈출 문법 · Set 12</span>
+        <span class="badge skill">grammar</span>
+        <span class="wrongs">2회 틀림</span>
+      </div>
+      <p class="stem">Applicants are encouraged <span class="blank"></span> specific examples of their achievements during the interview.</p>
+      <div class="answers">
+        <span class="ans mine"><span class="lbl">내 답</span>(A) provide ✗</span>
+        <span class="ans correct"><span class="lbl">정답</span>(C) to provide ✓</span>
+      </div>
+      <div class="expl"><b>해설</b> — be encouraged 뒤에는 to부정사가 옵니다. <b>be encouraged to do</b>(~하도록 권장되다) 구조로, 수동태 뒤 목적을 나타내는 to부정사 보어가 필요합니다.</div>
+      <div class="acts">
+        <span class="meta">마지막 오답 2026-08-31 · 첫 오답 2026-08-27</span>
+        <button class="btn-ghost">💬 Jina에게 물어보기</button>
+        <button class="btn-primary">레슨 다시 풀기 →</button>
+      </div>
+    </article>
+
+    <article class="mcard">
+      <div class="mtop">
+        <span class="badge part" style="background:rgba(246,135,179,0.14);color:var(--accent2)">PART 7 · 독해</span>
+        <span style="font-size:13px;color:var(--text-muted);font-weight:600">단일 지문 · Set 23 · 비즈니스 이메일</span>
+        <span class="badge skill">vocabulary</span>
+        <span class="wrongs">1회 틀림</span>
+      </div>
+      <p class="stem">The word "blockers" in paragraph 5 is closest in meaning to —</p>
+      <div class="answers">
+        <span class="ans mine"><span class="lbl">내 답</span>(A) budget cuts ✗</span>
+        <span class="ans correct"><span class="lbl">정답</span>(C) obstacles ✓</span>
+      </div>
+      <div class="expl"><b>해설</b> — 문맥상 "진행을 가로막는 것"을 뜻합니다. blockers ≒ <b>obstacles</b>(장애물). 예산과는 무관한 일반 명사 용법입니다.</div>
+      <div class="acts">
+        <span class="meta">마지막 오답 2026-08-30</span>
+        <button class="btn-ghost">💬 Jina에게 물어보기</button>
+        <button class="btn-primary">레슨 다시 풀기 →</button>
+      </div>
+    </article>
+
+    <div class="overcome">✓ 극복한 오답 <b>4문항</b> 보기 — 다시 맞힌 문항은 여기로 이동합니다</div>
+  </main>
+</body></html>

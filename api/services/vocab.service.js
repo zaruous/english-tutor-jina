@@ -158,36 +158,54 @@ export async function getCard(user, cardId, client = pool) {
   return toDto(row);
 }
 
+// 사전(풀) upsert — 카드는 만들지 않는다. INSERT … DO NOTHING 후 0행이면 재조회(동시 추가 경합 대비).
+// 이 분기를 빼먹으면 "이미 있는 단어를 추가할 때만 500"이 난다.
+// addCardFromEntry(카드 생성)와 registerPoolEntries(풀 자동 등록)가 공유한다 — 플랜 09 §4.
+export async function upsertWordEntry(client, { word, entry, source, createdBy }) {
+  if (entry) {
+    const { rows } = await client.query(
+      `INSERT INTO public.vocab_words (word, pos, ipa, meaning_ko, examples, difficulty, source, created_by)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
+       ON CONFLICT (word_key, lang) DO NOTHING
+       RETURNING id`,
+      [entry.word || word, entry.pos, entry.ipa, entry.meaning_ko,
+       JSON.stringify(entry.examples), entry.difficulty, source, createdBy],
+    );
+    if (rows.length > 0) return { wordId: rows[0].id, created: true };
+  }
+  const { rows: [existing] } = await client.query(
+    `SELECT id FROM public.vocab_words WHERE word_key = lower(btrim($1)) AND lang = 'en'`,
+    [word],
+  );
+  if (!existing) throw new HttpError(404, 'NOT_FOUND', '사전 항목 생성에 실패했습니다.');
+  return { wordId: existing.id, created: false };
+}
+
+// AI 생성물(퀴즈 10단어·단어 세트)을 풀에 자동 등록 — 나만의 단어장(카드)에는 넣지 않는다(플랜 09 §2.2).
+// 호출자는 실패를 삼키고 로그만 남긴다 — 퀴즈/세트 생성 성공이 우선.
+export async function registerPoolEntries(words, { source, createdBy }) {
+  let created = 0;
+  let skipped = 0;
+  for (const w of words || []) {
+    const word = String(w?.word || '').trim();
+    const meaning = String(w?.meaning_ko || '').trim();
+    if (!word || !meaning) { skipped += 1; continue; }
+    const entry = {
+      word, pos: w.pos ?? null, ipa: w.ipa ?? null, meaning_ko: meaning,
+      examples: [w.example_en].filter(Boolean),
+      difficulty: Number.isInteger(w.difficulty) ? w.difficulty : 3,
+    };
+    const r = await upsertWordEntry(pool, { word, entry, source, createdBy });
+    if (r.created) created += 1;
+  }
+  return { created, existing: (words?.length ?? 0) - created - skipped, skipped };
+}
+
 // AI가 만든 사전 항목(entry)을 저장. 트랜잭션 안에는 SELECT/INSERT만 —
 // CLI 대기는 이 함수 밖(라우트)에서 끝났다.
 export async function addCardFromEntry(user, { word, entry, source }) {
   return withTx(async (client) => {
-    let wordId;
-    let created = false;
-    if (entry) {
-      // INSERT … DO NOTHING 후 0행이면 재조회 — 동시 추가 경합 대비.
-      // 이 분기를 빼먹으면 "이미 있는 단어를 추가할 때만 500"이 난다.
-      const { rows } = await client.query(
-        `INSERT INTO public.vocab_words (word, pos, ipa, meaning_ko, examples, difficulty, source, created_by)
-         VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
-         ON CONFLICT (word_key, lang) DO NOTHING
-         RETURNING id`,
-        [entry.word || word, entry.pos, entry.ipa, entry.meaning_ko,
-         JSON.stringify(entry.examples), entry.difficulty, source, user.id],
-      );
-      if (rows.length > 0) {
-        wordId = rows[0].id;
-        created = true;
-      }
-    }
-    if (!wordId) {
-      const { rows: [existing] } = await client.query(
-        `SELECT id FROM public.vocab_words WHERE word_key = lower(btrim($1)) AND lang = 'en'`,
-        [word],
-      );
-      if (!existing) throw new HttpError(404, 'NOT_FOUND', '사전 항목 생성에 실패했습니다.');
-      wordId = existing.id;
-    }
+    const { wordId, created } = await upsertWordEntry(client, { word, entry, source, createdBy: user.id });
 
     const { rows: cardRows } = await client.query(
       `INSERT INTO public.user_vocab_cards (user_id, word_id)
@@ -207,6 +225,54 @@ export async function addCardFromEntry(user, { word, entry, source }) {
     const card = await getCard(user, cardRows[0].id, client);
     return { card, duplicate: false, wordCreated: created };
   });
+}
+
+export const POOL_SOURCES = ['seed', 'ai', 'manual', 'lesson', 'conversation'];
+export const POOL_PAGE_SIZE = 50;
+
+// 전체 단어장(풀) 탐색 — 플랜 09 Phase 2. in_my_vocab 는 LEFT JOIN 파생(저장 금지 규범).
+// summary(풀 크기·출처별·내가 담은 수)는 필터와 무관한 전체 집계 — 헤더 "N단어 · 내 단어장 M" 용.
+export async function listPool(user, { q, source, page = 1 } = {}) {
+  const params = [user.id];
+  let where = `w.lang = 'en'`;
+  if (q) {
+    params.push(`%${q.toLowerCase()}%`);
+    where += ` AND (w.word_key LIKE $${params.length} OR w.meaning_ko LIKE $${params.length})`;
+  }
+  if (source) {
+    params.push(source);
+    where += ` AND w.source = $${params.length}`;
+  }
+  const offset = (page - 1) * POOL_PAGE_SIZE;
+  const { rows } = await pool.query(
+    `SELECT w.id, w.word, w.pos, w.ipa, w.meaning_ko, w.examples, w.difficulty, w.source,
+            (c.id IS NOT NULL) AS in_my_vocab,
+            count(*) OVER ()::int AS filtered_total
+       FROM public.vocab_words w
+       LEFT JOIN public.user_vocab_cards c ON c.word_id = w.id AND c.user_id = $1
+      WHERE ${where}
+      ORDER BY w.word_key
+      LIMIT ${POOL_PAGE_SIZE} OFFSET ${offset}`,
+    params,
+  );
+  const { rows: [summary] } = await pool.query(
+    `SELECT count(*)::int AS total,
+            ${POOL_SOURCES.map((s) => `count(*) FILTER (WHERE w.source = '${s}')::int AS ${s}`).join(', ')},
+            count(c.id)::int AS mine
+       FROM public.vocab_words w
+       LEFT JOIN public.user_vocab_cards c ON c.word_id = w.id AND c.user_id = $1
+      WHERE w.lang = 'en'`,
+    [user.id],
+  );
+  return {
+    words: rows.map(({ filtered_total, ...w }) => w),
+    page, page_size: POOL_PAGE_SIZE,
+    total: rows[0]?.filtered_total ?? 0,
+    summary: {
+      total: summary.total, mine: summary.mine,
+      by_source: Object.fromEntries(POOL_SOURCES.map((s) => [s, summary[s]])),
+    },
+  };
 }
 
 export async function findWordEntry(word) {

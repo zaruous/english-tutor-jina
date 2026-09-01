@@ -104,7 +104,7 @@ function App() {
         <DCSection
           id="jina-vocab"
           title="Jina — 단어장"
-          subtitle="SRS 플래시카드 복습 · AI 단어 추가 · 전체 목록"
+          subtitle="SRS 플래시카드 복습 · AI 단어 추가 · 전체 단어장(풀) 탐색"
         >
           <DCArtboard id="vocabulary-desktop" label="07 · Desktop · 단어장" width={1440} height={920}>
             <VocabularyDesktop theme={theme} aiConfig={aiConfig} />

@@ -3,7 +3,7 @@
 // 여기는 문항 진행 상태(현재 번호·선택)만 가진다. vocabulary.jsx 보다 먼저 로드되어야 한다.
 //
 // 흐름: 주제 선택(랜덤/뉴스/게임/블로그/키워드) → AI 생성(10~30초, 취소 가능) → 10문항 4지선다(즉시 피드백 + 예문)
-//       → 서버 채점 → 결과(점수·오답) → 틀린 단어/전체를 단어장에 추가 → 새 퀴즈. 단어·예문은 🔊(speech.jsx)로 발음, 문항 자동 발음 토글.
+//       → 서버 채점 → 결과(점수·오답) → 틀린 단어/전체를 내 단어장에 담기 → 새 퀴즈. 단어·예문은 🔊(speech.jsx)로 발음, 문항 자동 발음 토글.
 // 뉴스·블로그는 실시간 검색이 아니라 AI 지식 기준의 주제 어휘다 — 화면에 그렇게 적는다.
 
 const QUIZ_KIND_META = [
@@ -47,8 +47,8 @@ function RelatedWordChips({ theme, quizId, index, synonyms, antonyms }) {
             <SpeakButton text={r.word} theme={theme} size={12} />
             {r.meaning_ko && !window.JINA_READONLY && (
               <button type="button" data-testid="quiz-rel-add" disabled={Boolean(st) && st !== 'error'} onClick={() => add(r.word)}
-                aria-label={`${r.word} 단어장에 추가`}
-                title={done ? (st === 'dup' ? '이미 단어장에 있어요' : '단어장에 추가됨') : st === 'error' ? '추가 실패 — 다시 시도' : '단어장에 추가'}
+                aria-label={`${r.word} 내 단어장에 담기`}
+                title={done ? (st === 'dup' ? '이미 내 단어장에 있어요' : '내 단어장에 담김') : st === 'error' ? '담기 실패 — 다시 시도' : '내 단어장에 담기'}
                 style={{
                   width: 22, height: 22, borderRadius: 7, display: 'grid', placeItems: 'center', flex: '0 0 auto',
                   background: done ? theme.success + '22' : theme.chipBg,
@@ -368,8 +368,8 @@ function DailyQuizPanel({ theme, aiConfig, compact = false }) {
           <div style={{ fontSize: 18, fontWeight: 700, color: theme.text, marginTop: 4 }}>{q.topic_title}</div>
           {q.topic_ko && <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 4, lineHeight: 1.5 }}>{q.topic_ko}</div>}
           <div style={{ fontSize: 13, color: theme.textMuted, marginTop: 10 }}>
-            {score === total ? '전부 맞혔어요! 이 단어들을 단어장에 넣어 복습 주기로 굳혀 보세요.'
-              : `틀린 단어 ${wrongIndexes.length}개 — 단어장에 추가하면 SRS 복습 큐에 바로 들어갑니다.`}
+            {score === total ? '전부 맞혔어요! 이 단어들을 내 단어장에 담아 복습 주기로 굳혀 보세요.'
+              : `틀린 단어 ${wrongIndexes.length}개 — 내 단어장에 담으면 SRS 복습 큐에 바로 들어갑니다.`}
           </div>
         </div>
       </div>
@@ -377,10 +377,10 @@ function DailyQuizPanel({ theme, aiConfig, compact = false }) {
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
         <button data-testid="quiz-add-wrong" onClick={() => handleAdd(wrongIndexes, 'wrong')} disabled={adding || wrongIndexes.length === 0}
           style={primaryBtn(adding || wrongIndexes.length === 0)}>
-          틀린 단어 {wrongIndexes.length}개 단어장에 추가
+          틀린 단어 {wrongIndexes.length}개 내 단어장에 담기
         </button>
         <button data-testid="quiz-add-all" onClick={() => handleAdd([], 'all')} disabled={adding} style={ghostBtn}>
-          {adding ? '추가 중…' : `${total}개 모두 추가`}
+          {adding ? '담는 중…' : `${total}개 모두 담기`}
         </button>
         <button data-testid="quiz-new" onClick={() => { setPicking(true); setAddResult(null); }} style={{ ...ghostBtn, marginLeft: 'auto' }}>
           새 퀴즈 만들기
@@ -394,7 +394,7 @@ function DailyQuizPanel({ theme, aiConfig, compact = false }) {
           color: addResult.ok ? theme.success : theme.error, fontWeight: 600,
         }}>
           {addResult.ok
-            ? `단어장에 ${addResult.added}개 추가${addResult.duplicates ? ` (이미 있던 단어 ${addResult.duplicates}개)` : ''} — 오늘의 복습 큐에서 바로 만날 수 있어요.`
+            ? `내 단어장에 ${addResult.added}개 담김${addResult.duplicates ? ` (이미 있던 단어 ${addResult.duplicates}개)` : ''} — 오늘의 복습 큐에서 바로 만날 수 있어요.`
             : `오류: ${addResult.error}${addResult.hint ? ` — ${addResult.hint}` : ''}`}
         </div>
       )}

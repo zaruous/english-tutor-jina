@@ -45,6 +45,27 @@ async function main() {
   t('보유 단어 미포함 (제외 목록 반영)', q.words.every((w) => !owned.has(w.word.toLowerCase())),
     q.words.filter((w) => owned.has(w.word.toLowerCase())).map((w) => w.word).join(', ') || '겹침 0');
 
+  // 플랜 09 Phase 1 — 생성 직후: 풀(vocab_words)에 10단어 자동 등록, 나만의 단어장(카드)은 불변
+  const cardsAfterGen = (await get('/api/vocab')).cards.length;
+  t('생성 직후 나만의 단어장 불변 (자동 담기 없음)', cardsAfterGen === before, `${before} → ${cardsAfterGen}`);
+  let pooled = 0;
+  let pooledNotMine = 0;
+  for (const w of q.words) {
+    const p = await get(`/api/vocab/pool?q=${encodeURIComponent(w.word)}`);
+    const hit = p.ok && (p.words || []).find((x) => x.word.toLowerCase() === w.word.toLowerCase());
+    if (hit) { pooled += 1; if (!hit.in_my_vocab) pooledNotMine += 1; }
+  }
+  t('퀴즈 10단어 풀 자동 등록 (vocab_words)', pooled === 10, `풀 존재 ${pooled}/10`);
+  t('풀 등록분 in_my_vocab=false (기보유 제외)', pooledNotMine >= 10 - q.words.filter((w) => owned.has(w.word.toLowerCase())).length,
+    `미보유 ${pooledNotMine}/10`);
+  // 플랜 09 Phase 2 — pool API 형태·검증
+  const poolRes = await get('/api/vocab/pool');
+  t('GET /api/vocab/pool — 목록·페이지·집계', poolRes.ok && Array.isArray(poolRes.words) && poolRes.page === 1
+    && poolRes.summary && poolRes.summary.total >= 10 && typeof poolRes.summary.mine === 'number'
+    && typeof poolRes.summary.by_source?.ai === 'number', `total=${poolRes.summary?.total} mine=${poolRes.summary?.mine}`);
+  const badSrc = await get('/api/vocab/pool?source=nope');
+  t('pool source 검증 (400)', badSrc.ok === false && badSrc.code === 'BAD_REQUEST', badSrc.error);
+
   const today = await get('/api/vocab/quiz/today');
   t('today = 방금 만든 퀴즈 (미완료)', today.ok && today.quiz && today.quiz.id === q.id && today.quiz.completed_at === null);
   t('보기 순서 결정적 (재조회 동일)', JSON.stringify(today.quiz.words.map((w) => w.options)) === JSON.stringify(q.words.map((w) => w.options)));
@@ -70,6 +91,10 @@ async function main() {
   const added = after.filter((c) => q.words.some((w) => w.word.toLowerCase() === c.word.toLowerCase()));
   t('추가된 카드 status=new · 예문 보존 · source 사전 재사용', added.length === 10
     && added.filter((c) => !preOwned.has(c.word.toLowerCase())).every((c) => c.status === 'new' && c.examples.length >= 1));
+  // 담기 후 풀의 in_my_vocab=true 로 파생 (플랜 09 Phase 2)
+  const pAfterAdd = await get(`/api/vocab/pool?q=${encodeURIComponent(q.words[0].word)}`);
+  t('담은 단어 pool in_my_vocab=true', pAfterAdd.ok
+    && pAfterAdd.words.some((x) => x.word.toLowerCase() === q.words[0].word.toLowerCase() && x.in_my_vocab === true));
 
   // 유의어/반의어 → 단어장 추가 (뜻·IPA 는 저장된 퀴즈 데이터에서 — AI 재호출 없음)
   const relTarget = q.words.map((w) => ({ i: w.index, rel: w.synonyms[0] || w.antonyms[0] })).find((x) => x.rel?.meaning_ko);

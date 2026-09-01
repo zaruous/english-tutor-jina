@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { HttpError } from '../lib/errors.js';
 import { pool } from '../lib/pool.js';
 import { withTx } from '../lib/tx.js';
+import { registerPoolEntries } from './vocab.service.js';
 
 export const AI_JOB_TASKS = ['lesson_gen', 'scenario_gen', 'vocab_set'];
 const JOB_STATUSES = ['queued', 'running', 'succeeded', 'failed'];
@@ -348,7 +349,7 @@ export async function saveGeneratedVocabSet(job, data) {
   if (!data.title || !Array.isArray(data.words) || data.words.length !== 20) {
     throw new HttpError(502, 'VALIDATION_FAILED', '생성된 단어 세트는 중복 없는 단어 20개여야 합니다.');
   }
-  return withTx(async (client) => {
+  const result = await withTx(async (client) => {
     const slug = `ai-vocab-set-${job.user_id}-${job.id}`;
     const { rows: [row] } = await client.query(
       `INSERT INTO public.vocab_sets
@@ -366,5 +367,12 @@ export async function saveGeneratedVocabSet(job, data) {
     }
     return { vocab_set_id: row.id };
   });
+  // 플랜 09 Phase 1 — 세트 단어를 풀(vocab_words)에 자동 등록. 카드 미생성, 실패해도 세트 저장은 유지(로그만).
+  try {
+    await registerPoolEntries(data.words, { source: 'ai', createdBy: job.user_id });
+  } catch (e) {
+    console.error('[ai-job] 세트 단어 풀 자동 등록 실패:', e.message);
+  }
+  return result;
 }
 

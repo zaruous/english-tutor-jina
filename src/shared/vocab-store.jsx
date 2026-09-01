@@ -161,12 +161,42 @@ function VocabProvider({ children }) {
     return res;
   }, [refresh]);
 
+  // ── 전체 단어장(풀) — 플랜 09 Phase 2. 목록·집계(in_my_vocab 포함)는 서버 단일 소스.
+  const [pool, setPoolState] = React.useState({ words: [], summary: null, total: 0, page: 1, loading: false, loaded: false, error: null });
+  const loadPool = React.useCallback(async ({ q = '', source = '', page = 1 } = {}) => {
+    setPoolState((p) => ({ ...p, loading: true }));
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (source) params.set('source', source);
+    if (page > 1) params.set('page', String(page));
+    const qs = params.toString();
+    const res = await window.JINA_API.get(`/api/vocab/pool${qs ? `?${qs}` : ''}`);
+    setPoolState((p) => (res.ok
+      ? { words: res.words, summary: res.summary, total: res.total, page: res.page, page_size: res.page_size, loading: false, loaded: true, error: null }
+      : { ...p, loading: false, loaded: true, error: res.hint ? `${res.error} — ${res.hint}` : res.error }));
+    return res;
+  }, []);
+  // 담기 = 풀 → 나만의 단어장. 풀에 이미 있는 단어라 AI 호출 없이 POST /api/vocab/add 재사용(멱등).
+  const addFromPool = React.useCallback(async (word) => {
+    const res = await window.JINA_API.post('/api/vocab/add', { word });
+    if (res.ok) {
+      setPoolState((p) => ({
+        ...p,
+        words: p.words.map((w) => (w.word === word ? { ...w, in_my_vocab: true } : w)),
+        summary: p.summary && !res.duplicate ? { ...p.summary, mine: p.summary.mine + 1 } : p.summary,
+      }));
+      refresh(); // 나만의 단어장 목록/통계 동기화
+    }
+    return res;
+  }, [refresh]);
+
   const value = React.useMemo(() => ({
     cards, stats, loading, error, addState,
     updateWord, addWord, cancelAdd, removeWord, refresh, formatNextReview,
     quiz, loadTodayQuiz, generateQuiz, cancelQuiz, answerQuiz, addQuizWords,
+    pool, loadPool, addFromPool,
   }), [cards, stats, loading, error, addState, updateWord, addWord, cancelAdd, removeWord, refresh,
-      quiz, loadTodayQuiz, generateQuiz, cancelQuiz, answerQuiz, addQuizWords]);
+      quiz, loadTodayQuiz, generateQuiz, cancelQuiz, answerQuiz, addQuizWords, pool, loadPool, addFromPool]);
 
   return <VocabContext.Provider value={value}>{children}</VocabContext.Provider>;
 }
@@ -258,6 +288,17 @@ function useVocabFallback() {
     loadTodayQuiz: () => Promise.resolve({ ok: true, quiz: FALLBACK_QUIZ }),
     generateQuiz: () => Promise.resolve(READONLY_RES), cancelQuiz: () => {},
     answerQuiz: () => Promise.resolve(READONLY_RES), addQuizWords: () => Promise.resolve(READONLY_RES),
+    // 캔버스 데모 풀 — 데모 카드에서 파생(첫 2개는 이미 담긴 상태)
+    pool: {
+      words: cards.map((c, i) => ({
+        id: c.word_id, word: c.word, pos: c.pos, ipa: c.ipa, meaning_ko: c.meaning_ko,
+        examples: c.examples, difficulty: c.difficulty, source: i % 2 ? 'ai' : 'seed', in_my_vocab: i < 2,
+      })),
+      summary: { total: cards.length, mine: 2, by_source: { seed: 2, ai: 2, manual: 0, lesson: 0, conversation: 0 } },
+      total: cards.length, page: 1, loading: false, loaded: true, error: null,
+    },
+    loadPool: () => Promise.resolve({ ok: true }),
+    addFromPool: () => Promise.resolve(READONLY_RES),
   };
 }
 

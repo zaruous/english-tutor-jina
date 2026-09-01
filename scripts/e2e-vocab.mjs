@@ -48,9 +48,9 @@ if (await flipBtn.count()) {
   check('플래시카드 표시', false, '의미 확인 버튼 없음');
 }
 
-// 5) 전체 목록 — 서버 DTO(GET /api/vocab)의 단어가 전부 화면에 있어야 한다 (시드 상태에 의존하지 않음)
+// 5) 나만의 단어장(내 카드 목록) — 서버 DTO(GET /api/vocab)의 단어가 전부 화면에 있어야 한다 (시드 상태에 의존하지 않음)
 const serverWords = ((await (await fetch(`${API}/api/vocab`, { headers: { Origin: BASE } })).json()).cards || []).map((c) => c.word);
-await page.locator('aside button', { hasText: '전체 단어장' }).click();
+await page.locator('aside button', { hasText: '나만의 단어장' }).click();
 await page.waitForTimeout(800);
 const listText = await page.locator('main').textContent();
 check('서버 카드 목록 = GET /api/vocab 단어 전부 렌더', serverWords.length > 0 && serverWords.every((w) => listText.includes(w)), `${serverWords.length}단어`);
@@ -69,16 +69,16 @@ await page.locator('button', { hasText: 'AI 추가' }).click();
 await page.waitForTimeout(1200);
 const pendingShown = await page.locator('text=생성하는 중').count();
 check(`추가 pending 표시 + 취소 버튼 (${freshWord})`, pendingShown > 0 && (await page.locator('button', { hasText: '취소' }).count()) > 0);
-await page.waitForSelector('text=단어장에 추가됨', { timeout: 60000 }).catch(() => {});
+await page.waitForSelector('text=내 단어장에 담김', { timeout: 60000 }).catch(() => {});
 const addPanel = await page.locator('main').textContent();
-check('AI 추가 결과 카드 (실제 품사/발음기호/뜻)', /단어장에 추가됨/.test(addPanel) && addPanel.includes(freshWord) && addPanel.includes('/'), addPanel.match(new RegExp(freshWord + '[^"]{0,60}'))?.[0]?.slice(0, 60));
+check('AI 추가 결과 카드 (실제 품사/발음기호/뜻)', /내 단어장에 담김/.test(addPanel) && addPanel.includes(freshWord) && addPanel.includes('/'), addPanel.match(new RegExp(freshWord + '[^"]{0,60}'))?.[0]?.slice(0, 60));
 
 // 7) 새로고침 후 잔존 (서버 저장 증명)
 await page.reload();
 await page.waitForTimeout(9000);
 await page.locator('aside[aria-label="주요 메뉴"] button', { hasText: '단어장' }).click();
 await page.waitForTimeout(2500);
-await page.locator('aside button', { hasText: '전체 단어장' }).click();
+await page.locator('aside button', { hasText: '나만의 단어장' }).click();
 await page.waitForTimeout(800);
 const afterReload = await page.locator('main').textContent();
 check(`새로고침 후 ${freshWord} 잔존`, afterReload.includes(freshWord));
@@ -127,13 +127,58 @@ if (quizShown) await page.locator('[data-testid="quiz-add-all"]').click(); // �
 await page.waitForSelector('[data-testid="quiz-add-result"]', { timeout: 15000 }).catch(() => {});
 // 생성 시 기존 단어 제외는 프롬프트 지시라 단어장이 커지면 중복이 샐 수 있다 — added+duplicates=10 으로 단정
 const addMsg = await page.locator('[data-testid="quiz-add-result"]').textContent().catch(() => '');
-const addedN = Number(addMsg.match(/단어장에 (\d+)개 추가/)?.[1] ?? -1);
+const addedN = Number(addMsg.match(/내 단어장에 (\d+)개 담김/)?.[1] ?? -1);
 const dupN = Number(addMsg.match(/이미 있던 단어 (\d+)개/)?.[1] ?? 0);
 check('퀴즈 10단어 전부 추가 처리 (added+duplicates=10)', addedN >= 0 && addedN + dupN === 10, addMsg.trim().slice(0, 60));
 const vocabAfter = ((await (await fetch(`${API}/api/vocab`, { headers: { Origin: BASE } })).json()).cards || []).length;
 check('서버 단어장 +added', vocabAfter === vocabBefore + addedN, `${vocabBefore} → ${vocabAfter} (added ${addedN})`);
 const todayDone = (await (await fetch(`${API}/api/vocab/quiz/today`, { headers: { Origin: BASE } })).json()).quiz;
 check('today 퀴즈 completed · score 10', Boolean(todayDone?.completed_at) && todayDone.score === 10);
+
+// 7c) 전체 단어장(풀) — 플랜 09 Phase 2: 집계 헤더 · 검색 · 출처 필터 · 담기
+const apiH = { Origin: BASE, 'X-Requested-With': 'jina' };
+await page.locator('aside button', { hasText: '전체 단어장' }).click();
+await page.waitForSelector('[data-testid="pool-summary"]', { timeout: 10000 }).catch(() => {});
+const poolSummary = await page.locator('[data-testid="pool-summary"]').textContent().catch(() => '');
+check('풀 집계 헤더 (N단어 · 내 단어장 M)', /\d+단어/.test(poolSummary) && poolSummary.includes('내 단어장'), poolSummary.trim().slice(0, 50));
+const poolServer = await (await fetch(`${API}/api/vocab/pool`, { headers: apiH })).json();
+check('GET /api/vocab/pool ok · in_my_vocab 파생', poolServer.ok && poolServer.words.length > 0
+  && poolServer.words.every((w) => typeof w.in_my_vocab === 'boolean'), `pool ${poolServer.summary?.total}단어`);
+// 퀴즈 생성 단어가 풀에 자동 등록됐다 (Phase 1) — today 퀴즈 10단어 전부 풀에서 검색된다
+let pooledQuizWords = 0;
+for (const w of todayDone?.words || []) {
+  const hit = await (await fetch(`${API}/api/vocab/pool?q=${encodeURIComponent(w.word)}`, { headers: apiH })).json();
+  if (hit.ok && hit.words.some((x) => x.word.toLowerCase() === w.word.toLowerCase())) pooledQuizWords += 1;
+}
+check('퀴즈 10단어 풀 자동 등록 (Phase 1)', pooledQuizWords === 10, `${pooledQuizWords}/10`);
+// 검색 — 시드 단어
+await page.locator('[data-testid="pool-search"]').fill('accommodate');
+await page.waitForTimeout(1500);
+check('풀 검색 → 시드 단어 행', (await page.locator('[data-testid="pool-row"]').count()) >= 1
+  && (await page.locator('main').textContent()).includes('accommodate'));
+// 출처 필터 — AI (퀴즈 자동 등록분 존재)
+await page.locator('[data-testid="pool-search"]').fill('');
+await page.locator('[data-testid="pool-chip-ai"]').click();
+await page.waitForTimeout(1500);
+check('출처 필터 AI — 자동 등록 단어 노출', (await page.locator('[data-testid="pool-row"]').count()) >= 10);
+// 담기 — 카드 1개를 지워 "풀에는 있으나 내 단어장에는 없는" 단어를 만들고, 화면에서 다시 담는다(멱등 검증)
+const myCardsNow = ((await (await fetch(`${API}/api/vocab`, { headers: apiH })).json()).cards || []);
+const victim = myCardsNow[0];
+await fetch(`${API}/api/vocab/${victim.id}`, { method: 'DELETE', headers: apiH });
+await page.locator('[data-testid="pool-chip-all"]').click();
+await page.locator('[data-testid="pool-search"]').fill(victim.word);
+await page.waitForTimeout(1500);
+const addBtnCount = await page.locator('[data-testid="pool-add"]').count();
+check(`카드 삭제 후 풀에 잔존 + 담기 버튼 (${victim.word})`, addBtnCount >= 1);
+if (addBtnCount >= 1) {
+  const myBefore = ((await (await fetch(`${API}/api/vocab`, { headers: apiH })).json()).cards || []).length;
+  await page.locator('[data-testid="pool-add"]').first().click();
+  await page.waitForSelector('[data-testid="pool-added"]', { timeout: 15000 }).catch(() => {});
+  const myAfter = ((await (await fetch(`${API}/api/vocab`, { headers: apiH })).json()).cards || []).length;
+  check('풀 담기 → 나만의 단어장 +1 · 담김 ✓ 표시', myAfter === myBefore + 1
+    && (await page.locator('[data-testid="pool-added"]').count()) >= 1, `${myBefore} → ${myAfter}`);
+}
+
 // 8) 모바일 뷰포트 — 같은 목록 (Context 승격 증명)
 const mobile = await browser.newPage({ viewport: { width: 390, height: 844 } });
 await routeCdn(mobile);
@@ -142,7 +187,7 @@ await mobile.waitForTimeout(9000);
 // 하단 탭 '단어장'
 await mobile.locator('button', { hasText: '단어장' }).last().click();
 await mobile.waitForTimeout(2500);
-await mobile.locator('button', { hasText: '전체 목록' }).click();
+await mobile.locator('button', { hasText: '내 단어장' }).click();
 await mobile.waitForTimeout(800);
 const mobileList = await mobile.locator('body').textContent();
 check('모바일 단어장 = 같은 서버 목록', mobileList.includes(freshWord) && serverWords.every((w) => mobileList.includes(w)));

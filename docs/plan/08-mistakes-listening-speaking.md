@@ -3,7 +3,9 @@
 사이드바 '준비 중' 3항목(`app-nav.jsx`의 `mistakes`/`listening`/`speaking`)을 실기능으로 전환하는 플랜.
 플랜 07이 미룬 항목("타이머·오답 노트 테이블, LC/TTS 문항")의 후속이며, 07의 합의(파생값 우선·정답 비노출·draft 검증)를 계승한다.
 
-## 0. 화면 자산 검토 — 결론: 디자인 이미지 없음
+## 0. 화면 자산 검토 → 목업 제작 (2026-09-01 갱신)
+
+착수 시점의 검토 결과는 "신규 화면 디자인 이미지 없음"이었다:
 
 | 자산 | 검토 결과 |
 |---|---|
@@ -12,7 +14,34 @@
 | `docs/HANDOFF.md` §7 | 이미지가 아닌 **규격 텍스트**: MediaRecorder 캡처 패턴, 발음 단어별 점수 색상 매핑(`≥85 success / ≥65 warning / 미만 error`) — 스피킹 UI에 그대로 채용 |
 | 기존 화면 내 음성 데모 | 없음(모바일 대시보드 히어로의 Mic 아이콘 1개뿐) |
 
-→ **본 문서의 ASCII 와이어프레임이 시각 기준**이다. 스타일은 기존 화면 문법(카드 `theme.card`+15px 라운드, 칩, `data-testid`)을 따른다.
+→ 그래서 **구현 전에 세 화면의 디자인 미리보기를 먼저 만들었다.** 아래 이미지가 시각 기준이고,
+본문의 ASCII 와이어프레임은 구조 요약으로 남긴다.
+
+| 화면 | 미리보기 | 목업 소스 |
+|---|---|---|
+| 오답 노트 (Phase A) | [`img/08-mistakes.png`](img/08-mistakes.png) | [`mockups/08-mistakes.html`](mockups/08-mistakes.html) |
+| 리스닝 LC (Phase B) | [`img/08-listening.png`](img/08-listening.png) | [`mockups/08-listening.html`](mockups/08-listening.html) |
+| 스피킹 연습 (Phase C) | [`img/08-speaking.png`](img/08-speaking.png) | [`mockups/08-speaking.html`](mockups/08-speaking.html) |
+
+### 오답 노트
+![오답 노트](img/08-mistakes.png)
+
+### 리스닝 (LC 연습)
+![리스닝](img/08-listening.png)
+
+### 스피킹 연습
+![스피킹](img/08-speaking.png)
+
+**목업 규칙 — 구현자가 지켜야 할 것**
+- 목업은 `src/shared/tokens.jsx` 의 **aurora(Midnight Aurora) 토큰 사본**(`mockups/shared.css`)으로 그렸다. 구현은 CSS 사본이 아니라 **`theme.*` 인라인 스타일**을 쓴다 — 4개 테마 전환이 깨지면 안 된다.
+- 색 대응: 카드 `theme.surface`+`theme.border`/15~20px 라운드, 필터 칩 = 단어장 목록 칩과 동일(선택 시 `theme.text` 배경·`theme.bg` 글자), 정답 `theme.success`·오답 `theme.error`·주 버튼 `theme.accentGrad`.
+- 목업의 이모지 아이콘(▶ 🔒 🎧 🎙)은 **자리 표시자**다. 구현은 `src/shared/icons.jsx` 의 `Icons.*` 를 쓴다(내비 아이콘 이름은 `app-nav.jsx` 에 이미 배정: Folder/Headphones/Mic).
+- 이미지 갱신: 목업 HTML을 고친 뒤 `node scripts/render-mockups.mjs`.
+
+**목업에서 확정된 설계 결정 3건**
+1. **오답 노트** — 카드 상단에 `PART·유형` 배지 + `skill_code` 배지 + "N회 틀림"을 한 줄로. 하단 우측 [Jina에게 물어보기](ghost) / [레슨 다시 풀기 →](primary) 고정. 극복 문항은 목록에서 빼고 하단 링크로 접근(§Phase A 극복 로직의 시각적 귀결).
+2. **리스닝** — 왼쪽 재생 카드는 지문 컬럼과 같은 너비(560px)를 유지하고, 스크립트 자리에 **잠금 카드**(점선 테두리)를 두어 "제출 후 공개"를 화면으로 약속한다. 문항 컬럼은 스크롤 + **채점 버튼은 하단 고정 바** — 문항 3개가 한 화면에 안 들어와 기존 레슨의 인라인 채점 버튼을 그대로 쓸 수 없다.
+3. **스피킹** — 인식 결과는 문장 아래 한 줄로 렌더하고 단어별 3색(일치 `success` / 불일치 `error`+물결 밑줄 / 미인식 `textDim`+취소선). 일치율 수치 옆에 **교정 힌트 박스**를 두어 "무엇을 고쳐야 하는지"를 점수보다 크게 다룬다(HANDOFF §7 색상 규격 준수).
 
 ## 1. 현재 상태 — 무엇이 이미 준비돼 있나
 
@@ -75,7 +104,7 @@
 |---|---|
 | 마이그레이션 `0015` | `lessons_kind_ck`에 `'toeic_lc'` 추가 + LC 시드 2개(짧은 대화·설명문, 각 3문항 — 0014 방식의 ON CONFLICT 시드) |
 | 상세 API 변형 | `kind='toeic_lc'`이고 미제출이면 DTO에 `passage.body` 대신 `script_hidden:true` + 재생용 `script` 별도 필드(연습 모드 한계 명시) — 렌더는 재생 컨트롤만 |
-| 화면 | `lesson.jsx` LC 변형: 지문 컬럼 → 재생 카드(`jinaSpeak(script, {rate})`, 속도 칩, 재생 횟수 카운트 표시), 제출 후 스크립트 공개. 문항 컬럼·채점·Q&A는 기존 그대로 |
+| 화면 | `lesson.jsx` LC 변형: 지문 컬럼 → 재생 카드(`jinaSpeak(script, {rate})`, 속도 칩, 재생 횟수 카운트 표시), 미제출 구간은 잠금 카드, 제출 후 스크립트 공개. 문항 컬럼·Q&A는 기존 그대로이나 **채점 버튼은 하단 고정 바**(§0 결정 2) |
 | AI 생성 | `lesson_gen` input `part: 5→5\|'lc'` 확장 — LC는 script(화자 라벨 M:/W: 대화 4~8줄)+문항 3. draft 자동 검증에 script 길이·화자 형식 추가. 목록 생성 패널에 유형 선택 추가 |
 | 통계 | listening 스킬 = LC 레슨 정답률(레슨 정답률과 같은 30일 창) → 03/04의 `pct:null` 자리 교체 |
 | 검증 | `e2e-listening.mjs`: 미제출 DTO에 body 미노출 → 재생 버튼(jinaSpeak 호출 스텁) → 채점 → 스크립트 공개 → 대시보드 listening 스킬 갱신. verify-lesson-gen에 lc 생성 1회 추가 |
@@ -100,7 +129,7 @@
 | 산출물 | 세부 |
 |---|---|
 | 읽기 문장 은행 | 별도 테이블 없이 v1은 **기존 콘텐츠 재사용**: 시나리오 opening/objectives 문장 + 레슨 예문(lessons.vocab 예문) + 고정 시드 20문장(JS 상수) |
-| 화면 `src/screens/speaking.jsx` | 문장 카드(듣기=jinaSpeak) → `SpeechRecognition`(en-US, 미지원 브라우저 안내) → 단어 매칭(소문자·구두점 제거 후 LCS) → HANDOFF §7 `wordColor` 색상, 일치율 % |
+| 화면 `src/screens/speaking.jsx` | 문장 카드(듣기=jinaSpeak) → `SpeechRecognition`(en-US, 미지원 브라우저 안내) → 단어 매칭(소문자·구두점 제거 후 LCS) → HANDOFF §7 `wordColor` 색상, 일치율 % + 교정 힌트 박스(§0 결정 3) |
 | 회화 연결 | `conversation-desktop.jsx` 입력부에 🎤 버튼 — STT 결과를 입력창에 채움(전송은 사용자가). 자동 발음은 기존 `useAutoSpeak` |
 | 저장 | v1 무저장(연습 모드). 이력·점수 추이는 열린 질문 4 확정 후 |
 | 검증 | `e2e-speaking.mjs`: `window.SpeechRecognition` 모킹 주입 → 인식 결과 단어 색상·일치율 단정 → 미지원 브라우저 빈 상태 |

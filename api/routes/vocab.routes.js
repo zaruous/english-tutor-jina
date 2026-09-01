@@ -33,6 +33,15 @@ export function registerVocabRoutes(router) {
     sendJson(res, 200, { ok: true, ...(await vocab.stats(user)) });
   });
 
+  // 전체 단어장(풀) 탐색 — 플랜 09 Phase 2. 읽기 전용 + 담기는 기존 POST /api/vocab/add 재사용.
+  router.get('/api/vocab/pool', async (req, res, { query }) => {
+    const { user } = await requireUser(req, res);
+    const q = str(query.get('q'), 'q', { max: 64, optional: true });
+    const source = oneOf(query.get('source') || undefined, 'source', vocab.POOL_SOURCES, { optional: true });
+    const page = posInt(query.get('page') || undefined, 'page', { optional: true, max: 100_000 }) ?? 1;
+    sendJson(res, 200, { ok: true, ...(await vocab.listPool(user, { q, source, page })) });
+  });
+
   router.post('/api/vocab/add', async (req, res) => {
     const { user } = await requireUser(req, res);
     const body = await readJson(req);
@@ -89,6 +98,13 @@ export function registerVocabRoutes(router) {
     const created = await quiz.createQuiz(user, {
       kind, keyword, data: ai.data, provider: ai.provider, model: ai.meta?.model ?? model,
     });
+    // 플랜 09 Phase 1 — 생성 단어를 풀(vocab_words)에 자동 등록. 나만의 단어장(카드)은 불변.
+    // createQuiz 트랜잭션 밖 — 등록이 실패해도 퀴즈 생성은 성공해야 한다(로그만).
+    try {
+      await vocab.registerPoolEntries(created.words, { source: 'ai', createdBy: user.id });
+    } catch (e) {
+      console.error('[vocab] 퀴즈 단어 풀 자동 등록 실패:', e.message);
+    }
     sendJson(res, 201, { ok: true, quiz: created, meta: { durationMs: ai.meta?.durationMs } });
   });
 
