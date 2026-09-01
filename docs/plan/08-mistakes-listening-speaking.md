@@ -173,7 +173,9 @@
 > **회화 탭 🎤**: 입력창 옆 마이크 + 음성 모드가 실제 STT 로 바뀌었다(기존 '데모' 문구 제거). 인식 결과는
 > 입력창에 받아 적기만 하고 **전송은 사용자가 누른다**. STT 구현은 `speech.jsx` 의 공용 훅
 > `useJinaSpeechRecognition` 하나로 합쳐 스피킹 화면과 공유한다.
-> 후속: 발음 평가 API(Whisper)·이력 저장.
+> 후속: 발음 평가 API·이력 저장 — 방식 비교와 선택 기준은
+> [10-pronunciation-assessment.md](10-pronunciation-assessment.md).
+> (Whisper 는 전사 모델이라 발음 점수용이 아니다 — 그 문서 §5 참조)
 
 ## 4. 구현자 메모
 

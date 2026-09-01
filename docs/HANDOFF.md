@@ -401,7 +401,8 @@ async function handleMessage(req, res) {
 |------|------|------|--------|
 | 회화 LLM (Pro) | Claude Sonnet | $3/1M in, $15/1M out | ~$1,200 |
 | 회화 LLM (Free) | Claude Haiku | $0.25/1M in, $1.25/1M out | ~$200 |
-| 음성 인식 | Whisper API | $0.006/min | ~$300 |
+| 음성 인식(전사) | Whisper API | $0.006/min | ~$300 |
+| 발음 평가 | Speechace / Azure 중 택1 | 계약 단가 확인 필요 | 별도 산정 |
 | 음성 합성 | ElevenLabs | $0.30/1k chars | ~$800 |
 | DB / 호스팅 | Supabase + Vercel | — | ~$200 |
 | **합계** | | | **~$2,700 / 월** |
@@ -446,6 +447,11 @@ await fetch('/api/sessions/xxx/messages', { method: 'POST', body: form });
 ```
 
 ### 발음 점수 색상 매핑
+
+> ⚠ `word_scores` 는 **발음 평가 API**(Speechace/Azure 또는 자체 GOP)가 주는 값이다.
+> Whisper 는 전사 모델이라 이 값을 만들지 못한다 — 방식 비교와 선택 기준은
+> [docs/plan/10-pronunciation-assessment.md](plan/10-pronunciation-assessment.md) 참조.
+> 현재 스피킹 화면의 '일치율'은 브라우저 STT 기반 단어 매칭이며 발음 점수가 아니다.
 
 ```javascript
 function wordColor(score) {
