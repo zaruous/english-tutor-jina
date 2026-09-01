@@ -20,11 +20,15 @@
 CLI 를 `child_process` 로 부르지 않는 이유는 모델 로딩이다 — Wav2Vec2 체크포인트 2개(~1.2GB 씩)를
 매 호출 다시 올리면 문장 하나에 수십 초가 걸린다. 상주 서버여야 메모리에 올려둔 모델을 재사용한다.
 
-## 설치 — 두 가지 중 하나
+## 설치 — 세 가지 중 하나
+
+가장 쉬운 길은 **앱 설정 → 음성 인식(STT) → OpenPronounce 선택 → [서버에 설치] → [시작]** 이다.
+버튼은 Node API 가 아래 네이티브 스크립트를 실행하고(`POST /api/speaking/sidecar/install`), 진행 로그 꼬리를 화면에 보여준다.
+`NODE_ENV=production` 에서는 버튼이 비활성(403)이다 — 서버에서 패키지를 까는 버튼은 개발 편의이지 운영 기능이 아니다.
 
 | | Docker | 네이티브(venv) |
 |---|---|---|
-| 명령 | `pwsh lib/pronounce/install-docker.ps1` | `pwsh lib/pronounce/install-python.ps1 -Run` |
+| 명령 | `pwsh lib/pronounce/install-docker.ps1` | Windows `pwsh lib/pronounce/install-python.ps1 -Run` · Linux/mac `bash lib/pronounce/install-python.sh --run` |
 | 시스템 의존성 | 이미지에 포함(espeak-ng·ffmpeg) | 직접 설치 — 스크립트가 winget 으로 시도 |
 | 사전 조건 | **Docker Desktop 실행 중**이어야 함 | Python 3.10+ |
 | 모델 캐시(~2.5GB) | named volume `jina-pronounce-cache` | `~/.cache` (자동 유지) |
@@ -33,11 +37,17 @@ CLI 를 `child_process` 로 부르지 않는 이유는 모델 로딩이다 — W
 이 PC(2026-09-01 확인)에는 Python 3.11·ffmpeg 가 이미 있고 espeak-ng 만 없다. Docker 는 설치돼 있으나
 데몬이 꺼져 있다 — **네이티브 쪽이 손이 덜 간다.**
 
-설치가 끝나면 `.env` 에 한 줄 추가한다:
+기본 주소(`http://localhost:8000`)로 띄웠다면 `.env` 를 건드릴 필요가 없다. 다른 포트·호스트면 한 줄 추가하고 API 를 재기동한다:
 
 ```
 PRONUNCIATION_URL=http://localhost:8000
 ```
+
+화면의 [시작]은 `.venv` 의 uvicorn 을 detached 로 띄우고 `lib/pronounce/.sidecar.pid` 에 pid 를 남긴다(로그는 `sidecar.log`).
+Node 를 재시작해도 사이드카는 살아 있고, [중지]가 그 pid 로 끝낸다. Windows 는 espeak DLL 경로를 Node 가 찾아 환경변수로 넘긴다.
+
+연결 확인은 `node scripts/verify-pronunciation.mjs` — `GET /api/speaking/assess/status` 가 `available:true` 를 주고,
+픽스처 wav 2개(잘 읽은 것·틀리게 읽은 것)로 실호출해 틀린 쪽 점수가 실제로 낮은지까지 단정한다.
 
 ## HTTP 계약
 

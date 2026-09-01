@@ -77,7 +77,134 @@ function TopNav({ page, onNavigate, theme, onOpenSettings }) {
 // ─────────────────────────────────────────────────────
 // 설정 패널 (슬라이드 오버레이)
 // ─────────────────────────────────────────────────────
-function SettingsPanel({ theme, themeName, setThemeName, aiConfig, setAiConfig, aiHealth, providerMeta, onCheck, onClose }) {
+// 음성 인식(STT) 설정 — 기본 = 브라우저 SpeechRecognition(받아쓰기 일치율), 선택 = OpenPronounce 사이드카(발음 점수).
+// 사이드카의 설치·기동·중지는 서버(/api/speaking/sidecar/*)가 실행하고, 이 패널은 상태를 폴링해 보여준다.
+// 서버가 production 이면 can_manage=false → 버튼 대신 안내만 낸다.
+function SttSettings({ theme, sttMode, setSttMode }) {
+  const [status, setStatus] = React.useState(null); // GET /api/speaking/assess/status 응답 (ok:false 면 API 오류)
+  const [busy, setBusy] = React.useState(null);     // 'install' | 'start' | 'stop'
+  const [actionError, setActionError] = React.useState(null);
+  const refresh = React.useCallback(async (force = false) => {
+    if (!window.JINA_API) return;
+    const res = await window.JINA_API.get(`/api/speaking/assess/status${force ? '?force=1' : ''}`);
+    setStatus(res);
+  }, []);
+  React.useEffect(() => { if (sttMode === 'openpronounce') refresh(true); }, [sttMode, refresh]);
+
+  const sc = status?.sidecar;
+  const installing = sc?.install?.state === 'installing';
+  // 설치 중, 또는 기동 직후(프로세스는 있는데 /health 가 아직 안 뜸)에는 2.5초마다 다시 본다
+  const polling = sttMode === 'openpronounce' && Boolean(installing || (sc?.pid && status && !status.available));
+  React.useEffect(() => {
+    if (!polling) return undefined;
+    const id = setInterval(() => refresh(true), 2500);
+    return () => clearInterval(id);
+  }, [polling, refresh]);
+
+  const act = async (what) => {
+    setBusy(what);
+    setActionError(null);
+    const res = await window.JINA_API.post(`/api/speaking/sidecar/${what}`, {});
+    setBusy(null);
+    if (!res.ok) setActionError(res.error || `${what} 실패`);
+    await refresh(true);
+  };
+
+  const optionStyle = (active) => ({
+    padding: '9px 10px', borderRadius: 8, textAlign: 'left', cursor: 'pointer',
+    background: active ? theme.surface : 'transparent',
+    border: `1.5px solid ${active ? theme.accent : theme.border}`,
+    color: active ? theme.text : theme.textMuted, fontWeight: active ? 700 : 500, fontSize: 12.5,
+  });
+  const btnStyle = (kind) => ({
+    padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: busy ? 'wait' : 'pointer',
+    background: kind === 'danger' ? theme.error + '18' : theme.accent, color: kind === 'danger' ? theme.error : '#fff',
+    opacity: busy ? 0.6 : 1,
+  });
+
+  // 상태 한 줄 — 순서가 중요하다: 연결됨 > 설치 중 > 미설치 > 꺼짐 > 기동 중
+  let line; let tone;
+  if (status === null) { line = '확인 중…'; tone = theme.textMuted; }
+  else if (status.ok === false) { line = `API 오류 — ${status.error || ''}`; tone = theme.error; }
+  else if (status.backend !== 'openpronounce') { line = `서버 백엔드가 ${status.backend} 로 고정돼 있습니다`; tone = theme.warning; }
+  else if (status.available) { line = '연결됨 · 발음 평가 사용 가능'; tone = theme.success; }
+  else if (installing) { line = '설치 중… (torch 수백 MB, 몇 분)'; tone = theme.warning; }
+  else if (sc && !sc.installed) { line = '서버에 설치되지 않음'; tone = theme.textMuted; }
+  else if (sc && !sc.pid) { line = '설치됨 · 꺼져 있음'; tone = theme.warning; }
+  else { line = '기동 중… 첫 실행은 모델 다운로드(~2.4GB)로 수 분 걸립니다'; tone = theme.warning; }
+
+  return (
+    <React.Fragment>
+      <div style={{ fontSize: 11, color: theme.textDim, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 12 }}>음성 인식 (STT)</div>
+      <div style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
+        <button data-testid="stt-mode-browser" onClick={() => setSttMode('browser')} style={optionStyle(sttMode === 'browser')}>
+          브라우저 음성 인식 <span style={{ fontSize: 10, color: theme.textDim, fontWeight: 600 }}>기본</span>
+          <div style={{ fontSize: 10.5, color: theme.textDim, marginTop: 2, fontWeight: 500 }}>받아쓰기 일치율 · 설치 없음 · 비용 0</div>
+        </button>
+        <button data-testid="stt-mode-openpronounce" onClick={() => setSttMode('openpronounce')} style={optionStyle(sttMode === 'openpronounce')}>
+          OpenPronounce 발음 평가
+          <div style={{ fontSize: 10.5, color: theme.textDim, marginTop: 2, fontWeight: 500 }}>로컬 서버 · 음소 단위 점수 · 음성이 PC 를 떠나지 않음</div>
+        </button>
+      </div>
+
+      {sttMode === 'openpronounce' && (
+        <div data-testid="stt-sidecar-panel" style={{ padding: '10px 12px', borderRadius: 8, background: theme.card, border: `1px solid ${theme.border}`, marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 600, color: tone }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'currentColor', flexShrink: 0, animation: polling ? 'jina-pulse 1s infinite' : 'none' }} />
+            <span data-testid="stt-sidecar-status" style={{ flex: 1 }}>{line}</span>
+            <button onClick={() => refresh(true)} title="다시 확인" style={{ fontSize: 10, padding: '3px 7px', borderRadius: 5, background: 'rgba(0,0,0,0.1)', color: 'inherit', fontWeight: 700 }}>↻</button>
+          </div>
+          {status?.detail && !status.available && (
+            <div style={{ fontSize: 10.5, color: theme.textDim, marginTop: 4 }}>{status.detail}</div>
+          )}
+
+          {sc && (
+            <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+              {!sc.can_manage ? (
+                <span style={{ fontSize: 11, color: theme.textMuted }}>이 서버는 화면에서 설치·기동할 수 없습니다 (production). 관리자에게 `lib/pronounce` 설치를 요청하세요.</span>
+              ) : (
+                <React.Fragment>
+                  {!sc.installed && !installing && (
+                    <button data-testid="stt-sidecar-install" disabled={Boolean(busy)} onClick={() => act('install')} style={btnStyle()}>
+                      {busy === 'install' ? '요청 중…' : '서버에 설치'}
+                    </button>
+                  )}
+                  {sc.installed && !sc.pid && !installing && (
+                    <button data-testid="stt-sidecar-start" disabled={Boolean(busy)} onClick={() => act('start')} style={btnStyle()}>
+                      {busy === 'start' ? '요청 중…' : '시작'}
+                    </button>
+                  )}
+                  {sc.pid && (
+                    <button data-testid="stt-sidecar-stop" disabled={Boolean(busy)} onClick={() => act('stop')} style={btnStyle('danger')}>
+                      {busy === 'stop' ? '요청 중…' : '중지'}
+                    </button>
+                  )}
+                </React.Fragment>
+              )}
+            </div>
+          )}
+          {actionError && <div style={{ fontSize: 11.5, color: theme.error, marginTop: 8, fontWeight: 600 }}>{actionError}</div>}
+
+          {sc?.install && (installing || sc.install.state === 'failed') && sc.install.log_tail?.length > 0 && (
+            <pre data-testid="stt-install-log" style={{
+              margin: '10px 0 0', padding: '8px 10px', borderRadius: 6, maxHeight: 140, overflow: 'auto',
+              background: theme.isDark ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.05)', color: sc.install.state === 'failed' ? theme.error : theme.textMuted,
+              fontSize: 10.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+            }}>{sc.install.log_tail.slice(-8).join('\n')}</pre>
+          )}
+          {sc?.install?.state === 'failed' && (
+            <div style={{ fontSize: 11, color: theme.error, marginTop: 6 }}>설치 실패 — {sc.install.error}. 전체 로그는 서버 콘솔 · 수동 설치는 `lib/pronounce/README.md`</div>
+          )}
+        </div>
+      )}
+      <div style={{ fontSize: 10.5, color: theme.textDim, lineHeight: 1.6 }}>
+        발음 점수는 사람 채점과 캘리브레이션되지 않은 실험 값입니다. 사이드카가 꺼져 있으면 스피킹 화면은 자동으로 브라우저 받아쓰기로 동작합니다.
+      </div>
+    </React.Fragment>
+  );
+}
+
+function SettingsPanel({ theme, themeName, setThemeName, aiConfig, setAiConfig, aiHealth, providerMeta, onCheck, sttMode, setSttMode, onClose }) {
   const { user, logout, updateProfile } = useAuth();
   const [nameDraft, setNameDraft] = React.useState(user?.display_name || '');
   const [nameSaving, setNameSaving] = React.useState(false);
@@ -308,6 +435,10 @@ function SettingsPanel({ theme, themeName, setThemeName, aiConfig, setAiConfig, 
             );
           })()}
 
+          {/* 음성 인식(STT) — 기본 브라우저, 선택 OpenPronounce 사이드카(설치·기동 버튼 포함) */}
+          <div style={{ margin: '20px 0 20px', borderTop: `1px solid ${theme.border}` }} />
+          <SttSettings theme={theme} sttMode={sttMode} setSttMode={setSttMode} />
+
           {/* Canvas link */}
           <div style={{ marginTop: 28, paddingTop: 20, borderTop: `1px solid ${theme.border}` }}>
             <a href="canvas.html" style={{ fontSize: 12, color: theme.textDim, display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}>
@@ -337,6 +468,11 @@ function JinaApp() {
       model: { ...(window.JINA_CONFIG?.models || {}), ...(saved.model || {}) },
     };
   });
+  // 음성 인식 모드 — 'browser'(기본) | 'openpronounce'. speech.jsx 의 useJinaSttMode 가 아래 전역 동기화를 구독한다.
+  const [sttMode, setSttMode] = React.useState(() => {
+    const saved = readSettings().sttMode;
+    return (window.JINA_STT_MODES || ['browser']).includes(saved) ? saved : 'browser';
+  });
   const [showSettings, setShowSettings] = React.useState(false);
   const [aiHealth, setAiHealth] = React.useState({ checking: false, providers: {} });
   const [providerMeta, setProviderMeta] = React.useState([]);
@@ -359,10 +495,14 @@ function JinaApp() {
     window.__JINA_THEME = themeName;
     window.dispatchEvent(new CustomEvent('jina-theme-change', { detail: { theme: themeName } }));
   }, [themeName]);
+  React.useEffect(() => {
+    window.__JINA_STT_MODE = sttMode;
+    window.dispatchEvent(new CustomEvent('jina-stt-change', { detail: { mode: sttMode } }));
+  }, [sttMode]);
   // 기기 단위 지속성 (localStorage) — 서버 저장은 v2
   React.useEffect(() => {
-    try { localStorage.setItem(JINA_SETTINGS_KEY, JSON.stringify({ themeName, aiConfig })); } catch {}
-  }, [themeName, aiConfig]);
+    try { localStorage.setItem(JINA_SETTINGS_KEY, JSON.stringify({ themeName, aiConfig, sttMode })); } catch {}
+  }, [themeName, aiConfig, sttMode]);
 
   const checkHealth = React.useCallback(async (force = true) => {
     setAiHealth(s => ({ ...s, checking: true }));
@@ -474,6 +614,8 @@ function JinaApp() {
           aiHealth={aiHealth}
           providerMeta={providerMeta}
           onCheck={checkHealth}
+          sttMode={sttMode}
+          setSttMode={setSttMode}
           onClose={() => setShowSettings(false)}
         />
       )}

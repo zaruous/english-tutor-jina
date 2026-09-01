@@ -1,6 +1,7 @@
-// speaking.jsx — 스피킹 연습 화면 (Desktop + Mobile) · 플랜 08 Phase C v1
-// v1은 외부 API 0원: 듣기 = jinaSpeak(기기 TTS), 인식 = 브라우저 SpeechRecognition(en-US).
-// 저장하지 않는 연습 모드다(플랜 §Phase C '저장: v1 무저장') — 이력·점수 추이는 후속.
+// speaking.jsx — 스피킹 연습 화면 (Desktop + Mobile) · 플랜 08 Phase C v1 + 플랜 10 Phase 2
+// 기본 모드는 외부 API 0원: 듣기 = jinaSpeak(기기 TTS), 인식 = 브라우저 SpeechRecognition(en-US) → 받아쓰기 일치율.
+// 설정 → 음성 인식을 OpenPronounce 로 바꾸면 MediaRecorder 녹음 → /api/speaking/assess → 발음 점수(로컬 사이드카).
+// 저장하지 않는 연습 모드다(플랜 §Phase C '저장: v1 무저장') — 이력·점수 추이는 후속(플랜 10 Phase 3).
 //
 // 문장 은행 = 서버 콘텐츠(GET /api/speaking/sentences — LC 스크립트·시나리오 첫 문장·레슨 예문)
 // + 아래 고정 시드 20문장. 서버가 비었거나 실패해도 시드로 연습할 수 있게 항상 뒤에 붙인다.
@@ -150,25 +151,87 @@ function SpeakingUnsupported({ theme, reason }) {
       <div style={{ fontSize: 13 }}>
         {reason === 'denied'
           ? '주소창의 마이크 아이콘에서 권한을 허용한 뒤 다시 시도해 주세요.'
-          : 'Chrome·Edge 등 SpeechRecognition 을 지원하는 브라우저에서 열면 읽기 연습을 할 수 있어요. 듣기(🔊)는 이 브라우저에서도 동작합니다.'}
+          : 'Chrome·Edge 등 음성 입력(SpeechRecognition / MediaRecorder)을 지원하는 브라우저에서 열면 읽기 연습을 할 수 있어요. 듣기(🔊)는 이 브라우저에서도 동작합니다.'}
       </div>
     </div>
   );
 }
 
+// ── 발음 평가 모드(OpenPronounce) 렌더 보조 ─────────────────────
+// 단어 점수 색은 HANDOFF §7 규격 그대로: ≥85 success · ≥65 warning · 미만 error.
+const pronTier = (score) => (score === null || score === undefined ? 'na' : score >= 85 ? 'ok' : score >= 65 ? 'mid' : 'low');
+
+function PronWords({ theme, result }) {
+  return (
+    <p data-testid="speaking-pron-words" style={{ fontSize: 16.5, lineHeight: 2, margin: 0 }}>
+      {result.words.map((w, i) => {
+        const tier = pronTier(w.score);
+        const color = tier === 'ok' ? theme.success : tier === 'mid' ? theme.warning : tier === 'low' ? theme.error : theme.textMuted;
+        const ipa = w.expected_ipa || w.heard_ipa ? `기대 /${w.expected_ipa || '?'}/ · 들림 /${w.heard_ipa || '—'}/` : undefined;
+        return (
+          <React.Fragment key={i}>
+            <span data-testid={`speaking-word-pron-${tier}`} title={ipa ? `${w.score}점 · ${ipa}` : `${w.score ?? '—'}점`} style={{
+              color, fontWeight: tier === 'low' ? 700 : 500,
+              textDecoration: tier === 'low' ? 'underline wavy' : tier === 'mid' ? 'underline dotted' : 'none', textUnderlineOffset: 4,
+            }}>{w.word}</span>{' '}
+          </React.Fragment>
+        );
+      })}
+    </p>
+  );
+}
+
+// 교정 힌트(발음 평가) — 점수보다 "어느 단어를 어떻게"를 크게. IPA 두 줄이 있으면 그대로 보여준다.
+function buildPronHint(result) {
+  if (!result) return null;
+  const low = result.words.filter((w) => pronTier(w.score) === 'low');
+  const mid = result.words.filter((w) => pronTier(w.score) === 'mid');
+  if (!low.length && !mid.length) return '좋아요! 눈에 띄는 발음 오류가 없습니다.';
+  const parts = low.slice(0, 3).map((w) => (w.expected_ipa
+    ? `"${w.word}" — 기대 /${w.expected_ipa}/ · 들림 /${w.heard_ipa || '—'}/`
+    : `"${w.word}" (${w.score}점)`));
+  if (mid.length) parts.push(`${mid.slice(0, 3).map((w) => `"${w.word}"`).join(', ')}는 조금 더 또박또박`);
+  return `${parts.join(' · ')}.`;
+}
+
 // 연습 카드 본체 — Desktop/Mobile 공용
+// 두 모드가 한 카드를 공유한다:
+//  - browser      : SpeechRecognition 받아쓰기 → matchWords → '받아쓰기 일치율' (v1, 기본)
+//  - openpronounce: MediaRecorder 녹음 → POST /api/speaking/assess → '발음 점수' (플랜 10 Phase 2)
+// 설정값이 openpronounce 라도 사이드카가 응답하지 않으면 browser 로 동작하고 그 사실을 배지로 밝힌다(플랜 10 §4-4·§5-3).
+// 두 모드의 수치는 섞지 않는다 — 세션 평균도 각자 따로 쌓는다.
 function SpeakingPractice({ theme, compact = false }) {
   const [idx, setIdx] = React.useState(0);
-  const [result, setResult] = React.useState(null);
-  const [rates, setRates] = React.useState([]); // 이번 세션의 일치율 (무저장 — 새로고침하면 사라진다)
+  const [result, setResult] = React.useState(null);       // browser 모드 결과 (matchWords)
+  const [rates, setRates] = React.useState([]);           // browser 모드 일치율 (무저장)
+  const [pronResult, setPronResult] = React.useState(null); // openpronounce 모드 결과 (공통 계약)
+  const [pronScores, setPronScores] = React.useState([]);   // openpronounce 모드 점수 (무저장)
+  const [assessing, setAssessing] = React.useState(false);
+  const [assessError, setAssessError] = React.useState(null);
   const stt = useJinaSpeechRecognition();
+  const recorder = useJinaRecorder();
+  const sttMode = useJinaSttMode();
   const { sentences } = useSentenceBank();
   const sentence = sentences[idx % sentences.length];
   const targetWords = React.useMemo(() => sentence.text.replace(/[."]/g, '').split(/\s+/).filter(Boolean), [sentence]);
   // 이번 녹음 회차를 이미 채점했는가. 녹음을 시작할 때만 false 가 된다.
   const scoredRef = React.useRef(true);
 
-  // 인식이 끝나면 채점 — 인식 중에는 중간 결과를 그대로 보여준다.
+  // 발음 평가 서버 상태 — 설정이 openpronounce 일 때만 묻는다. { checked, available, detail }
+  const [pron, setPron] = React.useState({ checked: false, available: false, detail: null });
+  React.useEffect(() => {
+    if (sttMode !== 'openpronounce' || !window.JINA_API || window.JINA_READONLY) { setPron({ checked: true, available: false, detail: null }); return undefined; }
+    let cancelled = false;
+    setPron((p) => ({ ...p, checked: false }));
+    window.JINA_API.get('/api/speaking/assess/status').then((res) => {
+      if (cancelled) return;
+      setPron({ checked: true, available: Boolean(res.ok && res.available), detail: res.detail || res.error || null });
+    });
+    return () => { cancelled = true; };
+  }, [sttMode]);
+  const pronMode = sttMode === 'openpronounce' && pron.available;
+
+  // browser 모드 채점 — 인식이 끝나면 채점, 인식 중에는 중간 결과를 그대로 보여준다.
   // 회차 가드가 없으면 (a) 정지 직후 도착한 final result, (b) 문장 은행이 서버 응답으로 늘어나
   // targetWords 가 바뀌는 순간에 같은 시도가 rates 에 여러 번 쌓여 세션 평균이 오염된다.
   React.useEffect(() => {
@@ -183,18 +246,54 @@ function SpeakingPractice({ theme, compact = false }) {
   const reset = (nextIdx) => {
     scoredRef.current = true;
     setResult(null);
+    setPronResult(null);
+    setAssessError(null);
     stt.setTranscript('');
     if (nextIdx !== undefined) setIdx(nextIdx);
   };
 
   const startRecording = () => {
     reset();
+    if (pronMode) { recorder.start(); return; }
     scoredRef.current = false;
     stt.start();
   };
-  const avg = rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length) : null;
+
+  // openpronounce 모드: 녹음 종료 → 업로드는 onstop 이후 한 번만(플랜 10 §7) → 결과.
+  const stopAndAssess = async () => {
+    const blob = await recorder.stop();
+    if (!blob || !blob.size) { setAssessError('녹음된 소리가 없습니다. 다시 시도해 주세요.'); return; }
+    setAssessing(true);
+    setAssessError(null);
+    const form = new FormData();
+    form.append('reference_text', sentence.text);
+    form.append('audio', blob, blob.type.includes('mp4') ? 'clip.m4a' : 'clip.webm');
+    const res = await window.JINA_API.post('/api/speaking/assess', form, { timeoutMs: 180_000 });
+    setAssessing(false);
+    if (!res.ok) { setAssessError(`평가 실패 — ${res.error || res.code}`); return; }
+    if (res.available === false) {
+      // 녹음 뒤에 사이드카가 죽은 경우 — 이번 시도는 채점 불가, 다음 시도부터 받아쓰기 모드로 내려간다.
+      setPron((p) => ({ ...p, available: false, detail: res.detail || res.reason }));
+      setAssessError(`발음 평가 서버를 사용할 수 없어 채점하지 못했습니다 (${res.detail || res.reason}). 다음 시도는 받아쓰기 모드로 진행됩니다.`);
+      return;
+    }
+    setPronResult(res);
+    if (Number.isInteger(res.pron_score)) setPronScores((prev) => [...prev, res.pron_score]);
+  };
+
+  const active = pronMode ? recorder.recording : stt.listening;
+  const onRecordClick = () => {
+    if (pronMode) { recorder.recording ? stopAndAssess() : startRecording(); return; }
+    stt.listening ? stt.stop() : startRecording();
+  };
+  const unsupported = pronMode ? (!recorder.supported || recorder.error === 'denied') : (!stt.supported || stt.error === 'denied');
+  const unsupportedReason = (pronMode ? recorder.error : stt.error) === 'denied' ? 'denied' : 'unsupported';
+
+  const avgRate = rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length) : null;
+  const avgPron = pronScores.length ? Math.round(pronScores.reduce((a, b) => a + b, 0) / pronScores.length) : null;
   const pad = compact ? 18 : 32;
-  const hint = buildHint(result);
+  const hint = pronMode ? buildPronHint(pronResult) : buildHint(result);
+  const showResultPane = active || assessing || assessError || (pronMode ? pronResult : result);
 
   return (
     <div style={{ width: '100%', maxWidth: 720 }}>
@@ -234,84 +333,129 @@ function SpeakingPractice({ theme, compact = false }) {
 
         <div style={{ borderTop: `1px solid ${theme.border}` }} />
 
-        {!stt.supported || stt.error === 'denied' ? (
+        {unsupported ? (
           <div style={{ padding: pad }}>
-            <SpeakingUnsupported theme={theme} reason={stt.error === 'denied' ? 'denied' : 'unsupported'} />
+            <SpeakingUnsupported theme={theme} reason={unsupportedReason} />
           </div>
         ) : (
           <div style={{
             padding: `${pad - 14}px ${pad}px`, display: 'flex', alignItems: 'center',
             gap: 18, justifyContent: 'center', flexWrap: 'wrap',
           }}>
-            <button data-testid="speaking-record" onClick={() => (stt.listening ? stt.stop() : startRecording())} style={{
+            <button data-testid="speaking-record" disabled={assessing} onClick={onRecordClick} style={{
               width: 60, height: 60, borderRadius: '50%',
-              background: stt.listening ? theme.error + '24' : theme.chipBg,
-              border: `2px solid ${stt.listening ? theme.error + '8c' : theme.borderStrong}`,
-              display: 'grid', placeItems: 'center',
+              background: active ? theme.error + '24' : theme.chipBg,
+              border: `2px solid ${active ? theme.error + '8c' : theme.borderStrong}`,
+              display: 'grid', placeItems: 'center', opacity: assessing ? 0.5 : 1,
             }}>
               <span style={{
-                width: stt.listening ? 20 : 22, height: stt.listening ? 20 : 22,
-                borderRadius: stt.listening ? 6 : '50%',
-                background: stt.listening ? theme.error : theme.textMuted,
-                animation: stt.listening ? 'jina-pulse 1.2s infinite' : 'none',
+                width: active ? 20 : 22, height: active ? 20 : 22,
+                borderRadius: active ? 6 : '50%',
+                background: active ? theme.error : theme.textMuted,
+                animation: active ? 'jina-pulse 1.2s infinite' : 'none',
               }} />
             </button>
             <div style={{ textAlign: 'left', minWidth: 220 }}>
               <div style={{
                 fontSize: 14, fontWeight: 700, marginBottom: 3,
-                color: stt.listening ? theme.error : theme.text,
-              }}>{stt.listening ? '듣는 중… 다 읽으면 멈춤' : result ? '녹음 완료' : '녹음 시작'}</div>
-              <div style={{ fontSize: 12, color: theme.textDim }}>
-                브라우저 음성 인식(SpeechRecognition) · en-US
+                color: active ? theme.error : theme.text,
+              }}>{active ? (pronMode ? '녹음 중… 다 읽으면 멈춤' : '듣는 중… 다 읽으면 멈춤')
+                : assessing ? '발음 평가 중…'
+                : (pronMode ? pronResult : result) ? (pronMode ? '평가 완료' : '녹음 완료') : '녹음 시작'}</div>
+              <div data-testid="speaking-mode-badge" style={{ fontSize: 12, color: theme.textDim, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{
+                  fontSize: 10, fontWeight: 800, padding: '1px 6px', borderRadius: 999, letterSpacing: '0.04em',
+                  background: (pronMode ? theme.accent : theme.textMuted) + '22', color: pronMode ? theme.accent : theme.textMuted,
+                }}>{pronMode ? '발음 평가' : '받아쓰기'}</span>
+                {pronMode ? 'OpenPronounce · 로컬 서버' : '브라우저 음성 인식(SpeechRecognition) · en-US'}
               </div>
+              {sttMode === 'openpronounce' && pron.checked && !pron.available && (
+                <div data-testid="speaking-mode-fallback" style={{ fontSize: 11, color: theme.warning, marginTop: 4 }}>
+                  발음 평가 서버에 연결되지 않아 받아쓰기로 동작합니다{pron.detail ? ` — ${pron.detail}` : ''}
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {(stt.listening || result) && (
+        {showResultPane && (
           <React.Fragment>
             <div style={{ borderTop: `1px solid ${theme.border}` }} />
             <div style={{ padding: `${pad - 14}px ${pad}px ${pad - 8}px` }}>
               <div style={{
                 fontSize: 11, color: theme.textDim, fontWeight: 600,
                 letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10,
-              }}>인식 결과 — 단어별 일치</div>
-              {stt.listening ? (
-                <p style={{ fontSize: 15, color: theme.textMuted, lineHeight: 1.8, margin: 0, fontStyle: 'italic' }}>
-                  {stt.transcript || '…'}
-                </p>
-              ) : (
-                <TranscriptWords theme={theme} result={result} />
+              }}>{pronMode ? '발음 평가 — 단어별 점수' : '인식 결과 — 단어별 일치'}</div>
+
+              {assessError && (
+                <div data-testid="speaking-assess-error" style={{
+                  fontSize: 12.5, color: theme.error, lineHeight: 1.6, padding: '10px 14px', borderRadius: 10,
+                  background: theme.error + '14', border: `1px solid ${theme.error}40`, marginBottom: 12,
+                }}>{assessError}</div>
               )}
 
-              {result && !stt.listening && (
+              {pronMode ? (
+                active || assessing ? (
+                  <p style={{ fontSize: 15, color: theme.textMuted, lineHeight: 1.8, margin: 0, fontStyle: 'italic' }}>
+                    {assessing ? '서버가 음소를 정렬하고 있어요…' : '녹음 중 — 문장을 끝까지 읽고 멈춤을 누르세요'}
+                  </p>
+                ) : pronResult ? <PronWords theme={theme} result={pronResult} /> : null
+              ) : (
+                stt.listening ? (
+                  <p style={{ fontSize: 15, color: theme.textMuted, lineHeight: 1.8, margin: 0, fontStyle: 'italic' }}>
+                    {stt.transcript || '…'}
+                  </p>
+                ) : result ? <TranscriptWords theme={theme} result={result} /> : null
+              )}
+
+              {!active && !assessing && (pronMode ? pronResult : result) && (
                 <React.Fragment>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 18, marginTop: 16, flexWrap: 'wrap' }}>
-                    <span style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                      <b data-testid="speaking-rate" style={{
-                        fontSize: 34, fontWeight: 800,
-                        color: result.rate >= 85 ? theme.success : result.rate >= 65 ? theme.warning : theme.error,
-                      }}>{result.rate}%</b>
-                      <span style={{ fontSize: 13, color: theme.textMuted }}>받아쓰기 일치율</span>
-                    </span>
-                    <span style={{
+                    {pronMode ? (
+                      <span style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                        <b data-testid="speaking-pron-score" style={{
+                          fontSize: 34, fontWeight: 800,
+                          color: pronResult.pron_score === null ? theme.textMuted
+                            : pronResult.pron_score >= 85 ? theme.success : pronResult.pron_score >= 65 ? theme.warning : theme.error,
+                        }}>{pronResult.pron_score === null ? '—' : pronResult.pron_score}</b>
+                        <span style={{ fontSize: 13, color: theme.textMuted }}>발음 점수</span>
+                        {pronResult.completeness !== null && pronResult.completeness !== undefined && (
+                          <span style={{ fontSize: 11.5, color: theme.textDim, marginLeft: 6 }}>완성도 {pronResult.completeness}%</span>
+                        )}
+                      </span>
+                    ) : (
+                      <span style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                        <b data-testid="speaking-rate" style={{
+                          fontSize: 34, fontWeight: 800,
+                          color: result.rate >= 85 ? theme.success : result.rate >= 65 ? theme.warning : theme.error,
+                        }}>{result.rate}%</b>
+                        <span style={{ fontSize: 13, color: theme.textMuted }}>받아쓰기 일치율</span>
+                      </span>
+                    )}
+                    <span data-testid="speaking-hint" style={{
                       flex: 1, minWidth: 220, fontSize: 12.5, color: theme.textMuted, lineHeight: 1.6,
                       padding: '10px 14px', borderRadius: 10,
                       background: theme.success + '14', border: `1px solid ${theme.success}40`,
                     }}>{hint}</span>
                   </div>
-                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 18 }}>
-                    <button data-testid="speaking-again" onClick={() => reset()} style={{
-                      padding: '11px 16px', borderRadius: 12, background: 'transparent',
-                      border: `1px solid ${theme.borderStrong}`, color: theme.text,
-                      fontSize: 13.5, fontWeight: 600,
-                    }}>다시 읽기</button>
-                    <button data-testid="speaking-next" onClick={() => reset(idx + 1)} style={{
-                      padding: '11px 18px', borderRadius: 12, background: theme.accentGrad,
-                      color: '#fff', fontSize: 13.5, fontWeight: 700,
-                    }}>다음 문장 →</button>
-                  </div>
+                  {pronMode && pronResult.transcript && (
+                    <div style={{ fontSize: 11.5, color: theme.textDim, marginTop: 8 }}>서버가 들은 문장: <i>{pronResult.transcript}</i></div>
+                  )}
                 </React.Fragment>
+              )}
+
+              {!active && !assessing && ((pronMode ? pronResult : result) || assessError) && (
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 18 }}>
+                  <button data-testid="speaking-again" onClick={() => reset()} style={{
+                    padding: '11px 16px', borderRadius: 12, background: 'transparent',
+                    border: `1px solid ${theme.borderStrong}`, color: theme.text,
+                    fontSize: 13.5, fontWeight: 600,
+                  }}>다시 읽기</button>
+                  <button data-testid="speaking-next" onClick={() => reset(idx + 1)} style={{
+                    padding: '11px 18px', borderRadius: 12, background: theme.accentGrad,
+                    color: '#fff', fontSize: 13.5, fontWeight: 700,
+                  }}>다음 문장 →</button>
+                </div>
               )}
             </div>
           </React.Fragment>
@@ -320,8 +464,10 @@ function SpeakingPractice({ theme, compact = false }) {
 
       <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
         {[
-          { v: avg === null ? '—' : `${avg}%`, k: '이번 세션 평균 받아쓰기 일치율', c: theme.success, t: 'speaking-avg' },
-          { v: rates.length, k: '읽은 문장', c: theme.text, t: 'speaking-count' },
+          pronMode
+            ? { v: avgPron === null ? '—' : avgPron, k: '이번 세션 평균 발음 점수', c: theme.accent, t: 'speaking-avg' }
+            : { v: avgRate === null ? '—' : `${avgRate}%`, k: '이번 세션 평균 받아쓰기 일치율', c: theme.success, t: 'speaking-avg' },
+          { v: pronMode ? pronScores.length : rates.length, k: '읽은 문장', c: theme.text, t: 'speaking-count' },
           { v: sentences.length, k: '문장 은행 (학습 콘텐츠 + 시드)', c: theme.accent, t: 'speaking-bank' },
         ].map(({ v, k, c, t }) => (
           <div key={k} data-testid={t} style={{
@@ -336,8 +482,17 @@ function SpeakingPractice({ theme, compact = false }) {
       <div data-testid="speaking-disclaimer" style={{
         marginTop: 14, fontSize: 11.5, color: theme.textDim, textAlign: 'center', lineHeight: 1.7,
       }}>
-        <b style={{ color: theme.warning }}>v1 받아쓰기 기반 연습 모드 (무저장)</b> — 브라우저 음성 인식은 문맥으로 단어를
-        보정하기 때문에 <b>이 수치는 발음 점수가 아닙니다.</b> 음소 단위 발음 평가와 이력 저장은 후속 단계입니다
+        {pronMode ? (
+          <React.Fragment>
+            <b style={{ color: theme.accent }}>OpenPronounce 발음 점수 (실험 · 무저장)</b> — 사람 채점과 <b>캘리브레이션되지 않은 값</b>입니다.
+            점수 절대값보다 단어별 표시와 기대/들림 음소를 참고하세요. 설정 → 음성 인식에서 모드를 바꿀 수 있습니다
+          </React.Fragment>
+        ) : (
+          <React.Fragment>
+            <b style={{ color: theme.warning }}>v1 받아쓰기 기반 연습 모드 (무저장)</b> — 브라우저 음성 인식은 문맥으로 단어를
+            보정하기 때문에 <b>이 수치는 발음 점수가 아닙니다.</b> 음소 단위 발음 평가는 설정 → 음성 인식에서 OpenPronounce 를 켜면 사용할 수 있습니다
+          </React.Fragment>
+        )}
       </div>
     </div>
   );

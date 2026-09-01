@@ -176,3 +176,84 @@ window.jinaSpeak = jinaSpeak;
 window.SpeakButton = SpeakButton;
 window.useAutoSpeak = useAutoSpeak;
 window.JINA_TTS = JINA_TTS;
+
+
+// ── STT 모드 (설정 → 음성 인식) ───────────────────────────────────
+// 'browser'      = SpeechRecognition 받아쓰기 (기본, 비용 0)
+// 'openpronounce' = MediaRecorder 녹음 → 서버 /api/speaking/assess → 발음 점수 (로컬 사이드카, 플랜 10)
+// 값은 main.jsx 가 jina_settings_v1 에 저장하고 window.__JINA_STT_MODE + 'jina-stt-change' 로 전파한다.
+// 사이드카가 꺼져 있으면 화면은 자동으로 'browser' 처럼 동작한다 — 설정값과 실제 모드는 다를 수 있다.
+const JINA_STT_MODES = ['browser', 'openpronounce'];
+function readJinaSttMode() {
+  if (JINA_STT_MODES.includes(window.__JINA_STT_MODE)) return window.__JINA_STT_MODE;
+  try {
+    const s = JSON.parse(localStorage.getItem('jina_settings_v1')) || {};
+    return JINA_STT_MODES.includes(s.sttMode) ? s.sttMode : 'browser';
+  } catch { return 'browser'; }
+}
+function useJinaSttMode() {
+  const [mode, setMode] = React.useState(readJinaSttMode);
+  React.useEffect(() => {
+    const h = (e) => setMode(JINA_STT_MODES.includes(e.detail?.mode) ? e.detail.mode : readJinaSttMode());
+    window.addEventListener('jina-stt-change', h);
+    return () => window.removeEventListener('jina-stt-change', h);
+  }, []);
+  return mode;
+}
+
+// ── 녹음 (MediaRecorder) — 발음 평가 모드 전용 ─────────────────────
+// SpeechRecognition 은 오디오를 넘겨주지 않아 별도 캡처가 필요하다(플랜 10 §6 Phase 2).
+// stop() 은 비동기이고 마지막 dataavailable 이 늦게 오므로, Blob 은 onstop 에서 한 번만 만든다(§7).
+function useJinaRecorder() {
+  const [recording, setRecording] = React.useState(false);
+  const [error, setError] = React.useState(null); // 'unsupported' | 'denied' | 'error'
+  const ref = React.useRef(null);
+  const chunksRef = React.useRef([]);
+  const resolveRef = React.useRef(null);
+  const supported = typeof window !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
+
+  const start = React.useCallback(async () => {
+    if (!supported) { setError('unsupported'); return false; }
+    setError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const pick = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((m) => window.MediaRecorder.isTypeSupported?.(m));
+      const rec = pick ? new window.MediaRecorder(stream, { mimeType: pick }) : new window.MediaRecorder(stream);
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => { if (e.data && e.data.size) chunksRef.current.push(e.data); };
+      rec.onstop = () => {
+        try { stream.getTracks().forEach((t) => t.stop()); } catch { /* 무해 */ }
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || 'audio/webm' });
+        chunksRef.current = [];
+        setRecording(false);
+        const resolve = resolveRef.current;
+        resolveRef.current = null;
+        if (resolve) resolve(blob);
+      };
+      ref.current = rec;
+      rec.start();
+      setRecording(true);
+      return true;
+    } catch (err) {
+      setError(err?.name === 'NotAllowedError' || err?.name === 'SecurityError' ? 'denied' : 'error');
+      setRecording(false);
+      return false;
+    }
+  }, [supported]);
+
+  // 녹음 종료 → Blob. 녹음 중이 아니면 null.
+  const stop = React.useCallback(() => new Promise((resolve) => {
+    const rec = ref.current;
+    if (!rec || rec.state === 'inactive') { setRecording(false); resolve(null); return; }
+    resolveRef.current = resolve;
+    try { rec.stop(); } catch { resolveRef.current = null; setRecording(false); resolve(null); }
+  }), []);
+
+  React.useEffect(() => () => { try { ref.current?.stream?.getTracks().forEach((t) => t.stop()); } catch { /* 무해 */ } }, []);
+  return { supported, recording, error, start, stop };
+}
+
+window.JINA_STT_MODES = JINA_STT_MODES;
+window.readJinaSttMode = readJinaSttMode;
+window.useJinaSttMode = useJinaSttMode;
+window.useJinaRecorder = useJinaRecorder;

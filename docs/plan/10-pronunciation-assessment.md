@@ -12,7 +12,7 @@
 | 단계 | 선택 | 상태 |
 |---|---|---|
 | 지금(무료·프로토타입) | **브라우저 STT 유지** | 완료 — '받아쓰기 일치율'이라는 이름을 지키고, 발음 점수가 아님을 화면이 명시한다 |
-| 다음 | **자체 호스팅(OpenPronounce)으로 발음 점수 도입** | 사이드카 설치 스크립트 준비 완료([`lib/pronounce`](../../lib/pronounce/README.md)) · **실측 검증 대기** |
+| 다음 | **자체 호스팅(OpenPronounce)으로 발음 점수 도입** | Phase 1 서버 경로 + Phase 2 화면(설정 → 음성 인식 모드, 설치·기동 버튼) 구현 완료(§6) · **실측 검증 대기** — 설정에서 OpenPronounce 를 켜고 [서버에 설치] → [시작] |
 | 대안 | 상용 API(Speechace / Azure) | 로컬 추론이 느리거나 점수 캘리브레이션이 부족할 때 |
 
 **핵심**: 세 방식은 정확도 차이가 아니라 **측정 대상 자체가 다르다.**
@@ -143,7 +143,15 @@ Score: 59.0/100   Transcription: HELL NO WHO ARE YOU
 
 ## 6. Phase 플랜
 
-### Phase 1 — 서버 평가 경로 (어댑터 2종)
+### Phase 1 — 서버 평가 경로 (어댑터 2종) — 구현 완료 (2026-09-01), 실측 대기
+
+> 구현: `api/services/pronunciation.service.js`(어댑터·헬스 캐시) + `pronunciation-normalize.js`(순수 정규화) +
+> `api/routes/speaking.routes.js`(`GET /api/speaking/assess/status`, `POST /api/speaking/assess`) + `api/lib/body.js#readMultipart`
+> (Node 내장 `Response.formData()`, 의존성 0). 설정은 `.env.example` 의 발음 평가 블록.
+> **아직 확인되지 않은 것**: ① Speechace 계약(URL·필드명)은 문서 기억으로 썼다 — 첫 실호출이 검증이다.
+> ② OpenPronounce 단어 점수는 오류 단어의 expected/actual IPA 유사도에서 **파생**한 값이다(정확한 단어 = 100).
+> 사람 채점과 캘리브레이션된 값이 아니므로 화면은 이 값을 "발음 점수"로 크게 쓰기 전에 실측 결과를 봐야 한다.
+
 
 | 산출물 | 세부 |
 |---|---|
@@ -151,9 +159,19 @@ Score: 59.0/100   Transcription: HELL NO WHO ARE YOU
 | `api/services/pronunciation.service.js` | 어댑터 선택 + 응답 정규화. 백엔드 미설정이면 `{available:false}` → 라우트는 200 으로 폴백 신호 |
 | `openpronounce` 어댑터 | [`lib/pronounce`](../../lib/pronounce/README.md) 사이드카에 프록시 — **설치 스크립트 2종 작성 완료**. `.env` `PRONUNCIATION_URL=http://localhost:8000` |
 | `speechace` 어댑터 | 가입 없이 기본 키로 계약 확정용. 하루 5회 한도를 코드가 알고 429 를 폴백으로 처리 |
-| 검증 | `verify-pronunciation.mjs`: 고정 wav 픽스처(잘 읽은 것 1 · 틀리게 읽은 것 1)로 실호출 → **틀린 쪽 점수가 실제로 낮게 나오는지**까지 단정(§3.3 캘리브레이션 경고에 대한 최소 방어). 백엔드 없으면 스킵(실패 아님) |
+| 검증 | `verify-pronunciation.mjs`: (A) 정규화·multipart 파서 단정은 서버 없이 항상 실행 (B) wav 픽스처(잘 읽은 것 1 · 틀리게 읽은 것 1 — `--good/--bad` 또는 espeak-ng 합성)로 실호출 → **틀린 쪽 점수가 실제로 낮게 나오는지**까지 단정(§3.3 캘리브레이션 경고에 대한 최소 방어). 백엔드 없으면 (B) 스킵(실패 아님) · 백엔드 없음 상태의 POST 가 503 이 아니라 `{available:false}` 인지도 단정 |
 
-### Phase 2 — 화면
+### Phase 2 — 화면 — 구현 완료 (2026-09-01), 실측 대기
+
+> 구현: **설정 → 음성 인식(STT)** 섹션(`src/main.jsx` `SttSettings`) — 기본 `browser`, 선택 `openpronounce`. 값은 `jina_settings_v1.sttMode`
+> (기기 단위, 플랜 05 판단 ①과 같은 자리) → `window.__JINA_STT_MODE` + `jina-stt-change` 이벤트로 전파, `speech.jsx#useJinaSttMode` 가 구독.
+> 사이드카 미설치·꺼짐이면 같은 패널에 **[서버에 설치] / [시작] / [중지]** — 서버가 `lib/pronounce/install-python.{ps1,sh}` 를 실행하고
+> (`api/services/pronunciation-sidecar.js`, `POST /api/speaking/sidecar/*`), 설치 로그 꼬리를 2.5초 폴링으로 보여준다. production 은 403.
+> 스피킹 화면(`speaking.jsx`)은 모드에 따라 `useJinaRecorder`(MediaRecorder) → `POST /api/speaking/assess` → 단어별 3단 색 + 기대/들림 IPA 힌트,
+> 또는 기존 브라우저 STT 경로. 설정이 openpronounce 라도 사이드카가 응답하지 않으면 받아쓰기로 동작하고 배지·안내로 밝힌다(§4-4·§5-3).
+> 두 모드의 수치(일치율 / 발음 점수)는 세션 평균까지 따로 쌓는다. 검증: `scripts/e2e-stt-settings.mjs`(사이드카 응답 모킹, 25 단정).
+> **아직 아닌 것**: 단어 클릭 시 음소별 상세(OpenPronounce 는 `errors[].phones` 를 주지만 정규화가 아직 버린다), 실기기 실측.
+
 
 | 산출물 | 세부 |
 |---|---|
@@ -201,7 +219,8 @@ Score: 59.0/100   Transcription: HELL NO WHO ARE YOU
 ## 9. 열린 질문
 
 1. **자체 호스팅으로 갈 것인가** — 사이드카(2.4GB 모델 + 상시 기동)를 받아들일지가 갈림길이다.
-   설치 스크립트는 준비됐고 **실측 검증이 다음 착수점**이다.
+   설치 스크립트와 서버 경로(Phase 1)는 준비됐고 **실측 검증이 다음 착수점**이다:
+   `pwsh lib/pronounce/install-python.ps1 -Run` → `.env` 에 `PRONUNCIATION_URL` → `node scripts/verify-pronunciation.mjs`.
 2. 평가 이력을 저장할지(현재 v1 무저장). 저장하면 점수 추이·약점 음소 집계가 가능해지지만
    음성 원본 보관 여부·기간을 개인정보 처리방침에 명시해야 한다(§5.2 는 폐기가 기본).
 3. 로컬 추론 지연이 학습 흐름을 끊을 정도라면(문장당 수 초) 어떻게 할지 — 상용 API 전환 또는 GPU.

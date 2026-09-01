@@ -17,18 +17,20 @@ async function apiFetch(path, { method = 'GET', body, signal, timeoutMs = 1_860_
   }
   const timeout = AbortSignal.timeout(timeoutMs);
   const merged = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  // FormData(오디오 업로드)는 브라우저가 boundary 를 포함한 Content-Type 을 직접 붙인다 — 우리가 지정하면 깨진다
+  const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
   let res;
   try {
     res = await fetch(JINA_API_BASE + path, {
       method,
       credentials: 'include',
       headers: {
-        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...(body !== undefined && !isForm ? { 'Content-Type': 'application/json' } : {}),
         'X-Requested-With': 'jina',
         ...(readonly ? { 'X-Jina-Mode': 'canvas' } : {}),
         ...(headers || {}), // 호출자 지정이 최우선 (auth-store의 X-Jina-No-Autologin)
       },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
       signal: merged,
     });
   } catch (err) {
