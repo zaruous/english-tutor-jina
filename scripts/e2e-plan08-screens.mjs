@@ -170,6 +170,109 @@ const micStatus = await page.locator('[data-testid="chat-mic-status"]').textCont
 check('음성 모드 = 받아쓰기 안내 (데모 문구 제거)',
   (await page.locator('[data-testid="chat-mic"]').count()) === 1 && !/데모/.test(micStatus), micStatus.slice(0, 40));
 
+// ── STT 모킹 회귀 (플랜 08 Phase C 완료 판정) ────────────
+// 실 마이크는 못 쓰므로 window.SpeechRecognition 을 갈아끼워 인식 흐름을 재현한다.
+// 핵심은 '정지 직후 늦게 도착하는 final result' — 실제 엔진과 같은 순서(stop → final → onend)로
+// 재현해, 같은 시도가 두 번 채점되지 않는지(회차 가드)를 회귀로 잡는다.
+const sttPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const sttErrors = [];
+sttPage.on('console', (m) => { if (m.type() === 'error' && !/net::|404|favicon/.test(m.text())) sttErrors.push(m.text()); });
+await sttPage.addInitScript(() => {
+  window.__mockSTT = { interim: '', final: '', error: null };
+  class MockSpeechRecognition {
+    start() {
+      if (window.__mockSTT.error) {
+        setTimeout(() => { this.onerror?.({ error: window.__mockSTT.error }); this.onend?.(); }, 40);
+        return;
+      }
+      this._live = true;
+      setTimeout(() => { if (this._live) this.onresult?.({ results: [[{ transcript: window.__mockSTT.interim }]] }); }, 60);
+    }
+    stop() {
+      // 실제 엔진처럼 남은 오디오를 마저 처리해 final 을 낸 뒤 onend — final 이 늦게 오는 게 요점.
+      setTimeout(() => {
+        if (!this._live) return;
+        this.onresult?.({ results: [[{ transcript: window.__mockSTT.final }]] });
+        setTimeout(() => { this._live = false; this.onend?.(); }, 40);
+      }, 150);
+    }
+    abort() { this._live = false; setTimeout(() => this.onend?.(), 10); }
+  }
+  window.SpeechRecognition = MockSpeechRecognition;
+});
+await routeCdn(sttPage);
+await sttPage.goto(BASE);
+await sttPage.waitForTimeout(9000);
+const sttNav = sttPage.locator('aside[aria-label="주요 메뉴"]');
+await sttNav.locator('button', { hasText: '스피킹 연습' }).click();
+await sttPage.waitForTimeout(1500);
+
+const target = (await sttPage.locator('[data-testid="speaking-sentence"]').textContent()).replace(/[."]/g, '').trim();
+const tWords = target.split(/\s+/).filter(Boolean);
+// 두 번째 단어를 엉뚱하게 + 마지막 단어는 누락 → 치환 1 · 누락 1
+const heardWords = tWords.slice(0, -1).map((w, i) => (i === 1 ? 'zzz' : w));
+const expectRate = Math.round(((tWords.length - 2) / tWords.length) * 100);
+await sttPage.evaluate(([interim, final]) => {
+  window.__mockSTT.interim = interim;
+  window.__mockSTT.final = final;
+}, [tWords.slice(0, 3).join(' '), heardWords.join(' ')]);
+
+await sttPage.locator('[data-testid="speaking-record"]').click();
+await sttPage.waitForTimeout(400);
+const midText = await sttPage.locator('main').textContent();
+check('STT 모킹: 녹음 중 중간 결과 렌더',
+  /듣는 중/.test(midText) && midText.includes(tWords.slice(0, 3).join(' ')));
+
+await sttPage.locator('[data-testid="speaking-record"]').click();
+await sttPage.waitForTimeout(1200);
+const rateText = (await sttPage.locator('[data-testid="speaking-rate"]').textContent().catch(() => '')).trim();
+check('STT 모킹: 정지 → final result 로 채점', rateText === `${expectRate}%`, `${rateText} (기대 ${expectRate}%)`);
+check('STT 모킹: 치환(bad)·누락(miss) 단어 3색 렌더',
+  (await sttPage.locator('[data-testid="speaking-word-bad"]').count()) >= 1
+  && (await sttPage.locator('[data-testid="speaking-word-miss"]').count()) >= 1,
+  `bad ${await sttPage.locator('[data-testid="speaking-word-bad"]').count()} · miss ${await sttPage.locator('[data-testid="speaking-word-miss"]').count()}`);
+const count1 = (await sttPage.locator('[data-testid="speaking-count"]').textContent()).trim();
+check('회귀: 늦게 온 final 로 중복 채점되지 않음 (읽은 문장 = 1)', count1.startsWith('1'), count1.slice(0, 12));
+
+// 두 번째 시도는 정상 누적된다 — 회차 가드가 채점 자체를 막아버리면 안 된다
+await sttPage.locator('[data-testid="speaking-again"]').click();
+await sttPage.waitForTimeout(400);
+await sttPage.locator('[data-testid="speaking-record"]').click();
+await sttPage.waitForTimeout(400);
+await sttPage.locator('[data-testid="speaking-record"]').click();
+await sttPage.waitForTimeout(1200);
+const count2 = (await sttPage.locator('[data-testid="speaking-count"]').textContent()).trim();
+check('두 번째 시도는 정상 누적 (읽은 문장 = 2)', count2.startsWith('2'), count2.slice(0, 12));
+check('받아쓰기 기반임을 화면이 밝힌다 (발음 점수 아님)',
+  /발음 점수가 아닙니다/.test(await sttPage.locator('[data-testid="speaking-disclaimer"]').textContent()));
+
+// 마이크 권한 거부 → 안내 화면
+await sttPage.evaluate(() => { window.__mockSTT.error = 'not-allowed'; });
+await sttPage.locator('[data-testid="speaking-again"]').click();
+await sttPage.waitForTimeout(300);
+await sttPage.locator('[data-testid="speaking-record"]').click();
+await sttPage.waitForTimeout(700);
+check('마이크 권한 거부 → 안내 렌더',
+  (await sttPage.locator('[data-testid="speaking-unsupported"]').count()) === 1);
+
+// 회화 탭 받아쓰기 — 인식 결과가 입력창에 들어가고, 전송은 사용자가 누른다
+await sttPage.evaluate(() => {
+  window.__mockSTT.error = null;
+  window.__mockSTT.interim = 'I would like';
+  window.__mockSTT.final = 'I would like to book a table for two';
+});
+await sttNav.locator('button', { hasText: 'AI 회화' }).click();
+await sttPage.waitForTimeout(3000);
+await sttPage.locator('[data-testid="chat-mic-inline"]').click();
+await sttPage.waitForTimeout(400);
+await sttPage.locator('[data-testid="chat-mic-inline"]').click();
+await sttPage.waitForTimeout(1200);
+const dictated = await sttPage.locator('textarea').last().inputValue().catch(() => '');
+check('회화 탭: 받아쓰기 결과가 입력창에 채워짐 (자동 전송 없음)',
+  dictated.includes('book a table for two'), dictated.slice(0, 45));
+check('STT 모킹 페이지 콘솔 에러 0', sttErrors.length === 0, sttErrors.slice(0, 2).join(' | '));
+await sttPage.close();
+
 // ── 모바일 변형 (창을 좁히면 같은 페이지의 모바일 화면) ──
 const mobile = await browser.newPage({ viewport: { width: 390, height: 844 } });
 const mobileErrors = [];

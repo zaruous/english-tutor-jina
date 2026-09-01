@@ -165,10 +165,15 @@ function SpeakingPractice({ theme, compact = false }) {
   const { sentences } = useSentenceBank();
   const sentence = sentences[idx % sentences.length];
   const targetWords = React.useMemo(() => sentence.text.replace(/[."]/g, '').split(/\s+/).filter(Boolean), [sentence]);
+  // 이번 녹음 회차를 이미 채점했는가. 녹음을 시작할 때만 false 가 된다.
+  const scoredRef = React.useRef(true);
 
-  // 인식이 끝나면 채점 — 인식 중에는 중간 결과를 그대로 보여준다
+  // 인식이 끝나면 채점 — 인식 중에는 중간 결과를 그대로 보여준다.
+  // 회차 가드가 없으면 (a) 정지 직후 도착한 final result, (b) 문장 은행이 서버 응답으로 늘어나
+  // targetWords 가 바뀌는 순간에 같은 시도가 rates 에 여러 번 쌓여 세션 평균이 오염된다.
   React.useEffect(() => {
-    if (stt.listening || !stt.transcript) return;
+    if (stt.listening || !stt.transcript || scoredRef.current) return;
+    scoredRef.current = true;
     const heard = stt.transcript.replace(/[.,"?!]/g, '').split(/\s+/).filter(Boolean);
     const r = matchWords(targetWords, heard);
     setResult(r);
@@ -176,9 +181,16 @@ function SpeakingPractice({ theme, compact = false }) {
   }, [stt.listening, stt.transcript, targetWords]);
 
   const reset = (nextIdx) => {
+    scoredRef.current = true;
     setResult(null);
     stt.setTranscript('');
     if (nextIdx !== undefined) setIdx(nextIdx);
+  };
+
+  const startRecording = () => {
+    reset();
+    scoredRef.current = false;
+    stt.start();
   };
   const avg = rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length) : null;
   const pad = compact ? 18 : 32;
@@ -231,7 +243,7 @@ function SpeakingPractice({ theme, compact = false }) {
             padding: `${pad - 14}px ${pad}px`, display: 'flex', alignItems: 'center',
             gap: 18, justifyContent: 'center', flexWrap: 'wrap',
           }}>
-            <button data-testid="speaking-record" onClick={() => (stt.listening ? stt.stop() : (reset(), stt.start()))} style={{
+            <button data-testid="speaking-record" onClick={() => (stt.listening ? stt.stop() : startRecording())} style={{
               width: 60, height: 60, borderRadius: '50%',
               background: stt.listening ? theme.error + '24' : theme.chipBg,
               border: `2px solid ${stt.listening ? theme.error + '8c' : theme.borderStrong}`,
@@ -280,7 +292,7 @@ function SpeakingPractice({ theme, compact = false }) {
                         fontSize: 34, fontWeight: 800,
                         color: result.rate >= 85 ? theme.success : result.rate >= 65 ? theme.warning : theme.error,
                       }}>{result.rate}%</b>
-                      <span style={{ fontSize: 13, color: theme.textMuted }}>일치율</span>
+                      <span style={{ fontSize: 13, color: theme.textMuted }}>받아쓰기 일치율</span>
                     </span>
                     <span style={{
                       flex: 1, minWidth: 220, fontSize: 12.5, color: theme.textMuted, lineHeight: 1.6,
@@ -308,11 +320,11 @@ function SpeakingPractice({ theme, compact = false }) {
 
       <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
         {[
-          { v: avg === null ? '—' : `${avg}%`, k: '이번 세션 평균 일치율', c: theme.success },
-          { v: rates.length, k: '읽은 문장', c: theme.text },
-          { v: sentences.length, k: '문장 은행 (학습 콘텐츠 + 시드)', c: theme.accent },
-        ].map(({ v, k, c }) => (
-          <div key={k} style={{
+          { v: avg === null ? '—' : `${avg}%`, k: '이번 세션 평균 받아쓰기 일치율', c: theme.success, t: 'speaking-avg' },
+          { v: rates.length, k: '읽은 문장', c: theme.text, t: 'speaking-count' },
+          { v: sentences.length, k: '문장 은행 (학습 콘텐츠 + 시드)', c: theme.accent, t: 'speaking-bank' },
+        ].map(({ v, k, c, t }) => (
+          <div key={k} data-testid={t} style={{
             flex: 1, padding: '13px 16px', borderRadius: 14,
             background: theme.surface, border: `1px solid ${theme.border}`,
           }}>
@@ -321,8 +333,11 @@ function SpeakingPractice({ theme, compact = false }) {
           </div>
         ))}
       </div>
-      <div style={{ marginTop: 14, fontSize: 11.5, color: theme.textDim, textAlign: 'center' }}>
-        <b style={{ color: theme.warning }}>v1 무저장 연습 모드</b> — 발음 평가 API와 이력 저장은 후속 단계입니다
+      <div data-testid="speaking-disclaimer" style={{
+        marginTop: 14, fontSize: 11.5, color: theme.textDim, textAlign: 'center', lineHeight: 1.7,
+      }}>
+        <b style={{ color: theme.warning }}>v1 받아쓰기 기반 연습 모드 (무저장)</b> — 브라우저 음성 인식은 문맥으로 단어를
+        보정하기 때문에 <b>이 수치는 발음 점수가 아닙니다.</b> 음소 단위 발음 평가와 이력 저장은 후속 단계입니다
       </div>
     </div>
   );

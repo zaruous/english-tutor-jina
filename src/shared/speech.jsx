@@ -123,13 +123,26 @@ function useJinaSpeechRecognition({ lang = 'en-US', continuous = false } = {}) {
   const [error, setError] = React.useState(null);
   const ref = React.useRef(null);
 
+  // 인식 종료 요청. rec.stop() 은 남은 오디오를 마저 처리해 final result 를 낸 뒤 onend 를 부른다 —
+  // 그래서 listening 을 여기서 미리 내리면 안 된다. 미리 내리면 화면이 중간 결과로 한 번 확정되고,
+  // 뒤늦게 도착한 final result 가 같은 시도를 또 한 번 확정시킨다. 종료 판정은 onend 한 곳에만 맡긴다.
   const stop = React.useCallback(() => {
-    try { ref.current?.stop(); } catch {}
+    if (!ref.current) { setListening(false); return; }
+    try { ref.current.stop(); } catch { setListening(false); }
+  }, []);
+
+  // 즉시 폐기 — 남은 인식 결과를 버린다. 전송 직후처럼 인식 결과가 되살아나면 안 되는 자리에서 쓴다.
+  const abort = React.useCallback(() => {
+    const rec = ref.current;
+    ref.current = null; // 이후 도착하는 콜백은 아래 가드에 걸려 무시된다
+    try { rec?.abort(); } catch { /* 무해 */ }
     setListening(false);
+    setTranscript('');
   }, []);
 
   const start = React.useCallback(() => {
     if (!JinaSpeechRecognition) { setError('unsupported'); return; }
+    try { ref.current?.abort(); } catch { /* 무해 */ }
     setError(null);
     setTranscript('');
     const rec = new JinaSpeechRecognition();
@@ -137,21 +150,24 @@ function useJinaSpeechRecognition({ lang = 'en-US', continuous = false } = {}) {
     rec.lang = lang;
     rec.interimResults = true;
     rec.continuous = continuous;
+    // ref.current !== rec 이면 폐기됐거나 다음 인식으로 교체된 것 — 뒤늦은 콜백은 무시한다.
     rec.onresult = (e) => {
+      if (ref.current !== rec) return;
       let text = '';
       for (let i = 0; i < e.results.length; i++) text += `${e.results[i][0].transcript} `;
       setTranscript(text.trim());
     };
     rec.onerror = (e) => {
+      if (ref.current !== rec) return;
       setError(e.error === 'not-allowed' || e.error === 'service-not-allowed' ? 'denied' : e.error || 'error');
       setListening(false);
     };
-    rec.onend = () => setListening(false);
+    rec.onend = () => { if (ref.current === rec) setListening(false); };
     try { rec.start(); setListening(true); } catch { setError('error'); setListening(false); }
   }, [lang, continuous]);
 
   React.useEffect(() => () => { try { ref.current?.abort(); } catch {} }, []);
-  return { supported: Boolean(JinaSpeechRecognition), listening, transcript, error, start, stop, setTranscript };
+  return { supported: Boolean(JinaSpeechRecognition), listening, transcript, error, start, stop, abort, setTranscript };
 }
 
 window.useJinaSpeechRecognition = useJinaSpeechRecognition;

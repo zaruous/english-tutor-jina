@@ -56,7 +56,7 @@
 1. **순서: 오답 노트 → 리스닝 → 스피킹** (데이터 준비도 순. 오답 노트는 스키마 변경 0으로 시작 가능)
 2. **오답 노트는 파생 뷰** — `attempts`의 answers vs `lesson_items.answer` 비교로 매 요청 계산. `wrong_notes` 테이블 신설 금지(07 §2.6 계승, 메모 UX 확정 전). "극복" 판정: **레슨별 최신 attempt** 기준 — 최신 시도에서 맞힌 문항은 목록에서 제외.
 3. **리스닝은 레슨 엔진 재사용** — 새 엔진 금지. `lessons.kind='toeic_lc'` 추가(새 마이그레이션으로 `lessons_kind_ck` 확장 — 적용된 0005 수정 금지), 스크립트는 `passage.body`에 저장. **v1은 '연습 모드'로 규정**: 클라이언트 TTS(`jinaSpeak`)로 재생하려면 스크립트가 클라이언트에 가야 하므로 완전 비노출은 불가 — 화면에 렌더하지 않는 수준만 보장하고, 시험 모드(서버 TTS·완전 비노출)는 Phase 2 TTS 도입과 함께.
-4. **스피킹 v1은 외부 API 0원** — ① 읽기 연습(read-aloud): 화면의 문장을 읽으면 `SpeechRecognition` 결과와 목표 문장을 단어 매칭 → HANDOFF §7 색상 규격으로 단어별 표시. ② 회화 탭 마이크 입력: STT 텍스트를 기존 send()로 전송(응답 자동 발음은 `useAutoSpeak` 기존 기능). Whisper·발음 평가 API는 Phase 2(비용, HANDOFF §6).
+4. **스피킹 v1은 외부 API 0원** — ① 읽기 연습(read-aloud): 화면의 문장을 읽으면 `SpeechRecognition` 결과와 목표 문장을 단어 매칭 → HANDOFF §7 색상 규격으로 단어별 표시. ② 회화 탭 마이크 입력: STT 텍스트를 기존 send()로 전송(응답 자동 발음은 `useAutoSpeak` 기존 기능). 발음 평가 API는 Phase 2 — 단 Whisper 계열 ASR 이 아니라 음소 점수를 주는 전용 API 여야 한다(§Phase C 후속 방향 정정).
 5. **통계 연결** — LC 정답률이 대시보드/통계의 listening 스킬 'v1 데이터 없음' 자리를 채운다(03-dashboard §skills·04-progress 규격 그대로, 소스만 추가). 오답 노트의 skill_code 집계는 통계 탭 약점 카드와 후속 연결.
 6. **사이드바 활성화는 Phase 완료 시점에 하나씩** (`soon` 해제). 모바일은 오답 노트만 v2에서 검토, 리스닝/스피킹은 데스크탑 우선(`mobile:false` 유지 — STT 모바일 브라우저 제약).
 
@@ -173,9 +173,25 @@
 > **회화 탭 🎤**: 입력창 옆 마이크 + 음성 모드가 실제 STT 로 바뀌었다(기존 '데모' 문구 제거). 인식 결과는
 > 입력창에 받아 적기만 하고 **전송은 사용자가 누른다**. STT 구현은 `speech.jsx` 의 공용 훅
 > `useJinaSpeechRecognition` 하나로 합쳐 스피킹 화면과 공유한다.
-> 후속: 발음 평가 API·이력 저장 — 방식 비교와 선택 기준은
-> [10-pronunciation-assessment.md](10-pronunciation-assessment.md).
-> (Whisper 는 전사 모델이라 발음 점수용이 아니다 — 그 문서 §5 참조)
+>
+> **버그 수정 (2026-09-01)** — 원인은 공용 훅의 `stop()` 이 낙관적으로 `listening=false` 를 세팅한 것이었다.
+> 실제 엔진은 `stop()` 후 남은 오디오로 final result 를 낸 뒤 `onend` 를 부르므로, 화면이 중간 결과로 한 번
+> 확정된 뒤 뒤늦은 final 이 같은 시도를 또 확정시켰다. ① 종료 판정을 `onend` 한 곳에만 맡기고,
+> ② 화면은 녹음 회차 가드(`scoredRef`)로 한 번만 채점한다(문장 은행이 서버 응답으로 늘어나 `targetWords` 가
+> 바뀌는 순간의 재채점도 함께 막힌다) — 없으면 세션 평균 일치율이 오염된다. ③ 같은 원인으로 회화 탭은 전송
+> 직후 final 이 되돌아와 비운 입력창을 다시 채웠다: 전송은 `stop()` 이 아니라 새로 추가한 `abort()`
+> (남은 결과 폐기 + `ref.current !== rec` 가드로 뒤늦은 콜백 무시)를 쓴다.
+>
+> **검증**: `window.SpeechRecognition` 모킹을 `addInitScript` 로 주입해 실제 엔진 순서(stop → final → onend)를
+> 재현한다 — 중간 결과 렌더 → final 로 채점 → 3색 → **읽은 문장 1회**(중복 채점 회귀) → 두 번째 시도 2회 →
+> 권한 거부 안내 → 회화 탭 받아쓰기. 완료 판정의 'STT 모킹 E2E 통과'를 이제 충족한다.
+>
+> **후속 방향 정정 — 발음 평가는 Whisper 가 아니다.** 브라우저 STT 도 Whisper 도 문맥으로 단어를 보정하는
+> 받아쓰기 엔진이라, 틀리게 읽은 단어를 맞는 단어로 고쳐 인식한다. 엔진을 바꿔도 이 한계는 그대로 남고
+> 비용만 는다. 그래서 일치율은 발음 점수가 아니며 화면이 이를 명시한다(`speaking-disclaimer`).
+> 음소 단위 점수(정확도·유창성·완성도)가 필요하면 발음 평가 전용 API 나 자체 GOP 로 가야 한다 —
+> **방식 비교와 선택 기준은 [10-pronunciation-assessment.md](10-pronunciation-assessment.md)**.
+> 이력 저장은 열린 질문 4.
 
 ## 4. 구현자 메모
 

@@ -92,7 +92,9 @@ function JinaInputBar({ theme, onSend, loading, suggestions, provider, modelInfo
 
   const submit = () => {
     if (!text.trim() || loading) return;
-    if (stt.listening) stt.stop();
+    // stop() 이 아니라 abort() — stop() 은 남은 오디오로 final result 를 마저 내므로,
+    // 방금 보낸 문장이 인식 결과로 되돌아와 빈 입력창에 다시 채워진다.
+    if (stt.listening) stt.abort();
     onSend(text.trim());
     setText('');
     baseRef.current = '';
