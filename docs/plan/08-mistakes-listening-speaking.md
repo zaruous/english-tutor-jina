@@ -82,10 +82,18 @@
 |---|---|
 | `GET /api/mistakes?skill=&lesson_id=` | 파생 쿼리: 사용자 attempts × lesson_items 조인, 레슨별 최신 attempt에서 틀린 문항만. 행 = `{lesson_id, lesson_title, kind, position, stem, options, my_answer, answer, explanation, skill_code, times_wrong, last_wrong_at}`. 제출한 본인 데이터만이므로 정답·해설 포함 가능(제출 후 규범) |
 | 화면 `src/screens/mistakes.jsx` | skill_code 필터 칩 · 오답 카드 리스트 · [레슨 다시 풀기]=`select(lesson_id)`+학습 탭 이동 · [Jina에게 물어보기]=학습 탭 Q&A로 이동(attempt 문맥 유지) · 빈 상태 |
-| 내비 | `mistakes` soon 해제(데스크탑) |
+| 내비 | `mistakes` soon 해제(데스크탑). 세 항목 모두 `mobile: false` 유지 — 하단 탭 6개를 지키고, 창을 좁히면 같은 페이지의 모바일 변형이 렌더된다 |
 | 검증 | `e2e-mistakes.mjs`: 오답 생성 → 목록 일치 → 재도전에서 정답 → 목록에서 사라짐(극복) → 필터 동작 → 타 사용자 데이터 미노출 |
 
 완료 판정: 극복 로직(최신 attempt 기준) 단정 통과, `skill_code` 필터 = DB 집계 일치, 스키마 변경 0.
+
+> **상태 (2026-09-01): 화면 + API 구현 완료.** `GET /api/mistakes?skill=&lesson_id=`(파생 쿼리 — 레슨별
+> 최신 attempt × `lesson_items`, `times_wrong` 은 전체 attempt 누적, `overcome` 은 EXCEPT 집계) +
+> `src/screens/mistakes.jsx`(Desktop/Mobile). 스키마 변경 0. `skill_code` 라벨은
+> `lesson_items_skill_ck` 허용 5종(grammar·vocab·detail·inference·main_idea) + 미분류.
+> 검증 `scripts/e2e-plan08-screens.mjs`: 카드 수 = 서버 목록, 문항·내 답·정답·해설 렌더, 필터 = 서버 결과,
+> [레슨 다시 풀기] → 학습 화면 이동.
+> 후속: [Jina에게 물어보기] 는 현재 같은 레슨 이동까지만 — attempt 문맥을 Q&A 패널로 넘기는 연결이 남았다.
 
 ### Phase B (1주) — 리스닝 (LC 연습)
 
@@ -111,6 +119,15 @@
 
 완료 판정: 미제출 화면에 스크립트 텍스트 미렌더, LC 정답률이 통계 listening과 일치, Part 5 회귀(37) 통과.
 
+> **상태 (2026-09-01): 화면 + 콘텐츠 구현 완료, 통계 연결은 후속.** 마이그레이션 `0015_listening_lc.sql`
+> (`lessons_kind_ck` 에 `toeic_lc` 추가 + 대화/설명문 2세트 × 3문항 시드, 스크립트는 `passage.body` 의
+> 화자 라벨 줄 배열) + `src/screens/listening.jsx`(Desktop/Mobile). 상세 API 변형은 필요 없었다 —
+> v1 연습 모드는 스크립트가 클라이언트에 오는 것을 전제로 하고(§2.3) 화면이 제출 전까지 렌더하지 않는다.
+> 채점은 기존 `POST /api/lessons/:id/attempts` 그대로(응답 `results` 는 position 키 객체).
+> 검증: 잠금 상태에서 스크립트 6줄 미렌더 → 재생 횟수 증가 → 미답변 시 채점 비활성 → 채점 후 스크립트 공개
+> + 정답 수 표시, Part 5/7 회귀(e2e-lesson 37/37).
+> 후속: AI 생성(lesson_gen part='lc'), 통계 listening 스킬 연결.
+
 ### Phase C (1~2주) — 스피킹 (v1: 브라우저 STT)
 
 ```
@@ -135,6 +152,13 @@
 | 검증 | `e2e-speaking.mjs`: `window.SpeechRecognition` 모킹 주입 → 인식 결과 단어 색상·일치율 단정 → 미지원 브라우저 빈 상태 |
 
 완료 판정: STT 모킹 E2E 통과, 마이크 권한 거부/미지원 시 안내 렌더, 회화 탭 회귀(14) 통과.
+
+> **상태 (2026-09-01): 화면 구현 완료(회화 탭 🎤 연결은 후속).** `src/screens/speaking.jsx`(Desktop/Mobile) —
+> 고정 시드 20문장(JS 상수) · 듣기 `jinaSpeak` · `SpeechRecognition`(en-US) · LCS 정렬 단어 매칭
+> (일치/치환/누락 3색, 인접 누락+추가를 치환 한 쌍으로 묶음) · 일치율 · 교정 힌트 · 미지원/권한 거부 안내.
+> 서버 호출 0, 무저장. 매칭 로직은 `window.jinaMatchWords` 로 노출해 STT 모킹 없이도 단정한다
+> (예: vendor→bender 치환 + more 누락 → 83%).
+> 후속: 회화 탭 입력부 🎤 버튼, 레슨·시나리오 문장 재사용(현재는 JS 상수).
 
 ## 4. 구현자 메모
 

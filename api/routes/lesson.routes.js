@@ -19,6 +19,15 @@ export function registerLessonRoutes(router) {
   });
 
   // 추천 ≤ 3건 + reason_code(not_started | retry_low_score | next_in_series). 대시보드 '시험대비'와 같은 함수.
+  // 오답 노트 (플랜 08 Phase A) — 파생 조회. /api/lessons/:id 보다 먼저 등록할 필요는 없으나
+  // 경로가 다르므로 목록 라우트 옆에 둔다.
+  router.get('/api/mistakes', async (req, res, { query }) => {
+    const { user } = await requireUser(req, res);
+    const skill = str(query.get('skill'), 'skill', { max: 40, optional: true });
+    const lessonId = posInt(query.get('lesson_id') || undefined, 'lesson_id', { optional: true });
+    sendJson(res, 200, { ok: true, ...(await lessons.listMistakes(user, { skill, lessonId })) });
+  });
+
   router.get('/api/lessons/recommended', async (req, res, { query }) => {
     const { user } = await requireUser(req, res);
     const limit = posInt(query.get('limit'), 'limit', { optional: true, max: 3 }) ?? 3;

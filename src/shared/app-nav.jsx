@@ -3,18 +3,18 @@
 //
 // 페이지 목록의 단일 소스 = APP_PAGES. main.jsx(라우팅·헤더 제목), 사이드바, 모바일 탭이 전부 이 배열을 읽는다.
 //  - soon: true  → 아직 화면이 없는 예정 기능. 사이드바에 비활성 + '준비 중' 배지로만 노출한다 (가까운 페이지로 임의 매핑 금지)
-//  - mobile: false → 모바일 하단 탭에서 제외
+//  - mobile: false → 모바일 하단 탭에서만 제외 (라우팅은 된다 — 창을 좁히면 해당 페이지의 모바일 변형이 렌더된다)
 //  - 배열 순서 = 모바일 탭 순서. 사이드바는 group 별로 묶어 그린다.
 const APP_PAGES = [
   { id: 'dashboard',    label: '대시보드',   short: '홈',      icon: 'Home',       group: '학습' },
   { id: 'conversation', label: 'AI 회화',    short: 'AI 회화', icon: 'Chat',       group: '학습', badge: 'LIVE' },
   { id: 'topics',       label: '주제별 학습', short: '주제',    icon: 'Layers',     group: '학습', requiresTopics: true },
-  { id: 'speaking',     label: '스피킹 연습',                  icon: 'Mic',        group: '학습', soon: true, mobile: false },
-  { id: 'listening',    label: '리스닝',                      icon: 'Headphones', group: '학습', soon: true, mobile: false },
+  { id: 'speaking',     label: '스피킹 연습',                  icon: 'Mic',        group: '학습', mobile: false },
+  { id: 'listening',    label: '리스닝',                      icon: 'Headphones', group: '학습', mobile: false },
   { id: 'lesson',       label: 'TOEIC 학습', short: '학습',    icon: 'Book',       group: '시험' },
   { id: 'vocabulary',   label: '단어장',     short: '단어장',  icon: 'BookOpen',   group: '학습' },
   { id: 'progress',     label: '학습 통계',  short: '통계',    icon: 'Chart',      group: '시험' },
-  { id: 'mistakes',     label: '오답 노트',                    icon: 'Folder',     group: '시험', soon: true, mobile: false },
+  { id: 'mistakes',     label: '오답 노트',                    icon: 'Folder',     group: '시험', mobile: false },
 ];
 // 라우팅이 받아주는 id — 준비 중 항목은 제외 (main.jsx navigate()가 이 집합으로 필터한다)
 const APP_PAGE_IDS = new Set(APP_PAGES.filter((p) => !p.soon).map((p) => p.id));

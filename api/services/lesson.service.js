@@ -418,3 +418,103 @@ export async function reportLesson(user, lessonId, { reason, details }) {
   );
   return row;
 }
+
+// ── 오답 노트 (플랜 08 Phase A) — 파생 조회, 스키마 변경 0 ──────────────────
+// "미극복 오답" = 레슨별 **최신** attempt 에서 틀린 문항. 다시 풀어 맞히면 최신 attempt 에서
+// 빠지므로 목록에서 자동으로 사라진다(극복). times_wrong 은 전체 attempt 누적이라 극복 후에도
+// "몇 번 틀렸던 문항인지"가 남는다.
+// 본인이 제출한 문항만 반환하므로 정답·해설 포함이 허용된다(플랜 07 '제출 후 공개' 규범).
+const MISTAKES_SQL = `
+  WITH latest AS (
+    SELECT DISTINCT ON (a.lesson_id) a.id, a.lesson_id, a.answers, a.created_at
+      FROM public.user_lesson_attempts a
+     WHERE a.user_id = $1
+     ORDER BY a.lesson_id, a.created_at DESC, a.id DESC
+  ),
+  wrong AS (
+    SELECT l.lesson_id, l.id AS attempt_id, l.created_at AS last_wrong_at,
+           i.id AS item_id, i.position, i.stem, i.options, i.answer, i.explanation, i.skill_code,
+           l.answers ->> i.position::text AS my_answer
+      FROM latest l
+      JOIN public.lesson_items i ON i.lesson_id = l.lesson_id
+     WHERE l.answers ? i.position::text
+       AND l.answers ->> i.position::text IS DISTINCT FROM i.answer
+  )
+  SELECT w.*, ls.title AS lesson_title, ls.subtitle AS lesson_subtitle, ls.kind, ls.difficulty,
+         (SELECT count(*)::int
+            FROM public.user_lesson_attempts a2
+           WHERE a2.user_id = $1 AND a2.lesson_id = w.lesson_id
+             AND a2.answers ? w.position::text
+             AND a2.answers ->> w.position::text IS DISTINCT FROM w.answer) AS times_wrong
+    FROM wrong w
+    JOIN public.lessons ls ON ls.id = w.lesson_id`;
+
+const optionText = (options, id) => (options || []).find((o) => o.id === id)?.text ?? null;
+
+function mistakeDto(row) {
+  return {
+    item_id: row.item_id,
+    lesson_id: row.lesson_id,
+    lesson_title: row.lesson_title,
+    lesson_subtitle: row.lesson_subtitle,
+    kind: row.kind,
+    difficulty: row.difficulty,
+    attempt_id: row.attempt_id,
+    position: row.position,
+    stem: row.stem,
+    options: row.options,
+    my_answer: row.my_answer,
+    my_answer_text: optionText(row.options, row.my_answer),
+    answer: row.answer,
+    answer_text: optionText(row.options, row.answer),
+    explanation: row.explanation,
+    skill_code: row.skill_code,
+    times_wrong: row.times_wrong,
+    last_wrong_at: row.last_wrong_at,
+  };
+}
+
+// skill: lesson_items.skill_code 필터(값이 NULL 인 문항은 'unknown' 으로 묶어 노출).
+// 집계(by_skill)는 필터와 무관한 전체 — 필터 칩의 개수 배지가 필터를 따라 바뀌면 안 된다.
+export async function listMistakes(user, { skill, lessonId } = {}) {
+  const params = [user.id];
+  let where = '';
+  if (skill) {
+    params.push(skill === 'unknown' ? null : skill);
+    where += skill === 'unknown'
+      ? ` WHERE w.skill_code IS NULL`
+      : ` WHERE w.skill_code = $${params.length}`;
+  }
+  if (lessonId) {
+    params.push(lessonId);
+    where += `${where ? ' AND' : ' WHERE'} w.lesson_id = $${params.length}`;
+  }
+  const { rows } = await pool.query(
+    `${MISTAKES_SQL}${where} ORDER BY w.last_wrong_at DESC, w.lesson_id, w.position`,
+    params,
+  );
+  const { rows: all } = await pool.query(
+    `SELECT COALESCE(w.skill_code, 'unknown') AS skill_code, count(*)::int AS n
+       FROM (${MISTAKES_SQL}) w GROUP BY 1 ORDER BY 2 DESC`,
+    [user.id],
+  );
+  // 극복 = 과거에 틀렸으나 최신 attempt 에서는 오답이 아닌 문항
+  const { rows: [overcome] } = await pool.query(
+    `SELECT count(*)::int AS n FROM (
+       SELECT DISTINCT a.lesson_id, i.position
+         FROM public.user_lesson_attempts a
+         JOIN public.lesson_items i ON i.lesson_id = a.lesson_id
+        WHERE a.user_id = $1 AND a.answers ? i.position::text
+          AND a.answers ->> i.position::text IS DISTINCT FROM i.answer
+       EXCEPT
+       SELECT w.lesson_id, w.position FROM (${MISTAKES_SQL}) w
+     ) t`,
+    [user.id],
+  );
+  return {
+    mistakes: rows.map(mistakeDto),
+    by_skill: all.map((r) => ({ skill_code: r.skill_code, count: r.n })),
+    total: rows.length,
+    overcome: overcome.n,
+  };
+}

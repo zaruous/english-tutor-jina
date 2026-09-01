@@ -396,6 +396,9 @@ function JinaApp() {
         case 'lesson':       return <LessonMobile       {...mobileProps} />;
         case 'vocabulary':   return <MobileVocabulary   {...mobileProps} />;
         case 'progress':     return <MobileProgress     {...mobileProps} />;
+        case 'mistakes':     return <MobileMistakes     {...mobileProps} />;
+        case 'listening':    return <MobileListening    {...mobileProps} />;
+        case 'speaking':     return <MobileSpeaking     {...mobileProps} />;
         default:             return <MobileDashboard    {...mobileProps} />;
       }
     }
@@ -406,6 +409,9 @@ function JinaApp() {
       case 'lesson':       return <LessonDesktop       {...commonProps} />;
       case 'vocabulary':   return <VocabularyDesktop   {...commonProps} />;
       case 'progress':     return <ProgressDesktop     {...commonProps} />;
+      case 'mistakes':     return <MistakesDesktop     {...commonProps} />;
+      case 'listening':    return <ListeningDesktop    {...commonProps} />;
+      case 'speaking':     return <SpeakingDesktop     {...commonProps} />;
       default:             return <DashboardDesktop    {...commonProps} />;
     }
   };

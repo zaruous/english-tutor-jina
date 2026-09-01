@@ -54,8 +54,16 @@ if (emptySkill) check('스킬 빈 상태 처리', deskText.includes('데이터 �
 const nav = desk.locator('aside[aria-label="주요 메뉴"]');
 check('사이드바 렌더 (주요 메뉴)', (await nav.count()) === 1);
 check('사이드바 현재 페이지 aria-current=page', ((await nav.locator('button[aria-current="page"]').textContent()) || '').includes('대시보드'));
-const soonBtn = nav.locator('button', { hasText: '스피킹 연습' });
-check('준비 중 메뉴는 비활성 + 배지', (await soonBtn.isDisabled()) && (await soonBtn.textContent()).includes('준비 중'));
+// 플랜 08 세 화면(스피킹·리스닝·오답 노트) 구현으로 soon 항목은 남아있지 않다 —
+// 배지가 다시 생기면(새 soon 항목 추가) 그 항목이 비활성인지까지 확인한다.
+const soonBtns = nav.locator('button:has-text("준비 중")');
+const soonCount = await soonBtns.count();
+check('준비 중 메뉴가 있으면 비활성 (없으면 통과)',
+  soonCount === 0 || (await soonBtns.first().isDisabled()), `준비 중 ${soonCount}개`);
+check('플랜 08 3항목 활성화 (클릭 가능)',
+  !(await nav.locator('button', { hasText: '스피킹 연습' }).isDisabled())
+  && !(await nav.locator('button', { hasText: '리스닝' }).isDisabled())
+  && !(await nav.locator('button', { hasText: '오답 노트' }).isDisabled()));
 await nav.locator('button', { hasText: 'AI 회화' }).click();
 await desk.waitForTimeout(2500);
 check('사이드바 AI 회화 클릭 → 회화 화면', (await desk.locator('body').textContent()).includes('새 회화 시작'));
