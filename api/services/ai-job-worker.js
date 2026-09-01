@@ -36,6 +36,8 @@ async function execute(job) {
       model: job.model,
       history: [],
       userMessage: requestFor(job),
+      // LC 는 같은 lesson_gen task 지만 시스템 프롬프트가 다르다(스크립트 + 문항)
+      promptVariant: job.task === 'lesson_gen' ? job.input.part : null,
     });
     let saved;
     if (job.task === 'lesson_gen') saved = await saveGeneratedLesson(job, ai.data, ai.meta);

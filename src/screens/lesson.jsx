@@ -389,16 +389,26 @@ function LessonQaChat({ theme, aiConfig, compact = false, active = true }) {
   const { faq, questions } = lesson;   // 추천 질문도 서버 콘텐츠(lessons.faq)
   const suggestions = faq?.length ? faq : DEFAULT_FAQ;
   const shown = compact ? suggestions.slice(0, 3) : suggestions;
-  const { result, retaking, askLesson } = useLesson();
+  const { result, retaking, askLesson, consumePendingAsk } = useLesson();
   // 새로고침 뒤에도 상세 DTO의 last_attempt_id로 제출 후 Q&A 문맥을 복원한다.
   const attemptId = result?.attempt?.id || (!retaking ? lesson.last_attempt_id : null) || null;
   const [messages, setMessages] = React.useState([]);
   const [loading, setLoading] = React.useState(false);
   const [itemId, setItemId] = React.useState(null);          // 선택 문항(position). null = 문항 전체
+  const [draft, setDraft] = React.useState('');              // 입력창 초안 — 오답 노트에서 넘어온 질문을 채운다
   const abortRef = React.useRef(null);
   const scrollRef = React.useRef(null);
 
   React.useEffect(() => { setItemId(null); }, [attemptId]);  // 채점/다시 풀기 → 문항 선택 초기화
+
+  // 오답 노트에서 "Jina에게 물어보기"로 넘어온 문맥(문항·질문 초안)을 한 번만 반영한다.
+  // 자동 전송은 하지 않는다 — AI 호출은 사용자가 누를 때만(비용·의외성).
+  React.useEffect(() => {
+    const pending = consumePendingAsk(lesson.id);
+    if (!pending) return;
+    if (pending.itemId) setItemId(pending.itemId);
+    if (pending.question) setDraft(pending.question);
+  }, [lesson.id, attemptId, consumePendingAsk]);
   React.useEffect(() => {
     if (active && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages.length, loading, active]);
@@ -532,6 +542,7 @@ function LessonQaChat({ theme, aiConfig, compact = false, active = true }) {
         theme={theme} onSend={send} onCancel={cancel} loading={loading}
         provider={provider} modelInfo={modelInfo}
         itemId={attemptId ? itemId : null} compact={compact}
+        draft={draft} onDraftUsed={() => setDraft('')}
       />
     </div>
   );
@@ -588,9 +599,16 @@ function QaAnswerMessage({ theme, msg }) {
 }
 
 // Q&A 입력줄 — JinaInputBar(회화용: 영어로 말 걸기·음성 모드)와 달리 한국어 질문 500자 + 진행 중 취소
-function LessonQaInput({ theme, onSend, onCancel, loading, provider, modelInfo, itemId, compact = false }) {
+function LessonQaInput({ theme, onSend, onCancel, loading, provider, modelInfo, itemId, compact = false, draft = '', onDraftUsed }) {
   const [text, setText] = React.useState('');
   const ref = React.useRef(null);
+  // 외부에서 넘어온 초안(오답 노트 → Jina에게 물어보기)을 입력창에 채우고 포커스한다.
+  React.useEffect(() => {
+    if (!draft) return;
+    setText(draft);
+    if (onDraftUsed) onDraftUsed();
+    setTimeout(() => ref.current?.focus(), 60);
+  }, [draft]); // eslint-disable-line react-hooks/exhaustive-deps
   const meta = window.JINA_AI.PROVIDER_META[provider] || {};
   const canSend = text.trim().length > 0 && !loading;
   const submit = () => {

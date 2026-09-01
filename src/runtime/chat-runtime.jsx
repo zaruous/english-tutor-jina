@@ -60,15 +60,43 @@ function nowHHMM(date) {
 }
 window.jinaHHMM = nowHHMM; // conversation-store 매퍼가 재사용 — 시각 포맷터 중복 구현 금지
 
-// JinaInputBar — text-input bar that calls onSend; falls back to mic mode visually
+// JinaInputBar — text-input bar that calls onSend. 음성 모드는 브라우저 STT(speech.jsx 공용 훅)로
+// 받아 적기만 하고 전송은 사용자가 누른다(플랜 08 Phase C — 회화 탭 마이크 입력).
 function JinaInputBar({ theme, onSend, loading, suggestions, provider, modelInfo, compact = false }) {
   const [text, setText] = React.useState('');
   const [mode, setMode] = React.useState('text'); // 'text' | 'mic'
   const ref = React.useRef(null);
+  const stt = useJinaSpeechRecognition({ lang: 'en-US' });
+  const baseRef = React.useRef('');   // 받아쓰기 시작 시점의 입력창 내용 — 인식 결과를 뒤에 잇는다
+
+  // 인식 중에는 중간 결과를 그대로 입력창에 반영한다(사용자가 고쳐 쓸 수 있게).
+  React.useEffect(() => {
+    if (!stt.transcript) return;
+    const base = baseRef.current;
+    setText(base ? `${base} ${stt.transcript}` : stt.transcript);
+  }, [stt.transcript]);
+
+  // 인식이 끝나면 텍스트 모드로 돌아와 검토 후 전송하게 한다.
+  React.useEffect(() => {
+    if (mode === 'mic' && !stt.listening && stt.transcript) {
+      setMode('text');
+      setTimeout(() => ref.current?.focus(), 60);
+    }
+  }, [stt.listening, stt.transcript, mode]);
+
+  const toggleMic = () => {
+    if (stt.listening) { stt.stop(); return; }
+    baseRef.current = text.trim();
+    stt.start();
+  };
+
   const submit = () => {
     if (!text.trim() || loading) return;
+    if (stt.listening) stt.stop();
     onSend(text.trim());
     setText('');
+    baseRef.current = '';
+    stt.setTranscript('');
     setTimeout(() => ref.current?.focus(), 50);
   };
   return (
@@ -118,23 +146,32 @@ function JinaInputBar({ theme, onSend, loading, suggestions, provider, modelInfo
           background: theme.card, border: `1px solid ${theme.borderStrong}`,
           boxShadow: theme.shadow,
         }}>
-          <button style={{
-            width: 44, height: 44, borderRadius: '50%',
-            background: theme.accentGrad, color: '#fff',
-            display: 'grid', placeItems: 'center', flex: '0 0 auto',
-            boxShadow: `0 6px 20px -6px ${theme.accent}80`,
-            position: 'relative',
-          }}>
-            <span style={{
-              position: 'absolute', inset: -4, borderRadius: '50%',
-              border: `2px solid ${theme.accent}`, opacity: 0.4,
-              animation: 'jina-pulse 1.5s ease-in-out infinite',
-            }} />
+          <button data-testid="chat-mic" onClick={toggleMic} disabled={!stt.supported}
+            aria-label={stt.listening ? '받아쓰기 멈춤' : '받아쓰기 시작'} style={{
+              width: 44, height: 44, borderRadius: '50%',
+              background: stt.listening ? theme.error : stt.supported ? theme.accentGrad : theme.chipBg,
+              color: stt.supported ? '#fff' : theme.textMuted,
+              display: 'grid', placeItems: 'center', flex: '0 0 auto',
+              boxShadow: stt.supported ? `0 6px 20px -6px ${theme.accent}80` : 'none',
+              position: 'relative',
+            }}>
+            {stt.listening && (
+              <span style={{
+                position: 'absolute', inset: -4, borderRadius: '50%',
+                border: `2px solid ${theme.error}`, opacity: 0.5,
+                animation: 'jina-pulse 1.5s ease-in-out infinite',
+              }} />
+            )}
             <Icons.Mic size={18} stroke={2.2} />
           </button>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 14 }}>
-            <Waveform theme={theme} active height={28} bars={28} />
-            <span style={{ fontSize: 11, color: theme.textMuted }}>음성 모드는 데모예요 — 텍스트로 전환해 실제 AI와 대화해보세요</span>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
+            <Waveform theme={theme} active={stt.listening} height={28} bars={28} />
+            <span data-testid="chat-mic-status" style={{ fontSize: 11, color: theme.textMuted, minWidth: 0 }}>
+              {!stt.supported ? '이 브라우저는 음성 인식을 지원하지 않아요 — 텍스트로 입력해 주세요'
+                : stt.error === 'denied' ? '마이크 권한이 필요해요 — 주소창의 마이크 아이콘에서 허용해 주세요'
+                : stt.listening ? (stt.transcript || '듣는 중… 영어로 말해보세요')
+                : '마이크를 눌러 영어로 말하면 입력창에 받아 적어요 (전송은 직접)'}
+            </span>
           </div>
         </div>
       ) : (
@@ -160,6 +197,17 @@ function JinaInputBar({ theme, onSend, loading, suggestions, provider, modelInfo
               fontFamily: 'inherit',
             }}
           />
+          {stt.supported && (
+            <button data-testid="chat-mic-inline" onClick={toggleMic} title="영어로 말하면 받아 적어요"
+              aria-label={stt.listening ? '받아쓰기 멈춤' : '받아쓰기 시작'} style={{
+                width: 34, height: 34, borderRadius: 10, flex: '0 0 auto',
+                display: 'grid', placeItems: 'center',
+                background: stt.listening ? theme.error + '22' : theme.chipBg,
+                color: stt.listening ? theme.error : theme.textMuted,
+              }}>
+              <Icons.Mic size={15} />
+            </button>
+          )}
           <button onClick={submit} disabled={!text.trim() || loading} style={{
             padding: '9px 14px', borderRadius: 10,
             background: !text.trim() || loading ? theme.chipBg : theme.text,

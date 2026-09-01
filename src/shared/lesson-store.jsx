@@ -31,6 +31,9 @@ function LessonProvider({ children }) {
   const [retakingByLesson, setRetakingByLesson] = React.useState({});
   const [grading, setGrading] = React.useState(false);
   const [generation, setGeneration] = React.useState({ status: 'idle', job: null, error: null, result: null });
+  // 다른 화면(오답 노트)에서 "이 문항을 Jina에게" 하고 넘어올 때의 문맥.
+  // { lessonId, itemId, question } — Q&A 패널이 한 번 소비하고 지운다(consumePendingAsk).
+  const [pendingAsk, setPendingAsk] = React.useState(null);
 
   const refresh = React.useCallback(async () => {
     const res = await window.JINA_API.get('/api/lessons');
@@ -75,6 +78,21 @@ function LessonProvider({ children }) {
   React.useEffect(() => {
     if (!currentId && lessons.length > 0) select(lessons[0].id);
   }, [currentId, lessons, select]);
+
+  // 오답 노트 → 학습 탭: 레슨을 고르고 Q&A 문맥(문항·질문 초안)을 남긴다. 화면 이동은 호출자가 한다.
+  const askAboutItem = React.useCallback(async ({ lessonId, itemId, question }) => {
+    await select(lessonId);
+    setPendingAsk({ lessonId, itemId: itemId ?? null, question: question || '' });
+  }, [select]);
+  const consumePendingAsk = React.useCallback((lessonId) => {
+    let taken = null;
+    setPendingAsk((prev) => {
+      if (!prev || prev.lessonId !== lessonId) return prev;
+      taken = prev;
+      return null;
+    });
+    return taken;
+  }, []);
 
   const setAnswer = React.useCallback((n, optionId) => {
     setAnswersByLesson((prev) => {
@@ -133,7 +151,8 @@ function LessonProvider({ children }) {
 
   // Part 5 비동기 생성 — POST는 즉시 202, 실제 CLI 실행은 서버 워커가 처리한다.
   // 완료될 때까지 GET을 폴링하고 성공하면 목록을 새로 읽은 뒤 새 레슨을 선택한다.
-  const generateLesson = React.useCallback(async ({ topic, difficulty = 3, count = 5 } = {}) => {
+  // part: 5(Part 5) | 'lc'(리스닝 대화·설명문) — 서버 normalizeJobInput 과 같은 계약
+  const generateLesson = React.useCallback(async ({ topic, difficulty = 3, count = 5, part = 5 } = {}) => {
     if (generation.status === 'queued' || generation.status === 'running') return null;
     const ai = window.__JINA_AI_CONFIG || {};
     const provider = ai.provider || window.JINA_CONFIG?.provider || 'claude';
@@ -141,7 +160,7 @@ function LessonProvider({ children }) {
     setGeneration({ status: 'queued', job: null, error: null, result: null });
     const created = await window.JINA_API.post('/api/ai-jobs', {
       task: 'lesson_gen',
-      input: { part: 5, topic, difficulty: Number(difficulty), count: Number(count) },
+      input: { part: part === 'lc' ? 'lc' : 5, topic, difficulty: Number(difficulty), count: Number(count) },
       client_request_id: crypto.randomUUID(),
       provider,
       ...(model ? { model } : {}),
@@ -187,9 +206,11 @@ function LessonProvider({ children }) {
     grading,
     generation, generateLesson,
     refresh, select, setAnswer, submit, retake, next, askLesson,
+    pendingAsk, askAboutItem, consumePendingAsk,
   }), [lessons, progress, listLoading, error, currentId, current, currentLoading,
        answersByLesson, resultByLesson, retakingByLesson, grading, generation, generateLesson,
-       refresh, select, setAnswer, submit, retake, next, askLesson]);
+       refresh, select, setAnswer, submit, retake, next, askLesson,
+       pendingAsk, askAboutItem, consumePendingAsk]);
 
   return <LessonContext.Provider value={value}>{children}</LessonContext.Provider>;
 }
@@ -410,6 +431,9 @@ function useLessonFallback() {
     result, grading: false, retaking: false,
     generation: { status: 'idle', job: null, error: null, result: null },
     generateLesson: () => Promise.resolve({ ok: false, code: 'READONLY', error: '캔버스에서는 생성이 비활성화되어 있습니다.' }),
+    pendingAsk: null,
+    askAboutItem: () => Promise.resolve(),
+    consumePendingAsk: () => null,
     refresh: () => Promise.resolve({ ok: true }),
     select, setAnswer, submit, retake, next,
     // 캔버스에서는 AI 호출(non-GET)이 막혀 있다 — 패널이 이 봉투를 오류 말풍선으로 보여준다

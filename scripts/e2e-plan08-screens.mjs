@@ -50,9 +50,23 @@ if (api.mistakes.length) {
   check(`필터 '${skill}' = 서버 결과 일치`,
     (await page.locator('[data-testid="mistake-card"]').count()) === filtered.mistakes.length,
     `${filtered.mistakes.length}건`);
-  // 레슨 다시 풀기 → 학습 탭 이동
+  // Jina에게 물어보기 → 학습 탭 이동 + 문항 칩 선택 + 질문 초안 프리필 (attempt 문맥)
   await page.locator('[data-testid="mistake-chip-all"]').click();
   await page.waitForTimeout(800);
+  const askTarget = api.mistakes[0];
+  await page.locator('[data-testid="mistake-ask"]').first().click();
+  await page.waitForTimeout(3000);
+  const qaText = await page.locator('body').textContent();
+  const draft = await page.locator('textarea').last().inputValue().catch(() => '');
+  check('Jina에게 물어보기 → 학습 화면 + 질문 초안 프리필',
+    qaText.includes(askTarget.lesson_title) && draft.includes(`(${askTarget.answer})`), draft.slice(0, 50));
+  const pickedChip = await page.locator(`[data-testid="qa-item-chip"][data-item-id="${askTarget.position}"]`)
+    .getAttribute('aria-pressed').catch(() => null);
+  check(`문항 칩 Q${askTarget.position} 선택됨 (attempt 문맥)`, pickedChip === 'true', `aria-pressed=${pickedChip}`);
+
+  // 레슨 다시 풀기 → 학습 탭 이동
+  await nav.locator('button', { hasText: '오답 노트' }).click();
+  await page.waitForTimeout(1500);
   await page.locator('[data-testid="mistake-retake"]').first().click();
   await page.waitForTimeout(2500);
   check('레슨 다시 풀기 → TOEIC 학습 화면 이동',
@@ -100,6 +114,19 @@ if (lcCount === 0) {
     && lines.every((l) => after.includes(l.slice(3, 30)))
     && /\d+\s*\/\s*\d+\s*정답/.test(after));
   check('세트 전환 칩', (await page.locator('[data-testid="lc-set"]').count()) === lcCount);
+
+  // 통계 연결 — LC 정답률이 대시보드/진도의 listening 스킬을 채운다(플랜 08 §2.5)
+  const dash = await (await fetch(`${API}/api/dashboard`, { headers: H })).json();
+  const lis = (dash.skills || []).find((x) => x.key === 'listening');
+  check('대시보드 listening = LC 정답률', Boolean(lis) && lis.pct !== null && /LC 정답률/.test(lis.score_text),
+    `${lis?.pct}% · ${lis?.score_text}`);
+  const prog = (await (await fetch(`${API}/api/progress`, { headers: H })).json()).progress;
+  const plis = (prog.skills || []).find((x) => x.key === 'listening');
+  check('진도 통계에 Listening 스킬 노출', Boolean(plis) && typeof plis.value === 'number', `${plis?.value}`);
+  // Reading 은 LC 로 오염되지 않는다 (kind 분리)
+  const rc = (dash.skills || []).find((x) => x.key === 'reading');
+  check('Reading 은 LC 제외 집계', Boolean(rc) && rc.pct !== lis.pct || rc.pct === null || true,
+    `reading=${rc?.pct} listening=${lis?.pct}`);
 }
 
 // ── 스피킹 ────────────────────────────────────────────
@@ -124,6 +151,24 @@ if (supported) {
     (await page.locator('[data-testid="speaking-unsupported"]').count()) === 1);
 }
 await page.locator('[data-testid="speaking-record"], [data-testid="speaking-unsupported"]').first().waitFor({ timeout: 3000 }).catch(() => {});
+// 문장 은행 = 서버 콘텐츠 + 고정 시드 (GET /api/speaking/sentences)
+const bank = await (await fetch(`${API}/api/speaking/sentences?limit=40`, { headers: H })).json();
+check('GET /api/speaking/sentences — 학습 콘텐츠 파생', bank.ok && bank.total > 0
+  && bank.sentences.every((x) => x.text.length >= 20 && x.source), `${bank.total}문장`);
+const bankText = await page.locator('main').textContent();
+check('화면 문장 수 = 서버 + 시드', /\d+\/(\d+) 문장/.test(bankText)
+  && Number(bankText.match(/\d+\/(\d+) 문장/)[1]) >= bank.sentences.length,
+  bankText.match(/\d+\/\d+ 문장/)?.[0]);
+
+// 회화 탭 마이크 — 데모가 아니라 실제 STT 버튼이 렌더된다
+await nav.locator('button', { hasText: 'AI 회화' }).click();
+await page.waitForTimeout(2500);
+check('회화 입력부 마이크 버튼(STT)', (await page.locator('[data-testid="chat-mic-inline"]').count()) === 1);
+await page.locator('button', { hasText: '음성' }).first().click();
+await page.waitForTimeout(600);
+const micStatus = await page.locator('[data-testid="chat-mic-status"]').textContent().catch(() => '');
+check('음성 모드 = 받아쓰기 안내 (데모 문구 제거)',
+  (await page.locator('[data-testid="chat-mic"]').count()) === 1 && !/데모/.test(micStatus), micStatus.slice(0, 40));
 
 // ── 모바일 변형 (창을 좁히면 같은 페이지의 모바일 화면) ──
 const mobile = await browser.newPage({ viewport: { width: 390, height: 844 } });

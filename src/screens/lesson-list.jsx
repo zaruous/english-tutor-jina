@@ -8,6 +8,7 @@
 // kind 코드 → 칩 라벨. 알 수 없는 kind 는 코드 그대로 보여준다(서버가 새 kind 를 추가해도 깨지지 않게)
 function lessonKindLabel(kind) {
   if (!kind) return '기타';
+  if (kind === 'toeic_lc') return 'TOEIC LC';
   const m = /^toeic_part(\d+)$/i.exec(kind);
   return m ? `TOEIC Part ${m[1]}` : kind;
 }
@@ -60,13 +61,27 @@ function LessonListRow({ theme, lesson: l, active, compact, onPick }) {
   );
 }
 
+// 생성 유형 — 서버 normalizeJobInput 의 part 계약과 같은 값(5 | 'lc')을 그대로 보낸다.
+// LC 는 스크립트 하나에 문항 2~4개가 실전 규격이라 선택지도 좁힌다(서버도 같은 범위로 검증).
+const GEN_PARTS = [
+  { id: 5, label: 'Part 5 · 문법·어휘', counts: [3, 5, 7, 10], defaultCount: 5 },
+  { id: 'lc', label: 'LC · 대화·설명문', counts: [2, 3, 4], defaultCount: 3 },
+];
+
 function LessonGenerator({ theme, compact, generation, onGenerate, onDone }) {
   const [topic, setTopic] = React.useState('비즈니스 커뮤니케이션');
+  const [part, setPart] = React.useState(5);
   const [difficulty, setDifficulty] = React.useState(3);
   const [count, setCount] = React.useState(5);
+  const partMeta = GEN_PARTS.find((p) => p.id === part) || GEN_PARTS[0];
   const busy = generation.status === 'queued' || generation.status === 'running';
+  const pickPart = (id) => {
+    const meta = GEN_PARTS.find((p) => p.id === id) || GEN_PARTS[0];
+    setPart(id);
+    if (!meta.counts.includes(count)) setCount(meta.defaultCount);
+  };
   const run = async () => {
-    const res = await onGenerate({ topic, difficulty, count });
+    const res = await onGenerate({ topic, difficulty, count, part });
     if (res?.ok && res.job?.result?.lesson_id && onDone) onDone(res.job.result.lesson_id);
   };
   const inputStyle = {
@@ -81,9 +96,20 @@ function LessonGenerator({ theme, compact, generation, onGenerate, onDone }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
         <Icons.Sparkles size={17} style={{ color: theme.accent }} />
         <div>
-          <div style={{ color: theme.text, fontSize: 13.5, fontWeight: 700 }}>AI로 Part 5 만들기</div>
+          <div style={{ color: theme.text, fontSize: 13.5, fontWeight: 700 }}>AI로 레슨 만들기</div>
           <div style={{ color: theme.textMuted, fontSize: 10.5, marginTop: 1 }}>생성물은 먼저 내 전용 레슨으로 저장됩니다.</div>
         </div>
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+        {GEN_PARTS.map((p) => (
+          <button key={String(p.id)} type="button" data-testid={`lesson-gen-part-${p.id}`} disabled={busy}
+            onClick={() => pickPart(p.id)} style={{
+              padding: '6px 12px', borderRadius: 999, fontSize: 11.5,
+              fontWeight: part === p.id ? 700 : 500,
+              background: part === p.id ? theme.text : theme.chipBg,
+              color: part === p.id ? theme.bg : theme.textMuted,
+            }}>{p.label}</button>
+        ))}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: compact ? '1fr 1fr' : 'minmax(180px, 1fr) 120px 120px auto', gap: 8, alignItems: 'end' }}>
         <label style={{ gridColumn: compact ? '1 / -1' : undefined, fontSize: 10.5, color: theme.textMuted }}>
@@ -102,7 +128,7 @@ function LessonGenerator({ theme, compact, generation, onGenerate, onDone }) {
           문항 수
           <select data-testid="lesson-gen-count" value={count} disabled={busy}
             onChange={(e) => setCount(Number(e.target.value))} style={{ ...inputStyle, display: 'block', marginTop: 4 }}>
-            {[3, 5, 7, 10].map((n) => <option key={n} value={n}>{n}문항</option>)}
+            {partMeta.counts.map((n) => <option key={n} value={n}>{n}문항</option>)}
           </select>
         </label>
         <button type="button" data-testid="lesson-gen-submit" disabled={busy || !topic.trim()} onClick={run} style={{

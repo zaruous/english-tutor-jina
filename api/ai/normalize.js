@@ -118,9 +118,15 @@ export function normalizeLessonGen(data) {
     skill_code: ['grammar', 'vocab', 'detail', 'inference', 'main_idea'].includes(item?.skill_code)
       ? item.skill_code : 'grammar',
   }));
+  // script: LC(part='lc') 응답에만 있는 화자 라벨 줄 배열. 정규화가 버리면 저장 단계에서
+  // "script 없음"으로 검증이 떨어진다 — 있을 때만 실어 보낸다(Part 5 응답 모양은 그대로).
+  const script = Array.isArray(data.script)
+    ? data.script.map((line) => String(line || '').trim().slice(0, 400)).filter(Boolean).slice(0, 8)
+    : null;
   return {
     title: String(data.title || 'TOEIC Part 5 — AI 레슨').trim().slice(0, 120),
     subtitle: String(data.subtitle || '').trim().slice(0, 160),
+    ...(script && script.length ? { script } : {}),
     items,
   };
 }

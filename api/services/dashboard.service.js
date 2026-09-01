@@ -133,7 +133,11 @@ async function fetchReviewAccuracy(params) {
 // 레슨 정답률 — correct_count/total_count 합산. 같은 3개 창.
 async function fetchLessonAccuracy(t, params) {
   if (!t.lesson) {
-    return { pass_30: 0, total_30: 0, pass_prev: 0, total_prev: 0, pass_all: 0, total_all: 0 };
+    return {
+      pass_30: 0, total_30: 0, pass_prev: 0, total_prev: 0, pass_all: 0, total_all: 0,
+      pass_30_rc: 0, total_30_rc: 0, pass_all_rc: 0, total_all_rc: 0,
+      pass_30_lc: 0, total_30_lc: 0, pass_all_lc: 0, total_all_lc: 0,
+    };
   }
   const { rows: [r] } = await pool.query(
     `SELECT
@@ -144,7 +148,21 @@ async function fetchLessonAccuracy(t, params) {
        COALESCE(sum(total_count)   FILTER (WHERE ua.created_at BETWEEN now() - interval '60 days'
                                                               AND now() - interval '30 days'), 0)::int AS total_prev,
        COALESCE(sum(correct_count), 0)::int AS pass_all,
-       COALESCE(sum(total_count), 0)::int   AS total_all
+       COALESCE(sum(total_count), 0)::int   AS total_all,
+       -- Reading/Listening 스킬 행은 kind 로 갈라 집계한다. LC 도입(0015) 전에는 레슨이 전부
+       -- 리딩이라 구분이 없었지만, 이제 섞으면 Reading 정답률이 LC 로 오염된다.
+       COALESCE(sum(correct_count) FILTER (WHERE l.kind <> 'toeic_lc'
+                                       AND ua.created_at > now() - interval '30 days'), 0)::int AS pass_30_rc,
+       COALESCE(sum(total_count)   FILTER (WHERE l.kind <> 'toeic_lc'
+                                       AND ua.created_at > now() - interval '30 days'), 0)::int AS total_30_rc,
+       COALESCE(sum(correct_count) FILTER (WHERE l.kind <> 'toeic_lc'), 0)::int AS pass_all_rc,
+       COALESCE(sum(total_count)   FILTER (WHERE l.kind <> 'toeic_lc'), 0)::int AS total_all_rc,
+       COALESCE(sum(correct_count) FILTER (WHERE l.kind = 'toeic_lc'
+                                       AND ua.created_at > now() - interval '30 days'), 0)::int AS pass_30_lc,
+       COALESCE(sum(total_count)   FILTER (WHERE l.kind = 'toeic_lc'
+                                       AND ua.created_at > now() - interval '30 days'), 0)::int AS total_30_lc,
+       COALESCE(sum(correct_count) FILTER (WHERE l.kind = 'toeic_lc'), 0)::int AS pass_all_lc,
+       COALESCE(sum(total_count)   FILTER (WHERE l.kind = 'toeic_lc'), 0)::int AS total_all_lc
        FROM public.user_lesson_attempts ua
        JOIN public.lessons l ON l.id = ua.lesson_id AND l.source = 'seed'
       WHERE ua.user_id = $1`,
@@ -324,11 +342,14 @@ export async function getDashboard(user) {
   });
   const doneCount = items.filter((it) => it.done).length;
 
-  // ── skills: 고정 4행. listening/speaking은 v1에 데이터 소스가 없다 → pct null ──
-  const lessonPct = pooledPct(qAcc.pass_30, qAcc.total_30) ?? pooledPct(qAcc.pass_all, qAcc.total_all);
+  // ── skills: 고정 4행. Listening = LC 레슨 정답률(플랜 08 §2.5), speaking 은 아직 소스 없음 → pct null ──
+  // 30일 창이 비면 전체 평균으로 폴백하는 규칙은 Reading/Vocabulary 와 동일하게 유지한다.
+  const lessonPct = pooledPct(qAcc.pass_30_rc, qAcc.total_30_rc) ?? pooledPct(qAcc.pass_all_rc, qAcc.total_all_rc);
+  const listeningPct = pooledPct(qAcc.pass_30_lc, qAcc.total_30_lc) ?? pooledPct(qAcc.pass_all_lc, qAcc.total_all_lc);
   const reviewPct = pooledPct(rAcc.pass_30, rAcc.total_30) ?? pooledPct(rAcc.pass_all, rAcc.total_all);
   const skills = [
-    { key: 'listening', label: 'Listening', pct: null, score_text: '데이터 없음' },
+    { key: 'listening', label: 'Listening', pct: listeningPct,
+      score_text: listeningPct === null ? '데이터 없음' : `LC 정답률 ${listeningPct}%` },
     { key: 'reading', label: 'Reading', pct: lessonPct,
       score_text: lessonPct === null ? '데이터 없음' : `레슨 정답률 ${lessonPct}%` },
     { key: 'speaking', label: 'Speaking', pct: null, score_text: '데이터 없음' },

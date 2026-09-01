@@ -2,8 +2,8 @@
 // v1은 외부 API 0원: 듣기 = jinaSpeak(기기 TTS), 인식 = 브라우저 SpeechRecognition(en-US).
 // 저장하지 않는 연습 모드다(플랜 §Phase C '저장: v1 무저장') — 이력·점수 추이는 후속.
 //
-// 문장 은행은 플랜이 허용한 고정 시드 20문장(JS 상수). 레슨/시나리오 문장 재사용은 후속에서
-// 이 배열 대신 서버 문장을 넣는 식으로 교체한다(화면은 SPEAKING_SENTENCES 만 본다).
+// 문장 은행 = 서버 콘텐츠(GET /api/speaking/sentences — LC 스크립트·시나리오 첫 문장·레슨 예문)
+// + 아래 고정 시드 20문장. 서버가 비었거나 실패해도 시드로 연습할 수 있게 항상 뒤에 붙인다.
 const SPEAKING_SENTENCES = [
   { text: 'I would recommend the new vendor because their pricing is more competitive.', tag: '비즈니스' },
   { text: 'Could you clarify the second point in the agenda before we move on?', tag: '회의' },
@@ -27,9 +27,31 @@ const SPEAKING_SENTENCES = [
   { text: 'I look forward to hearing your thoughts on the revised timeline.', tag: '이메일' },
 ];
 
-const SpeechRecognitionCtor = typeof window !== 'undefined'
-  ? (window.SpeechRecognition || window.webkitSpeechRecognition || null)
-  : null;
+// 서버 문장 + 고정 시드 — source 태그로 출처를 표시한다(listening/scenario/lesson/seed).
+const SOURCE_LABEL = { listening: '리스닝', scenario: '회화', lesson: '레슨', seed: '기본' };
+
+function useSentenceBank() {
+  const [sentences, setSentences] = React.useState(SPEAKING_SENTENCES);
+  const [loaded, setLoaded] = React.useState(false);
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!window.JINA_API || window.JINA_READONLY) { setLoaded(true); return undefined; }
+    window.JINA_API.get('/api/speaking/sentences?limit=40').then((res) => {
+      if (cancelled) return;
+      const fromServer = res.ok ? (res.sentences || []) : [];
+      // 서버 문장을 앞에, 고정 시드를 뒤에 — 중복은 문장 텍스트로 거른다.
+      const seen = new Set(fromServer.map((x) => x.text.toLowerCase()));
+      const seed = SPEAKING_SENTENCES.filter((x) => !seen.has(x.text.toLowerCase()));
+      setSentences([...fromServer, ...seed]);
+      setLoaded(true);
+    });
+    return () => { cancelled = true; };
+  }, []);
+  return { sentences, loaded };
+}
+
+
+// STT 는 speech.jsx 의 공용 훅(useJinaSpeechRecognition) — 회화 탭 마이크와 같은 구현을 쓴다.
 
 // 비교용 정규화 — 소문자 + 구두점 제거. 표시는 원문을 쓰고 비교만 이 값으로 한다.
 const normWord = (w) => w.toLowerCase().replace(/[^a-z0-9']/g, '');
@@ -95,44 +117,6 @@ function buildHint(result) {
   return `${parts.join(' · ')}. 또박또박 조금 천천히 다시 읽어보세요.`;
 }
 
-// 브라우저 STT 훅 — 미지원/권한 거부를 화면이 구분해 안내할 수 있게 상태로 노출한다.
-function useSpeechRecognition() {
-  const [listening, setListening] = React.useState(false);
-  const [transcript, setTranscript] = React.useState('');
-  const [error, setError] = React.useState(null);
-  const ref = React.useRef(null);
-
-  const stop = React.useCallback(() => {
-    try { ref.current?.stop(); } catch {}
-    setListening(false);
-  }, []);
-
-  const start = React.useCallback(() => {
-    if (!SpeechRecognitionCtor) { setError('unsupported'); return; }
-    setError(null);
-    setTranscript('');
-    const rec = new SpeechRecognitionCtor();
-    ref.current = rec;
-    rec.lang = 'en-US';
-    rec.interimResults = true;
-    rec.continuous = false;
-    rec.onresult = (e) => {
-      let text = '';
-      for (let i = 0; i < e.results.length; i++) text += `${e.results[i][0].transcript} `;
-      setTranscript(text.trim());
-    };
-    rec.onerror = (e) => {
-      setError(e.error === 'not-allowed' || e.error === 'service-not-allowed' ? 'denied' : e.error || 'error');
-      setListening(false);
-    };
-    rec.onend = () => setListening(false);
-    try { rec.start(); setListening(true); } catch { setError('error'); setListening(false); }
-  }, []);
-
-  React.useEffect(() => () => { try { ref.current?.abort(); } catch {} }, []);
-  return { supported: Boolean(SpeechRecognitionCtor), listening, transcript, error, start, stop, setTranscript };
-}
-
 // 인식 결과 한 줄 — 단어별 3색 (HANDOFF §7 색상 규격)
 function TranscriptWords({ theme, result }) {
   return (
@@ -177,8 +161,9 @@ function SpeakingPractice({ theme, compact = false }) {
   const [idx, setIdx] = React.useState(0);
   const [result, setResult] = React.useState(null);
   const [rates, setRates] = React.useState([]); // 이번 세션의 일치율 (무저장 — 새로고침하면 사라진다)
-  const stt = useSpeechRecognition();
-  const sentence = SPEAKING_SENTENCES[idx % SPEAKING_SENTENCES.length];
+  const stt = useJinaSpeechRecognition();
+  const { sentences } = useSentenceBank();
+  const sentence = sentences[idx % sentences.length];
   const targetWords = React.useMemo(() => sentence.text.replace(/[."]/g, '').split(/\s+/).filter(Boolean), [sentence]);
 
   // 인식이 끝나면 채점 — 인식 중에는 중간 결과를 그대로 보여준다
@@ -206,12 +191,12 @@ function SpeakingPractice({ theme, compact = false }) {
         <span style={{ flex: 1, height: 5, borderRadius: 99, background: theme.surface, overflow: 'hidden' }}>
           <span style={{
             display: 'block', height: '100%', borderRadius: 99, background: theme.accentGrad,
-            width: `${((idx % SPEAKING_SENTENCES.length) / SPEAKING_SENTENCES.length) * 100}%`,
+            width: `${((idx % sentences.length) / sentences.length) * 100}%`,
             transition: 'width .4s ease',
           }} />
         </span>
         <span style={{ fontSize: 12, color: theme.textMuted, fontWeight: 600 }}>
-          {(idx % SPEAKING_SENTENCES.length) + 1}/{SPEAKING_SENTENCES.length} 문장
+          {(idx % sentences.length) + 1}/{sentences.length} 문장
         </span>
       </div>
 
@@ -223,7 +208,7 @@ function SpeakingPractice({ theme, compact = false }) {
           <div style={{
             fontSize: 11, color: theme.textDim, fontWeight: 600,
             letterSpacing: '0.06em', textTransform: 'uppercase',
-          }}>아래 문장을 소리 내어 읽어보세요 · {sentence.tag}</div>
+          }}>아래 문장을 소리 내어 읽어보세요 · {SOURCE_LABEL[sentence.source] || sentence.tag || '기본'}</div>
           <p data-testid="speaking-sentence" style={{
             fontSize: compact ? 17 : 20, fontWeight: 600, lineHeight: 1.5, margin: '10px 0 12px',
           }}>"{sentence.text}"</p>
@@ -325,7 +310,7 @@ function SpeakingPractice({ theme, compact = false }) {
         {[
           { v: avg === null ? '—' : `${avg}%`, k: '이번 세션 평균 일치율', c: theme.success },
           { v: rates.length, k: '읽은 문장', c: theme.text },
-          { v: SPEAKING_SENTENCES.length, k: '문장 은행 (고정 시드)', c: theme.accent },
+          { v: sentences.length, k: '문장 은행 (학습 콘텐츠 + 시드)', c: theme.accent },
         ].map(({ v, k, c }) => (
           <div key={k} style={{
             flex: 1, padding: '13px 16px', borderRadius: 14,

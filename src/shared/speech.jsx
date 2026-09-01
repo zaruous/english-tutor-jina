@@ -109,6 +109,53 @@ function SpeakButton({ text, theme, size = 16, style, label, lang = 'en-US', rat
   );
 }
 
+
+// ── 브라우저 STT (SpeechRecognition) ─────────────────────────────────
+// 스피킹 연습(문장 읽기)과 회화 탭 마이크 입력이 같은 구현을 쓴다.
+// 미지원/권한 거부를 화면이 구분해 안내할 수 있도록 error 를 'unsupported'|'denied'|<code> 로 노출한다.
+const JinaSpeechRecognition = typeof window !== 'undefined'
+  ? (window.SpeechRecognition || window.webkitSpeechRecognition || null)
+  : null;
+
+function useJinaSpeechRecognition({ lang = 'en-US', continuous = false } = {}) {
+  const [listening, setListening] = React.useState(false);
+  const [transcript, setTranscript] = React.useState('');
+  const [error, setError] = React.useState(null);
+  const ref = React.useRef(null);
+
+  const stop = React.useCallback(() => {
+    try { ref.current?.stop(); } catch {}
+    setListening(false);
+  }, []);
+
+  const start = React.useCallback(() => {
+    if (!JinaSpeechRecognition) { setError('unsupported'); return; }
+    setError(null);
+    setTranscript('');
+    const rec = new JinaSpeechRecognition();
+    ref.current = rec;
+    rec.lang = lang;
+    rec.interimResults = true;
+    rec.continuous = continuous;
+    rec.onresult = (e) => {
+      let text = '';
+      for (let i = 0; i < e.results.length; i++) text += `${e.results[i][0].transcript} `;
+      setTranscript(text.trim());
+    };
+    rec.onerror = (e) => {
+      setError(e.error === 'not-allowed' || e.error === 'service-not-allowed' ? 'denied' : e.error || 'error');
+      setListening(false);
+    };
+    rec.onend = () => setListening(false);
+    try { rec.start(); setListening(true); } catch { setError('error'); setListening(false); }
+  }, [lang, continuous]);
+
+  React.useEffect(() => () => { try { ref.current?.abort(); } catch {} }, []);
+  return { supported: Boolean(JinaSpeechRecognition), listening, transcript, error, start, stop, setTranscript };
+}
+
+window.useJinaSpeechRecognition = useJinaSpeechRecognition;
+
 window.jinaSpeak = jinaSpeak;
 window.SpeakButton = SpeakButton;
 window.useAutoSpeak = useAutoSpeak;

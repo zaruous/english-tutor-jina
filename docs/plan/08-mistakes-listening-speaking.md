@@ -91,9 +91,10 @@
 > 최신 attempt × `lesson_items`, `times_wrong` 은 전체 attempt 누적, `overcome` 은 EXCEPT 집계) +
 > `src/screens/mistakes.jsx`(Desktop/Mobile). 스키마 변경 0. `skill_code` 라벨은
 > `lesson_items_skill_ck` 허용 5종(grammar·vocab·detail·inference·main_idea) + 미분류.
-> 검증 `scripts/e2e-plan08-screens.mjs`: 카드 수 = 서버 목록, 문항·내 답·정답·해설 렌더, 필터 = 서버 결과,
-> [레슨 다시 풀기] → 학습 화면 이동.
-> 후속: [Jina에게 물어보기] 는 현재 같은 레슨 이동까지만 — attempt 문맥을 Q&A 패널로 넘기는 연결이 남았다.
+> [Jina에게 물어보기]는 lesson-store 의 `pendingAsk`(askAboutItem/consumePendingAsk)로 문맥을 넘긴다 —
+> 레슨 선택 + 문항 칩 자동 선택 + 질문 초안 프리필. **자동 전송은 하지 않는다**(화면 이동만으로 AI 비용을
+> 쓰지 않는다). 검증 `scripts/e2e-plan08-screens.mjs`: 카드 수 = 서버 목록, 문항·내 답·정답·해설 렌더,
+> 필터 = 서버 결과, 초안 프리필 + 문항 칩 aria-pressed, [레슨 다시 풀기] → 학습 화면 이동.
 
 ### Phase B (1주) — 리스닝 (LC 연습)
 
@@ -119,14 +120,22 @@
 
 완료 판정: 미제출 화면에 스크립트 텍스트 미렌더, LC 정답률이 통계 listening과 일치, Part 5 회귀(37) 통과.
 
-> **상태 (2026-09-01): 화면 + 콘텐츠 구현 완료, 통계 연결은 후속.** 마이그레이션 `0015_listening_lc.sql`
+> **상태 (2026-09-01): 구현 완료(화면·콘텐츠·AI 생성·통계).** 마이그레이션 `0015_listening_lc.sql`
 > (`lessons_kind_ck` 에 `toeic_lc` 추가 + 대화/설명문 2세트 × 3문항 시드, 스크립트는 `passage.body` 의
 > 화자 라벨 줄 배열) + `src/screens/listening.jsx`(Desktop/Mobile). 상세 API 변형은 필요 없었다 —
 > v1 연습 모드는 스크립트가 클라이언트에 오는 것을 전제로 하고(§2.3) 화면이 제출 전까지 렌더하지 않는다.
 > 채점은 기존 `POST /api/lessons/:id/attempts` 그대로(응답 `results` 는 position 키 객체).
+> **AI 생성**: `lesson_gen` input `part: 5|'lc'`(LC 는 문항 2~4). LC 전용 시스템 프롬프트 + `script` 가
+> **필수인** 스키마 변형(`LESSON_GEN_LC_SCHEMA`)을 프롬프트·응답 검증·repair 세 곳에 같이 실어야 한다 —
+> 하나라도 기본 스키마면 모델이 script 를 통째로 빠뜨린다(실측). 정규화(`normalizeLessonGen`)도 script 를
+> 보존해야 저장까지 살아남는다. 저장은 시드와 같은 모양(kind=toeic_lc, passage.body = 화자 라벨 줄 배열).
+> 목록 생성 패널에 유형 칩(Part 5 / LC) 추가.
+> **통계**: Listening = LC 레슨 정답률. Reading 은 `kind <> 'toeic_lc'` 로 좁혀 LC 로 오염되지 않게 했다
+> (대시보드 `fetchLessonAccuracy` 의 rc/lc 분리, 진도 `fetchLessonSkill(kinds)`).
 > 검증: 잠금 상태에서 스크립트 6줄 미렌더 → 재생 횟수 증가 → 미답변 시 채점 비활성 → 채점 후 스크립트 공개
-> + 정답 수 표시, Part 5/7 회귀(e2e-lesson 37/37).
-> 후속: AI 생성(lesson_gen part='lc'), 통계 listening 스킬 연결.
+> + 정답 수 표시, 대시보드/진도 listening 반영, 실 AI LC 생성 1회 성공, Part 5 회귀(verify-lesson-gen 35/35,
+> e2e-lesson 37/37).
+> 후속: 시험 모드(서버 TTS·완전 비노출).
 
 ### Phase C (1~2주) — 스피킹 (v1: 브라우저 STT)
 
@@ -153,12 +162,18 @@
 
 완료 판정: STT 모킹 E2E 통과, 마이크 권한 거부/미지원 시 안내 렌더, 회화 탭 회귀(14) 통과.
 
-> **상태 (2026-09-01): 화면 구현 완료(회화 탭 🎤 연결은 후속).** `src/screens/speaking.jsx`(Desktop/Mobile) —
+> **상태 (2026-09-01): 구현 완료(화면·문장 은행·회화 탭 🎤).** `src/screens/speaking.jsx`(Desktop/Mobile) —
 > 고정 시드 20문장(JS 상수) · 듣기 `jinaSpeak` · `SpeechRecognition`(en-US) · LCS 정렬 단어 매칭
 > (일치/치환/누락 3색, 인접 누락+추가를 치환 한 쌍으로 묶음) · 일치율 · 교정 힌트 · 미지원/권한 거부 안내.
 > 서버 호출 0, 무저장. 매칭 로직은 `window.jinaMatchWords` 로 노출해 STT 모킹 없이도 단정한다
 > (예: vendor→bender 치환 + more 누락 → 83%).
-> 후속: 회화 탭 입력부 🎤 버튼, 레슨·시나리오 문장 재사용(현재는 JS 상수).
+> **문장 은행**: `GET /api/speaking/sentences` — LC 스크립트 줄(화자 라벨 제거)·시나리오 opening_message·
+> 레슨 vocab 예문 중 '문장다운 것'만(20자 이상·대문자 시작·4단어 이상) 파생한다. 새 테이블 없음.
+> 화면은 서버 문장 뒤에 고정 시드를 붙여 서버가 비어도 연습이 끊기지 않게 한다.
+> **회화 탭 🎤**: 입력창 옆 마이크 + 음성 모드가 실제 STT 로 바뀌었다(기존 '데모' 문구 제거). 인식 결과는
+> 입력창에 받아 적기만 하고 **전송은 사용자가 누른다**. STT 구현은 `speech.jsx` 의 공용 훅
+> `useJinaSpeechRecognition` 하나로 합쳐 스피킹 화면과 공유한다.
+> 후속: 발음 평가 API(Whisper)·이력 저장.
 
 ## 4. 구현자 메모
 

@@ -15,7 +15,7 @@ import { extractJson } from '../lib/cli/json.js';
 import { Semaphore } from '../lib/semaphore.js';
 import { NORMALIZERS } from './normalize.js';
 import { LIMITS, renderChatMessages, renderCliPrompt, renderRepairPrompt } from './prompts.js';
-import { TASK_SCHEMAS, validateAgainst } from './schemas.js';
+import { LESSON_GEN_LC_SCHEMA, TASK_SCHEMAS, validateAgainst } from './schemas.js';
 import { getProvider } from './registry.js';
 
 // 타임아웃 체인: 브라우저 abort(api-client 31분) > HTTP 예산 30.5분 > CLI 프로세스 30분.
@@ -41,6 +41,8 @@ const jitter = (ms) => Math.round(ms * (0.75 + Math.random() * 0.5));
 // 생략하면 기존 task 의 프롬프트는 그대로다(하위호환).
 export async function askAI({
   task = 'tutor', providerId, model, history = [], userMessage, context = null,
+  // promptVariant(선택): 같은 task 안에서 시스템 프롬프트를 고르는 키. 현재는 lesson_gen 의 part='lc' 만 쓴다.
+  promptVariant = null,
   sessionRef = null, ollamaUrl, signal,
 }) {
   if (!TASK_SCHEMAS[task]) throw new HttpError(400, 'BAD_REQUEST', `알 수 없는 task: ${task}`);
@@ -54,7 +56,8 @@ export async function askAI({
     throw new HttpError(400, 'BAD_REQUEST', 'context 는 문자열이어야 합니다.');
   }
   const provider = getProvider(providerId);
-  const schema = TASK_SCHEMAS[task];
+  // 응답 검증도 프롬프트에 실은 계약과 같은 스키마를 봐야 한다(LC 는 script 필수).
+  const schema = task === 'lesson_gen' && promptVariant === 'lc' ? LESSON_GEN_LC_SCHEMA : TASK_SCHEMAS[task];
   const deadline = Date.now() + HTTP_BUDGET_MS;
 
   const globalSlot = await globalSemaphore.acquire(signal);
@@ -65,8 +68,8 @@ export async function askAI({
 
     const includeSchemaContract = !provider.supportsJsonSchema;
     const buildInput = ({ withHistory, ref }) => ({
-      prompt: renderCliPrompt({ task, history: withHistory ? history : [], userMessage, includeSchemaContract, context }),
-      messages: renderChatMessages({ task, history: withHistory ? history : [], userMessage, context }),
+      prompt: renderCliPrompt({ task, history: withHistory ? history : [], userMessage, includeSchemaContract, context, part: promptVariant }),
+      messages: renderChatMessages({ task, history: withHistory ? history : [], userMessage, context, part: promptVariant }),
       jsonSchema: provider.supportsJsonSchema ? schema : null,
       model, sessionRef: ref, signal, baseUrl: ollamaUrl,
       // 모든 task 공통 30분 기본(AI_PROCESS_TIMEOUT_MS 로 조정) — provider 기본값(120s)으로 더 줄이지 않는다
@@ -116,8 +119,8 @@ export async function askAI({
         const repair = await provider.run({
           ...runInput,
           sessionRef: null,
-          prompt: renderRepairPrompt({ task, badOutput: result.structured ? JSON.stringify(result.structured) : result.text }),
-          messages: [{ role: 'user', content: renderRepairPrompt({ task, badOutput: result.text }) }],
+          prompt: renderRepairPrompt({ task, part: promptVariant, badOutput: result.structured ? JSON.stringify(result.structured) : result.text }),
+          messages: [{ role: 'user', content: renderRepairPrompt({ task, part: promptVariant, badOutput: result.text }) }],
         });
         const repairParsed = repair.structured ?? extractJson(repair.text);
         const repairViolations = repairParsed ? validateAgainst(schema, repairParsed) : ['JSON 파싱 실패'];

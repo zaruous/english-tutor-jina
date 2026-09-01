@@ -36,12 +36,18 @@ export function normalizeJobInput(task, input) {
   const topicId = input.topic_id === undefined || input.topic_id === null
     ? null : intIn(input.topic_id, 'input.topic_id', 1, Number.MAX_SAFE_INTEGER);
   if (task === 'lesson_gen') {
-    const part = intIn(input.part, 'input.part', 5, 5, 5);
+    // part: 5(Part 5 문법·어휘) | 'lc'(짧은 대화·설명문). 요청 해시가 part 를 포함하므로
+    // 같은 주제라도 유형이 다르면 다른 작업으로 큐잉된다.
+    const part = input.part === 'lc' ? 'lc' : intIn(input.part, 'input.part', 5, 5, 5);
+    // LC 는 스크립트 하나에 문항 2~4개가 실전 규격이다(Part 5 는 3~10).
+    const count = part === 'lc'
+      ? intIn(input.count, 'input.count', 2, 4, 3)
+      : intIn(input.count, 'input.count', 3, 10, 5);
     return {
       part,
       difficulty: intIn(input.difficulty, 'input.difficulty', 1, 5, 3),
       topic: shortText(input.topic, 'input.topic', { min: 1, max: 80, fallback: '일반 비즈니스 및 사무 환경' }),
-      count: intIn(input.count, 'input.count', 3, 10, 5),
+      count,
       ...(topicId ? { topic_id: topicId } : {}),
     };
   }
@@ -230,9 +236,28 @@ export async function markJobFailed(jobId, error, result = null) {
 }
 
 // 자동 검증: 문항 수/보기 중복/정답 범위/해설의 정답 지시를 모두 통과해야 lessons에 들어간다.
-export function validateGeneratedLesson(data, expectedCount) {
+// LC 스크립트 규칙 — 4~8줄, 각 줄 화자 라벨("M: "/"W: ")로 시작, 실제 대사가 있어야 한다.
+// 화면이 jinaSpeak 으로 읽으므로 괄호 지시문·빈 줄이 섞이면 그대로 읽혀 버린다.
+const LC_SPEAKER_RE = /^[MW]:\s+\S/;
+function validateLcScript(script) {
+  const errors = [];
+  if (!Array.isArray(script) || script.length < 4 || script.length > 8) {
+    errors.push('script는 4~8줄 배열이어야 합니다.');
+    return errors;
+  }
+  script.forEach((line, i) => {
+    const text = String(line || '');
+    if (!LC_SPEAKER_RE.test(text)) errors.push(`script[${i}]는 "M: " 또는 "W: " 로 시작해야 합니다.`);
+    else if (text.trim().length < 12) errors.push(`script[${i}]의 대사가 너무 짧습니다.`);
+    if (/[([]/.test(text)) errors.push(`script[${i}]에 괄호 지시문이 있습니다.`);
+  });
+  return errors;
+}
+
+export function validateGeneratedLesson(data, expectedCount, { part } = {}) {
   const errors = [];
   if (!data?.title) errors.push('title이 비어 있습니다.');
+  if (part === 'lc') errors.push(...validateLcScript(data?.script));
   if (!Array.isArray(data?.items) || data.items.length !== expectedCount) {
     errors.push(`문항 수가 ${expectedCount}개여야 합니다.`);
     return errors;
@@ -264,7 +289,8 @@ export function validateGeneratedLesson(data, expectedCount) {
 }
 
 export async function saveGeneratedLesson(job, data, aiMeta) {
-  const errors = validateGeneratedLesson(data, job.input.count);
+  const isLc = job.input.part === 'lc';
+  const errors = validateGeneratedLesson(data, job.input.count, { part: job.input.part });
   return withTx(async (client) => {
     const { rows: [draft] } = await client.query(
       `INSERT INTO public.lesson_drafts
@@ -277,22 +303,28 @@ export async function saveGeneratedLesson(job, data, aiMeta) {
     if (errors.length) return { draft_id: draft.id, validation_errors: errors, lesson_id: null };
 
     const { rows: [pos] } = await client.query(`SELECT COALESCE(max(position), 0)::int + 1 AS next FROM public.lessons`);
-    const slug = `ai-toeic-part5-${job.user_id}-${job.id}`;
-    const passage = {
-      type: 'PART 5', subject: 'Incomplete Sentences',
-      body: ['Choose the word or phrase that best completes each sentence.'],
-    };
+    const slug = `ai-toeic-${isLc ? 'lc' : 'part5'}-${job.user_id}-${job.id}`;
+    // LC 는 시드(0015)와 같은 모양으로 저장한다 — 스크립트는 passage.body 의 화자 라벨 줄 배열.
+    const passage = isLc
+      ? { type: 'LISTENING', subject: 'Short Conversation', body: data.script }
+      : {
+        type: 'PART 5', subject: 'Incomplete Sentences',
+        body: ['Choose the word or phrase that best completes each sentence.'],
+      };
+    const faq = isLc
+      ? ['이 대화의 핵심 표현을 정리해 주세요', '놓치기 쉬운 발음·연음을 짚어 주세요']
+      : ['틀린 보기의 문법적 차이를 설명해 주세요', '이 문항과 비슷한 예문을 만들어 주세요'];
     const { rows: [lesson] } = await client.query(
       `INSERT INTO public.lessons
          (slug, kind, title, subtitle, difficulty, est_minutes, passage, vocab, faq,
           position, published, created_by, source, visibility)
-       VALUES ($1, 'toeic_part5', $2, $3, $4, $5, $6::jsonb, '[]'::jsonb, $7::jsonb,
+       VALUES ($1, $10, $2, $3, $4, $5, $6::jsonb, '[]'::jsonb, $7::jsonb,
                $8, true, $9, 'ai', 'private')
        RETURNING id`,
       [slug, data.title, data.subtitle, job.input.difficulty,
        Math.max(3, Math.ceil(data.items.length * 1.2)), JSON.stringify(passage),
-       JSON.stringify(['틀린 보기의 문법적 차이를 설명해 주세요', '이 문항과 비슷한 예문을 만들어 주세요']),
-       pos.next, job.user_id],
+       JSON.stringify(faq),
+       pos.next, job.user_id, isLc ? 'toeic_lc' : 'toeic_part5'],
     );
     for (let i = 0; i < data.items.length; i += 1) {
       const item = data.items[i];

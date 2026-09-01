@@ -158,14 +158,25 @@ function MistakesEmpty({ theme, filtered }) {
   );
 }
 
-// 공통 동작: 레슨 선택 후 학습 탭으로 이동 (Q&A 패널은 레슨 화면 안에 있다)
+// 공통 동작 — 둘 다 학습 탭으로 이동하지만 문맥이 다르다.
+//  - 다시 풀기: 레슨만 선택.
+//  - Jina에게 물어보기: 레슨 선택 + 그 문항을 Q&A 문맥으로 남긴다(문항 칩 선택 + 질문 초안).
+//    전송은 사용자가 누른다 — 화면 이동만으로 AI를 호출하지 않는다.
 function useMistakeActions(onNavigate) {
-  const { select } = useLesson();
-  const go = React.useCallback(async (m) => {
+  const { select, askAboutItem } = useLesson();
+  const onRetake = React.useCallback(async (m) => {
     await select(m.lesson_id);
     if (onNavigate) onNavigate('lesson');
   }, [select, onNavigate]);
-  return { onRetake: go, onAsk: go };
+  const onAsk = React.useCallback(async (m) => {
+    await askAboutItem({
+      lessonId: m.lesson_id,
+      itemId: m.position,
+      question: `이 문항에서 제가 고른 (${m.my_answer})가 왜 틀렸고 (${m.answer})가 왜 정답인지 지문 근거로 설명해 주세요.`,
+    });
+    if (onNavigate) onNavigate('lesson');
+  }, [askAboutItem, onNavigate]);
+  return { onRetake, onAsk };
 }
 
 // ─────────────────────────────────────────────────────

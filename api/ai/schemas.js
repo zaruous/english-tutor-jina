@@ -142,6 +142,8 @@ export const LESSON_GEN_SCHEMA = {
   properties: {
     title: { type: 'string' },
     subtitle: { type: 'string' },
+    // LC(part='lc') 전용 — 화자 라벨이 붙은 대화/설명문 4~8줄. Part 5 응답에는 없다(선택 필드).
+    script: { type: 'array', minItems: 4, maxItems: 8, items: { type: 'string' } },
     items: {
       type: 'array', minItems: 3, maxItems: 10,
       items: {
@@ -168,6 +170,13 @@ export const LESSON_GEN_SCHEMA = {
     },
   },
   required: ['title', 'subtitle', 'items'],
+};
+
+// LC 변형 — 같은 모양이지만 script 가 필수다. 선택 필드로 두면 모델이 통째로 빠뜨린다(실측).
+// 프롬프트 계약(schemaContract)과 응답 검증이 같은 객체를 봐야 하므로 여기서 파생한다.
+export const LESSON_GEN_LC_SCHEMA = {
+  ...LESSON_GEN_SCHEMA,
+  required: ['title', 'subtitle', 'script', 'items'],
 };
 
 export const SCENARIO_GEN_SCHEMA = {

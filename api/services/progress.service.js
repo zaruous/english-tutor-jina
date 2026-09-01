@@ -10,7 +10,7 @@
 // 소스가 없는 항목은 정직하게 빈 값으로 내린다:
 //  - monthly_scores: 점수 스냅샷 이력 테이블이 없다 → 항상 []
 //  - weeks_to_target: 스냅샷 없이는 기울기를 못 낸다 → 항상 null (mock의 "약 8주" 리터럴 대체)
-//  - skills의 Listening: v1에 소스가 없다 → 배열에서 제외 (JSX는 map이라 안전)
+//  - skills의 Listening: LC 레슨(kind='toeic_lc') 정답률. 시도가 없으면 배열에서 제외 (JSX는 map이라 안전)
 import { pool } from '../lib/pool.js';
 import { listCorrections } from './conversation.service.js';
 
@@ -120,9 +120,10 @@ async function fetchDailyAccuracy(t, params) {
 // ── 스킬 ──────────────────────────────────────────────────────────────
 // value = 최근 7일 평균, 없으면 전체 평균, 그래도 없으면 스킬 제외.
 // delta = (최근 7일 − 직전 7일), 직전 창이 비면 0.
-const SKILL_ORDER = ['grammar', 'fluency', 'vocabulary', 'reading'];
+const SKILL_ORDER = ['grammar', 'fluency', 'vocabulary', 'reading', 'listening'];
 const SKILL_LABEL = {
-  grammar: 'Grammar', fluency: 'Fluency', vocabulary: 'Vocabulary', reading: 'Reading',
+  grammar: 'Grammar', fluency: 'Fluency', vocabulary: 'Vocabulary',
+  reading: 'Reading', listening: 'Listening',
 };
 
 async function fetchConversationSkills(t, params) {
@@ -141,7 +142,9 @@ async function fetchConversationSkills(t, params) {
   return rows;
 }
 
-async function fetchReadingSkill(t, params) {
+// 레슨 기반 스킬 — kind 로 갈라 집계한다. Reading = Part 5/7, Listening = LC(플랜 08 §2.5).
+// 창(7일/직전 7일/전체) 규칙은 회화 스킬과 동일해 toSkill 이 그대로 처리한다.
+async function fetchLessonSkill(t, params, kinds) {
   if (!t.lesson) return null;
   const { rows: [r] } = await pool.query(
     `SELECT round(avg(pct) FILTER (WHERE created_at >  now() - interval '7 days'))::int AS cur,
@@ -150,9 +153,9 @@ async function fetchReadingSkill(t, params) {
             round(avg(pct))::int                                                        AS alltime
        FROM (SELECT ua.created_at, ua.correct_count::numeric / ua.total_count * 100 AS pct
                FROM public.user_lesson_attempts ua
-               JOIN public.lessons l ON l.id = ua.lesson_id AND l.kind = 'toeic_part7'
+               JOIN public.lessons l ON l.id = ua.lesson_id AND l.kind = ANY($2::text[])
               WHERE ua.user_id = $1) r`,
-    [params[0]],
+    [params[0], kinds],
   );
   return r || null;
 }
@@ -283,14 +286,15 @@ export async function getProgress(user) {
   const params = [user.id, user.tz];
 
   const [
-    anchors, activity, dailyAccuracy, convSkills, reading,
+    anchors, activity, dailyAccuracy, convSkills, reading, listening,
     scoreInputs, goal, wordsLearned, recentSessions, correctionsDue,
   ] = await Promise.all([
     fetchAnchorDates(params),
     fetchActivity(t, params),
     fetchDailyAccuracy(t, params),
     fetchConversationSkills(t, params),
-    fetchReadingSkill(t, params),
+    fetchLessonSkill(t, params, ['toeic_part5', 'toeic_part7']),
+    fetchLessonSkill(t, params, ['toeic_lc']),
     fetchScoreInputs(t, params),
     fetchGoal(t, params),
     fetchWordsLearned(params),
@@ -335,10 +339,11 @@ export async function getProgress(user) {
     });
   }
 
-  // skills — Listening은 v1 소스 없음 → 배열에서 제외. color는 스토어 매퍼가 부착한다.
+  // skills — 시도가 없는 스킬은 toSkill 이 null 을 내 배열에서 빠진다. color는 스토어 매퍼가 부착한다.
   const convByKey = new Map(convSkills.map((r) => [r.key, r]));
+  const lessonSkills = { reading, listening };
   const skills = SKILL_ORDER
-    .map((key) => toSkill(key, key === 'reading' ? reading : convByKey.get(key)))
+    .map((key) => toSkill(key, key in lessonSkills ? lessonSkills[key] : convByKey.get(key)))
     .filter(Boolean);
 
   const currentScore = estimateToeicScore(
