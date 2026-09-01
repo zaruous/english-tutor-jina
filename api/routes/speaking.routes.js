@@ -6,6 +6,7 @@ import { sendJson } from '../lib/respond.js';
 import { requireUser } from '../middleware/auth.js';
 import * as speaking from '../services/speaking.service.js';
 import * as pronunciation from '../services/pronunciation.service.js';
+import * as sidecar from '../services/pronunciation-sidecar.js';
 
 // 문장 은행(speaking.service usableSentence)과 같은 기준 — 마크업 문자·제어문자만 막는다. 곡선 따옴표 등 비 ASCII 는 허용.
 const REFERENCE_TEXT_RE = /^[^<>{}\x00-\x1f]+$/;
@@ -19,9 +20,24 @@ export function registerSpeakingRoutes(router) {
   });
 
   // 발음 평가 모드 — 화면이 녹음 전에 배지("발음 평가" / "받아쓰기 연습")를 그릴 때 본다(플랜 10 §5-3).
-  router.get('/api/speaking/assess/status', async (req, res) => {
+  router.get('/api/speaking/assess/status', async (req, res, { query }) => {
     await requireUser(req, res);
-    sendJson(res, 200, { ok: true, ...(await pronunciation.assessStatus()) });
+    sendJson(res, 200, { ok: true, ...(await pronunciation.assessStatus({ force: query.get('force') === '1' })) });
+  });
+
+  // 사이드카 관리 — 설정 화면의 [설치]·[시작]·[중지]. production 에서는 403(READONLY).
+  // 설치는 백그라운드 작업이라 202 로 받고, 진행은 status 의 sidecar.install 로 본다.
+  router.post('/api/speaking/sidecar/install', async (req, res) => {
+    await requireUser(req, res);
+    sendJson(res, 202, { ok: true, install: sidecar.startInstall() });
+  });
+  router.post('/api/speaking/sidecar/start', async (req, res) => {
+    await requireUser(req, res);
+    sendJson(res, 200, { ok: true, ...sidecar.startSidecar() });
+  });
+  router.post('/api/speaking/sidecar/stop', async (req, res) => {
+    await requireUser(req, res);
+    sendJson(res, 200, { ok: true, ...sidecar.stopSidecar() });
   });
 
   // 발음 평가 — multipart: audio(파일) + reference_text. 오디오는 메모리에서만 다루고 저장하지 않는다.

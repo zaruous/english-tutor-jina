@@ -78,8 +78,8 @@ export function logBootConfig() {
   console.log(`[api] origins: ${config.allowedOrigins.join(', ')}`);
   console.log(`[api] ai: default=${config.ai.defaultProvider} concurrency=${config.ai.maxConcurrency}`);
   const p = config.pronunciation;
-  const pronBackend = p.backend || (p.url ? 'openpronounce' : p.speechaceKey ? 'speechace' : null);
-  console.log(`[api] pronunciation: ${pronBackend ? `${pronBackend}${p.url ? ` ${p.url}` : ''}` : '미설정 (받아쓰기 폴백)'}`);
+  const pronBackend = p.backend || (p.url ? 'openpronounce' : p.speechaceKey ? 'speechace' : 'openpronounce');
+  console.log(`[api] pronunciation: ${pronBackend}${pronBackend === 'openpronounce' ? ` ${p.url || 'http://localhost:8000 (기본)'} — 사이드카 미기동 시 받아쓰기 폴백` : ''}`);
   if (config.devAutologin) {
     console.log('┌──────────────────────────────────────────────────────────┐');
     console.log(`│ ⚠ DEV_AUTOLOGIN=1 — 쿠키 없는 요청에 ${config.devUserEmail} 세션 자동 발급 │`);

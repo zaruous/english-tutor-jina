@@ -37,4 +37,6 @@ uploads/
 
 # 발음 평가 사이드카 (lib/pronounce)
 lib/pronounce/.venv/
+lib/pronounce/.sidecar.pid
+lib/pronounce/sidecar.log
 __pycache__/

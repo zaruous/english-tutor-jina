@@ -5,16 +5,22 @@
 import { config } from '../config.js';
 import { HttpError } from '../lib/errors.js';
 import { normalizeOpenPronounce, normalizeSpeechace } from './pronunciation-normalize.js';
+import { sidecarStatus } from './pronunciation-sidecar.js';
 
 const pron = config.pronunciation;
+// 설정 화면의 [설치]·[시작]이 띄우는 로컬 사이드카 주소. PRONUNCIATION_URL 이 없으면 이 기본값을 본다 —
+// 그래서 .env 를 건드리지 않아도 화면에서 설치 → 시작 → 평가까지 이어진다.
+const DEFAULT_SIDECAR_URL = 'http://localhost:8000';
+const sidecarUrl = () => (pron.url || DEFAULT_SIDECAR_URL).replace(/\/$/, '');
 
 // ── 백엔드 선택 ────────────────────────────────────────────────
-// PRONUNCIATION_BACKEND 로 못 박을 수 있고, 없으면 설정된 순서(로컬 사이드카 우선)로 고른다.
+// PRONUNCIATION_BACKEND 로 못 박을 수 있고, 없으면: URL 을 명시했으면 로컬, 아니면 Speechace 키가 있을 때만
+// Speechace, 그 외는 로컬 사이드카(기본 주소). "미설정" 상태는 곧 "사이드카가 꺼져 있음"과 같은 폴백이다.
 function pickBackend() {
   if (pron.backend) return pron.backend;
   if (pron.url) return 'openpronounce';
   if (pron.speechaceKey) return 'speechace';
-  return null;
+  return 'openpronounce';
 }
 
 // ── 사이드카 헬스 캐시 ─────────────────────────────────────────
@@ -26,7 +32,7 @@ let health = { at: 0, ok: null, detail: null };
 async function sidecarHealth({ force = false } = {}) {
   if (!force && health.ok !== null && Date.now() - health.at < HEALTH_TTL_MS) return health;
   try {
-    const res = await fetch(`${pron.url.replace(/\/$/, '')}/health`, { signal: AbortSignal.timeout(3000) });
+    const res = await fetch(`${sidecarUrl()}/health`, { signal: AbortSignal.timeout(3000) });
     const body = res.ok ? await res.json().catch(() => ({})) : {};
     health = { at: Date.now(), ok: res.ok && body.ok !== false, detail: res.ok ? (body.tts ? `tts=${body.tts}` : 'ok') : `HTTP ${res.status}` };
   } catch (err) {
@@ -35,14 +41,18 @@ async function sidecarHealth({ force = false } = {}) {
   return health;
 }
 
-// 현재 모드 — 화면 배지·verify 스크립트가 본다. { available, backend, detail }
-export async function assessStatus() {
+// 현재 모드 — 화면 배지·설정 패널·verify 스크립트가 본다.
+// { available, backend, detail, url?, sidecar? }  sidecar = 설치·프로세스·설치 작업 상태(설정 화면용).
+export async function assessStatus({ force = false } = {}) {
   const backend = pickBackend();
-  if (!backend) return { available: false, backend: null, detail: 'PRONUNCIATION_URL 또는 SPEECHACE_KEY 미설정' };
   if (backend === 'openpronounce') {
-    if (!pron.url) return { available: false, backend, detail: 'PRONUNCIATION_URL 미설정' };
-    const h = await sidecarHealth();
-    return { available: Boolean(h.ok), backend, detail: h.detail };
+    const h = await sidecarHealth({ force });
+    const sc = sidecarStatus();
+    const detail = h.ok ? h.detail
+      : sc.install.state === 'installing' ? '설치 진행 중'
+      : !sc.installed ? '사이드카 미설치 (설정 → 음성 인식에서 설치)'
+      : sc.pid ? '기동 중 — 아직 응답 없음' : '사이드카 꺼져 있음 (설정 → 음성 인식에서 시작)';
+    return { available: Boolean(h.ok), backend, detail, url: sidecarUrl(), sidecar: sc };
   }
   if (backend === 'speechace') {
     return pron.speechaceKey
@@ -63,7 +73,7 @@ async function assessOpenPronounce({ audio, mime, filename, referenceText }) {
   form.append('lang', 'en');
   let res;
   try {
-    res = await fetch(`${pron.url.replace(/\/$/, '')}/pronunciation`, {
+    res = await fetch(`${sidecarUrl()}/pronunciation`, {
       method: 'POST', body: form, signal: AbortSignal.timeout(pron.timeoutMs),
     });
   } catch (err) {
@@ -113,7 +123,7 @@ async function assessSpeechace({ audio, mime, filename, referenceText, userId })
 // 라우트가 부르는 진입점. 오디오는 여기서 메모리로만 다루고 저장하지 않는다(플랜 10 §5-2).
 export async function assess({ audio, mime, filename, referenceText, userId }) {
   const status = await assessStatus();
-  if (!status.available) return { available: false, backend: status.backend, reason: 'unconfigured', detail: status.detail };
+  if (!status.available) return { available: false, backend: status.backend, reason: status.backend === 'openpronounce' ? 'sidecar_down' : 'unconfigured', detail: status.detail };
   const args = { audio, mime, filename, referenceText, userId };
   return status.backend === 'speechace' ? assessSpeechace(args) : assessOpenPronounce(args);
 }
