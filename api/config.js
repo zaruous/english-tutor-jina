@@ -59,6 +59,17 @@ export const config = {
       codex: process.env.CODEX_MODEL || null,
     },
   },
+
+  // 발음 평가(플랜 10). 아무것도 설정하지 않은 상태가 정상 — 스피킹 화면은 v1 받아쓰기 모드로 동작한다.
+  pronunciation: {
+    backend: process.env.PRONUNCIATION_BACKEND || null,           // 'openpronounce' | 'speechace' | 미설정=자동
+    url: process.env.PRONUNCIATION_URL || null,                    // lib/pronounce 사이드카 (예: http://localhost:8000)
+    speechaceUrl: process.env.SPEECHACE_URL || 'https://api.speechace.co',
+    speechaceKey: process.env.SPEECHACE_KEY || null,
+    speechaceDialect: process.env.SPEECHACE_DIALECT || 'en-us',
+    timeoutMs: int('PRONUNCIATION_TIMEOUT_MS', 60_000),            // CPU 추론 + 첫 호출 모델 로딩을 감안
+    maxAudioBytes: int('PRONUNCIATION_MAX_AUDIO_BYTES', 8 * 1024 * 1024),
+  },
 };
 
 export function logBootConfig() {
@@ -66,6 +77,9 @@ export function logBootConfig() {
   console.log(`[api] postgres://${pg.user}:***@${pg.host}:${pg.port}/${pg.database} (pool ${pg.max})`);
   console.log(`[api] origins: ${config.allowedOrigins.join(', ')}`);
   console.log(`[api] ai: default=${config.ai.defaultProvider} concurrency=${config.ai.maxConcurrency}`);
+  const p = config.pronunciation;
+  const pronBackend = p.backend || (p.url ? 'openpronounce' : p.speechaceKey ? 'speechace' : null);
+  console.log(`[api] pronunciation: ${pronBackend ? `${pronBackend}${p.url ? ` ${p.url}` : ''}` : '미설정 (받아쓰기 폴백)'}`);
   if (config.devAutologin) {
     console.log('┌──────────────────────────────────────────────────────────┐');
     console.log(`│ ⚠ DEV_AUTOLOGIN=1 — 쿠키 없는 요청에 ${config.devUserEmail} 세션 자동 발급 │`);

@@ -33,11 +33,14 @@ CLI 를 `child_process` 로 부르지 않는 이유는 모델 로딩이다 — W
 이 PC(2026-09-01 확인)에는 Python 3.11·ffmpeg 가 이미 있고 espeak-ng 만 없다. Docker 는 설치돼 있으나
 데몬이 꺼져 있다 — **네이티브 쪽이 손이 덜 간다.**
 
-설치가 끝나면 `.env` 에 한 줄 추가한다:
+설치가 끝나면 `.env` 에 한 줄 추가하고 API 를 재기동한다:
 
 ```
 PRONUNCIATION_URL=http://localhost:8000
 ```
+
+연결 확인은 `node scripts/verify-pronunciation.mjs` — `GET /api/speaking/assess/status` 가 `available:true` 를 주고,
+픽스처 wav 2개(잘 읽은 것·틀리게 읽은 것)로 실호출해 틀린 쪽 점수가 실제로 낮은지까지 단정한다.
 
 ## HTTP 계약
 

@@ -62,6 +62,7 @@ npm run dev                 # server.js(3003) + api/server.js(3004) 동시 실�
 `PW_CHROMIUM=<실행파일>`로 교체 가능, unpkg가 막힌 환경은 `E2E_VENDOR=<react/react-dom/babel 로컬 디렉터리>`. 회화·단어장 스위트는 실제 AI provider(CLI) 호출이 필요하다.
 다른 포트의 인스턴스를 검증할 때는 `E2E_BASE=http://localhost:3103 E2E_API=http://localhost:3104`처럼 대상 주소를 넘긴다(기본 3003/3004). 데스크탑 페이지 이동은 `aside[aria-label="주요 메뉴"]`(공통 사이드바) 기준이다.
 CLI 세션 resume 하이브리드는 `node scripts/verify-resume.mjs [provider]`로 따로 검증한다 — 턴1(새 세션) → 턴2(히스토리 없이 resume, 맥락 기억) → 핸들 훼손 후 턴3(히스토리 폴백) 12개 단정, 끝나면 검증 세션을 삭제한다.
+발음 평가 경로(플랜 10)는 `node scripts/verify-pronunciation.mjs`로 검증한다 — 정규화·multipart 파서 단정은 서버 없이 항상 돌고, 실호출(사이드카 `lib/pronounce` 또는 `SPEECHACE_KEY`)은 백엔드가 없으면 스킵된다(실패 아님). 픽스처 wav 는 `--good/--bad`로 주거나 espeak-ng 가 있으면 합성한다.
 
 ### 4. 설정 확인
 
