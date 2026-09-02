@@ -4,6 +4,15 @@
 #   docker run -d --name jina-pronounce -p 8000:8000 -v jina-pronounce-cache:/cache jina-pronounce
 FROM python:3.11-slim
 
+# 사내 프록시가 TLS 를 검사(MITM)하는 망 지원: corp-ca.crt 가 옆에 있으면 신뢰 저장소에 넣는다.
+# 글롭(*)이라 파일이 없으면 아무것도 복사하지 않는다 — 일반 망에서는 이 단계가 그냥 비어 있다.
+# SSL_CERT_FILE 등은 pip · requests(huggingface 모델 다운로드)가 같은 번들을 보게 한다.
+COPY corp-ca.crt* /usr/local/share/ca-certificates/
+RUN update-ca-certificates
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    PIP_CERT=/etc/ssl/certs/ca-certificates.crt
+
 # espeak-ng = phonemizer 가 목표 문장을 IPA 로 바꿀 때 쓰는 시스템 라이브러리(런타임 필수).
 # ffmpeg    = 브라우저 MediaRecorder 의 webm/opus 를 디코딩한다.
 # 이 두 줄이 Docker 방식의 존재 이유다 — 네이티브 설치에서는 espeak-ng 를 손으로 깔아야 한다.

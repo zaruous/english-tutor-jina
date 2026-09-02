@@ -34,8 +34,18 @@ CLI 를 `child_process` 로 부르지 않는 이유는 모델 로딩이다 — W
 | 모델 캐시(~2.5GB) | named volume `jina-pronounce-cache` | `~/.cache` (자동 유지) |
 | 성능 | WSL2 경유 오버헤드 약간 | 직접 CPU |
 
-이 PC(2026-09-01 확인)에는 Python 3.11·ffmpeg 가 이미 있고 espeak-ng 만 없다. Docker 는 설치돼 있으나
-데몬이 꺼져 있다 — **네이티브 쪽이 손이 덜 간다.**
+사내 프록시(SSL 검사) 망의 개발 PC 에서는 **Docker 방식으로 설치·기동을 확인했다**(2026-09-02) — `jina-pronounce`
+컨테이너가 `--restart unless-stopped` 로 상주한다. 그런 망에서는 아래 두 가지가 선행 조건이다(재설치 시에도 필요):
+
+1. **Docker Desktop 의 컨테이너용 프록시** — 설정에 프록시가 있어도 `ContainersProxyHTTPMode` 가
+   `disabled` 면 pull·빌드가 직결을 시도하다 타임아웃 난다. Settings → Resources → Proxies 에서
+   컨테이너 프록시를 켜야 한다(호스트용 `ProxyHTTPMode` 와 별개 항목이다).
+2. **사내 CA(`corp-ca.crt`)** — 프록시가 pypi 등 HTTPS 를 SSL 검사(MITM)하므로, 이 디렉터리에
+   `corp-ca.crt` 를 두면 Dockerfile 이 이미지 신뢰 저장소에 넣는다(없으면 무동작 · git 미추적).
+   재생성(Windows): `Get-ChildItem Cert:\LocalMachine\Root | ? Subject -match <사내 CA 이름>` 의 RawData 를 PEM 으로 저장.
+
+BuildKit 의 `FROM` 메타데이터 조회는 프록시를 안 타는 경우가 있다 — 빌드 전에
+`docker pull python:3.11-slim` 으로 베이스를 미리 받아두면 우회된다.
 
 기본 주소(`http://localhost:8000`)로 띄웠다면 `.env` 를 건드릴 필요가 없다. 다른 포트·호스트면 한 줄 추가하고 API 를 재기동한다:
 
