@@ -21,6 +21,17 @@ if (isProduction && devAutologin) {
   throw new Error('NODE_ENV=production 에서 DEV_AUTOLOGIN=1 은 허용되지 않습니다.');
 }
 
+// 기본 관리자 계정 — 부팅 시 .env 값으로 upsert 된다(api/services/auth.service.js).
+// 개발 기본값은 admin / 1234 이고, 그대로 production 에 올라가는 사고를 막기 위해
+// production 에서는 8자 이상을 요구한다(끄려면 ADMIN_AUTO_PROVISION=0).
+const adminAutoProvision = (process.env.ADMIN_AUTO_PROVISION ?? '1') !== '0';
+const adminPassword = process.env.ADMIN_PASSWORD || '1234';
+if (isProduction && adminAutoProvision && adminPassword.length < 8) {
+  throw new Error(
+    'NODE_ENV=production 에서는 ADMIN_PASSWORD 를 8자 이상으로 바꾸거나 ADMIN_AUTO_PROVISION=0 으로 꺼야 합니다.',
+  );
+}
+
 export const config = {
   isProduction,
   apiPort: int('API_PORT', 3004),
@@ -45,6 +56,16 @@ export const config = {
   devAutologin,
   devUserEmail: process.env.DEV_USER_EMAIL || 'jina@dev.local',
   devUserPassword: process.env.DEV_USER_PASSWORD || '',
+
+  // username 은 로그인 폼에 '@' 없이 입력했을 때 email 로 치환하는 별칭이다.
+  // DB users.email 에 CHECK(이메일 형태)가 걸려 있어 'admin' 자체는 저장할 수 없다.
+  admin: {
+    autoProvision: adminAutoProvision,
+    username: (process.env.ADMIN_USERNAME || 'admin').trim().toLowerCase(),
+    email: (process.env.ADMIN_EMAIL || 'admin@jina.local').trim().toLowerCase(),
+    password: adminPassword,
+    displayName: process.env.ADMIN_DISPLAY_NAME || '관리자',
+  },
 
   ai: {
     defaultProvider: process.env.AI_PROVIDER || 'claude',
@@ -80,6 +101,9 @@ export function logBootConfig() {
   const p = config.pronunciation;
   const pronBackend = p.backend || (p.url ? 'openpronounce' : p.speechaceKey ? 'speechace' : 'openpronounce');
   console.log(`[api] pronunciation: ${pronBackend}${pronBackend === 'openpronounce' ? ` ${p.url || 'http://localhost:8000 (기본)'} — 사이드카 미기동 시 받아쓰기 폴백` : ''}`);
+  if (config.admin.autoProvision) {
+    console.log(`[api] admin: ${config.admin.username} (${config.admin.email}) — .env ADMIN_* 기준 부팅 시 동기화`);
+  }
   if (config.devAutologin) {
     console.log('┌──────────────────────────────────────────────────────────┐');
     console.log(`│ ⚠ DEV_AUTOLOGIN=1 — 쿠키 없는 요청에 ${config.devUserEmail} 세션 자동 발급 │`);

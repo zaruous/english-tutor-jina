@@ -67,7 +67,7 @@ server.js (정적, :3003)   ──/api/* 중계──▶  api/server.js (node:ht
 ```bash
 npm install                 # pg / dotenv / playwright
 cp .env.example .env        # PGHOST 등 실제 접속정보를 채운다 (.env 는 git 미추적)
-npm run db:migrate          # 최초 1회 — 0001~0015 마이그레이션 (체크섬 검증, 적용된 파일 수정 금지)
+npm run db:migrate          # 최초 1회 — 0001~0016 마이그레이션 (체크섬 검증, 적용된 파일 수정 금지)
 npm run db:seed             # 개발 계정(DEV_USER_EMAIL / DEV_USER_PASSWORD) + 단어 카드 8장 (재실행 안전)
 npm run dev                 # server.js(:3003) + api/server.js(:3004) 동시 실행 — 한쪽이 죽으면 둘 다 종료, Ctrl+C 로 정리
 
@@ -75,6 +75,7 @@ npm run dev                 # server.js(:3003) + api/server.js(:3004) 동시 실
 ```
 
 - `DEV_AUTOLOGIN=1`(예제 기본값)이면 쿠키 없는 요청에 개발 계정 세션이 자동 발급되어 로그인 화면 없이 들어간다. `NODE_ENV=production` 과 함께 켜면 API 가 부팅을 거부한다.
+- **기본 관리자 계정은 `admin` / `1234`** (`.env` 의 `ADMIN_USERNAME` / `ADMIN_PASSWORD`). 시드가 아니라 **API 서버 부팅 때마다 `.env` 값으로 생성·동기화**되므로 비밀번호를 바꾸려면 `.env` 를 고치고 재기동하면 된다. 로그인 화면에는 아이디(`admin`)를 그대로 입력한다 — 서버가 `ADMIN_EMAIL`(기본 `admin@jina.local`)로 치환해 인증한다. DB `users.email` 에 이메일 형태 CHECK 가 걸려 있어 저장은 이메일로만 된다. 자동 생성을 끄려면 `ADMIN_AUTO_PROVISION=0`, production 은 8자 이상을 강제한다.
 - 한쪽만 띄우려면 `npm run dev:web` / `npm run dev:api`. 포트는 `.env` 의 `PORT` / `API_PORT`(예제 3003/3004). 브라우저는 정적 서버 한 포트만 보면 된다(`/api/*` 는 정적 서버가 중계). API 쪽 `API_ALLOWED_ORIGINS` 검사는 그대로 살아 있으니 `localhost` 외 호스트로 열면 그 오리진을 추가해야 한다.
 - 디자인 캔버스는 `http://localhost:3003/canvas.html`. 읽기 전용(클라이언트 가드 + 서버 `X-Jina-Mode: canvas` 2중 차단, `/api/ai/chat` 만 예외).
 
@@ -291,6 +292,9 @@ PostgreSQL, `db/migrate.mjs` 로만 적용한다(`psql -f` 금지 — Windows �
 | `*_MODEL`, `OLLAMA_URL` | 위 표 참조 | provider 별 모델 |
 | `AI_MAX_CONCURRENCY` / `AI_QUEUE_MAX` | 2 / 8 | 동시 AI 호출 / 대기열 |
 | `DEV_AUTOLOGIN` | `1`(예제) | 쿠키 없는 요청에 개발 계정 자동 발급. production 에서 금지 |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin` / `1234` | 기본 관리자 계정. 부팅 시 `.env` 값으로 동기화 |
+| `ADMIN_EMAIL` / `ADMIN_DISPLAY_NAME` | `admin@jina.local` / `관리자` | 관리자 계정이 DB 에 저장되는 이메일·표시 이름 |
+| `ADMIN_AUTO_PROVISION` | `1` | `0` 이면 부팅 시 관리자 계정을 만들지 않는다. production 은 8자 이상 비밀번호 필요 |
 | `COOKIE_NAME` / `COOKIE_SECURE` / `SESSION_TTL_DAYS` | `jina_sid` / `false` / 30 | 세션 쿠키 |
 | `PRONUNCIATION_URL` / `PRONUNCIATION_BACKEND` | (비움 → `http://localhost:8000`, 자동) | 발음 평가 사이드카 |
 | `SPEECHACE_KEY` / `SPEECHACE_DIALECT` | (비움) | 상용 발음 평가 대안. 키는 클라이언트에 나가지 않는다 |

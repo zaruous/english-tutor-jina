@@ -5,7 +5,9 @@
 // Props는 { theme } 하나 — 다른 화면과 같은 규약. 색은 전부 테마 토큰(하드코딩 금지).
 //
 // 에러 문구는 만들지 않는다 — 서버 메시지/힌트가 단일 소스다(단어장 규범).
-// 예외는 "서버에 가기 전에 알 수 있는 것" 2건뿐: 이메일 형식, 회원가입 비밀번호 8자.
+// 예외는 "서버에 가기 전에 알 수 있는 것" 2건뿐: 회원가입 이메일 형식, 회원가입 비밀번호 8자.
+// 로그인은 이메일 대신 관리자 아이디(.env ADMIN_USERNAME, 기본 admin)도 받으므로
+// '@' 를 강제하지 않는다 — 서버(resolveLoginId)가 아이디를 이메일로 치환한다.
 
 function LoginScreen({ theme }) {
   const { login, signup, devContinue } = useAuth();
@@ -42,13 +44,15 @@ function LoginScreen({ theme }) {
   const submit = async (e) => {
     e.preventDefault();
     if (submitting) return;
-    if (!email.includes('@')) {
-      setFormError({ code: 'LOCAL', message: '이메일 형식이 올바르지 않습니다.' });
-      return;
-    }
-    if (mode === 'signup' && password.length < 8) {
-      setFormError({ code: 'LOCAL', message: '비밀번호는 8자 이상이어야 합니다.' });
-      return;
+    if (mode === 'signup') {
+      if (!email.includes('@')) {
+        setFormError({ code: 'LOCAL', message: '이메일 형식이 올바르지 않습니다.' });
+        return;
+      }
+      if (password.length < 8) {
+        setFormError({ code: 'LOCAL', message: '비밀번호는 8자 이상이어야 합니다.' });
+        return;
+      }
     }
     setFormError(null);
     setSubmitting(true);
@@ -110,11 +114,15 @@ function LoginScreen({ theme }) {
           </div>
 
           <form onSubmit={submit}>
-            <label style={labelStyle} htmlFor="jina-login-email">이메일</label>
+            <label style={labelStyle} htmlFor="jina-login-email">
+              {mode === 'login' ? '이메일 또는 아이디' : '이메일'}
+            </label>
             <input
-              id="jina-login-email" type="email" autoComplete="email" autoFocus
+              id="jina-login-email" type="text" inputMode="email" autoFocus
+              autoComplete={mode === 'login' ? 'username' : 'email'}
               value={email} onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com" style={inputStyle}
+              placeholder={mode === 'login' ? 'you@example.com 또는 admin' : 'you@example.com'}
+              style={inputStyle}
             />
 
             <label style={labelStyle} htmlFor="jina-login-password">비밀번호</label>

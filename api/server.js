@@ -20,6 +20,7 @@ import { registerTopicRoutes } from './routes/topic.routes.js';
 import { registerSpeakingRoutes } from './routes/speaking.routes.js';
 import { warmProviderHealth } from './ai/registry.js';
 import { startAiJobWorker } from './services/ai-job-worker.js';
+import { ensureAdminAccount } from './services/auth.service.js';
 
 const router = new Router();
 registerHealthRoutes(router);
@@ -64,5 +65,12 @@ server.listen(config.apiPort, () => {
   logBootConfig();
   console.log(`[api] listening on http://localhost:${config.apiPort}`);
   warmProviderHealth(); // 부팅 시 헬스 캐시 1회 워밍 (비동기, 실패 무해)
+  // 기본 관리자 계정 동기화. DB가 아직 없거나 마이그레이션 전이면 경고만 남기고 서버는 뜬다.
+  ensureAdminAccount()
+    .then((res) => {
+      if (res) console.log(`[api] 관리자 계정 ${res.created ? '생성' : '확인'} — ${config.admin.username} / ${res.user.email}`);
+    })
+    .catch((err) => console.error('[api] 관리자 계정 준비 실패:', err.message,
+      err.code === '42703' ? '— npm run db:migrate 를 먼저 실행하세요.' : ''));
   startAiJobWorker().catch((err) => console.error('[ai-job] 워커 시작 실패:', err.message));
 });
