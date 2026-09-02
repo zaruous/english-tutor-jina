@@ -1,3 +1,24 @@
+---
+# status: draft | in_progress | done · phase.status: done | pending_verification | todo
+plan: "10"
+title: "발음 평가 — 방식 비교와 도입 플랜 (OpenPronounce 사이드카 · Speechace)"
+status: in_progress
+created: 2026-09-01
+updated: 2026-09-01
+depends_on: ["08"]
+migrations: []   # Phase 3 speaking_attempts 예정
+phases:
+  - { id: "1", name: "서버 평가 경로 — 어댑터 2종 · 정규화 · lib/pronounce 사이드카", status: pending_verification, note: "구현 완료, 실제 사이드카 실측 대기" }
+  - { id: "2", name: "화면 — 설정 → 음성 인식 모드 · 설치/기동 버튼 · 스피킹 발음 평가 모드", status: pending_verification, note: "구현 완료, 실측 대기" }
+  - { id: "3", name: "저장 · 통계 — speaking_attempts, speaking 스킬 30일 평균", status: todo }
+verify: ["scripts/verify-pronunciation.mjs", "scripts/e2e-stt-settings.mjs"]
+next_step: "사이드카 설치·기동 후 verify-pronunciation.mjs 의 '오독 wav 점수가 낮은가' 통과"
+follow_ups:
+  - "사이드카 설치·기동 라우트의 권한 경계 → 플랜 10.5 S1"
+  - "무료 티어 일 N회 제한 (열린 질문 4)"
+  - "한국인 학습자 약점 음소 리포트 (Phase 3 이후)"
+---
+
 # 10 — 발음 평가: 방식 비교와 도입 플랜 (2026-09-01)
 
 플랜 08 Phase C 가 후속으로 미뤄둔 "발음 평가 API" 선택과 도입 플랜.

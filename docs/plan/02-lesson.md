@@ -1,3 +1,24 @@
+---
+# status: draft | in_progress | done · phase.status: done | pending_verification | todo
+plan: "02"
+title: "TOEIC 학습 탭 영속화 (lessons / lesson_items / user_lesson_attempts)"
+status: done
+created: 2026-08-19
+updated: 2026-08-19
+depends_on: ["PLAN-vocab-backend"]
+migrations: ["0005_lessons", "0006_lessons_seed"]
+phases:
+  - { id: "1", name: "DB — 마이그레이션 + dev 시드", status: done }
+  - { id: "2", name: "API — lesson.service / lesson.routes (정답·해설 비노출)", status: done }
+  - { id: "3", name: "프론트 컷오버 — lesson-store.jsx / lesson.jsx", status: done }
+  - { id: "4", name: "자동 검증 — e2e-lesson.mjs", status: done }
+verify: ["scripts/e2e-lesson.mjs"]
+follow_ups:
+  - "GET /api/lessons/recommended → 플랜 03/07에서 구현됨"
+  - "lesson_gen task(AI 문제 생성) → 플랜 07 Phase 2에서 구현됨"
+  - "passage JSONB highlight 필드"
+---
+
 # 02 — TOEIC 학습 탭 영속화 (lessons / lesson_items / user_lesson_attempts)
 
 > 단어장(vocabulary) 탭에서 확립한 4개 패턴을 TOEIC 학습 탭에 복제한다:

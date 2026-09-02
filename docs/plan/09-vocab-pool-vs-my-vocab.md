@@ -1,3 +1,22 @@
+---
+# status: draft | in_progress | done · phase.status: done | pending_verification | todo
+plan: "09"
+title: "전체 단어장 / 나만의 단어장 분리"
+status: done   # 필수 범위(Phase 1·2) 완료, Phase 3은 선택
+created: 2026-08-31
+updated: 2026-09-01
+depends_on: ["PLAN-vocab-backend", "06", "07"]
+migrations: []   # vocab_words.source / created_by 재사용, 신규 없음
+phases:
+  - { id: "1", name: "자동 유입 + 용어 정리 — upsertWordEntry / registerPoolEntries", status: done, done_at: 2026-09-01 }
+  - { id: "2", name: "전체 단어장 탐색 화면 — GET /api/vocab/pool", status: done, done_at: 2026-09-01 }
+  - { id: "3", name: "풀 품질 관리 — 어원·관계어 승격, 중복 정리, 신고", status: todo, optional: true }
+verify: ["scripts/verify-quiz.mjs", "scripts/e2e-vocab.mjs"]
+follow_ups:
+  - "어원·유의어·반의어를 vocab_words 컬럼으로 승격할지 (열린 질문 2)"
+  - "레슨 지문 단어 칩도 풀 자동 등록에 포함할지 (열린 질문 3)"
+---
+
 # 09 — 전체 단어장 / 나만의 단어장 분리 플랜 (2026-08-31)
 
 사용자 요청: "오늘의 단어는 생성되면 기본적으로 전체 단어장으로 등록되는 거 아냐?" →

@@ -1,3 +1,25 @@
+---
+# status: draft | in_progress | done · phase.status: done | pending_verification | todo
+plan: "05"
+title: "설정 + 로그인 UI (auth 화면 + 계정 설정)"
+status: done
+created: 2026-08-19
+updated: 2026-08-19
+depends_on: ["PLAN-vocab-backend"]
+migrations: []   # 0001_auth 재사용, 신규 없음
+phases:
+  - { id: "1", name: "API 소폭 확장 — PATCH /api/me, X-Jina-No-Autologin", status: done }
+  - { id: "2", name: "auth-store.jsx", status: done }
+  - { id: "3", name: "login.jsx", status: done }
+  - { id: "4", name: "main.jsx 컷오버 — AppGate / 설정 패널 계정 섹션", status: done }
+  - { id: "5", name: "index.html / canvas.html 갱신", status: done }
+  - { id: "6", name: "자동 검증 — e2e-auth.mjs", status: done }
+verify: ["scripts/e2e-auth.mjs"]
+follow_ups:
+  - "설정 서버 저장 (v1은 localStorage jina_settings_v1)"
+  - "권한 경계(requireAdmin)는 플랜 10.5로 분리"
+---
+
 # 05 — 설정 + 로그인 UI (auth 화면 + 계정 설정)
 
 > 단어장(vocabulary) 탭에서 확립한 패턴을 복제한다:

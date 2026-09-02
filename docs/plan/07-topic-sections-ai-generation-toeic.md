@@ -1,3 +1,24 @@
+---
+# status: draft | in_progress | done · phase.status: done | pending_verification | todo
+plan: "07"
+title: "주제별 섹션 · AI 섹션 생성 · TOEIC 학습 보강"
+status: done
+created: 2026-08-30
+updated: 2026-08-31
+depends_on: ["01", "02", "06"]
+migrations: ["0009_provider_session", "0011_lesson_qa", "0012_ai_generation", "0013_topics", "0014_business_interview_topic"]
+phases:
+  - { id: "1", name: "탐색·질의 신뢰 — 레슨 Q&A(lesson_qa) · 목록 필터", status: done, done_at: 2026-08-30 }
+  - { id: "2", name: "Part 5 AI 생성 파이프라인 — ai_jobs · lesson_drafts · 워커", status: done, done_at: 2026-08-31 }
+  - { id: "3", name: "토픽 진입점 — topics · topic_contents 배타 FK · 비즈니스 면접 시드", status: done, done_at: 2026-08-31 }
+verify: ["scripts/verify-lesson-qa.mjs", "scripts/verify-lesson-gen.mjs", "scripts/e2e-topics.mjs", "scripts/verify-resume.mjs"]
+follow_ups:
+  - "상세 DTO last_attempt_id (새로고침 후 제출 상태 복원)"
+  - "교차 채점 — 다른 provider 로 풀어보기 (정답 유일성 필터)"
+  - "POST /api/vocab/quiz 동기 경로의 ai_jobs 이관"
+  - "토픽 임계치 필터 → 플랜 11에서 status 축으로 대체 예정"
+---
+
 # 07 — 주제별 섹션 · AI 섹션 생성 · TOEIC 학습 보강 플랜 (2026-08-30)
 
 Cursor ↔ Codex 2자 라운드 토론(4라운드 8턴, coworks `trio-chat --only cursor,codex`)으로 도출한 합의 플랜.
