@@ -1,3 +1,24 @@
+---
+# status: draft | in_progress | done · phase.status: done | pending_verification | todo
+plan: "04"
+title: "학습 통계 탭 실기능 전환 (GET /api/progress 집계 + 첨삭 SRS 복습)"
+status: done
+created: 2026-08-19
+updated: 2026-08-19
+depends_on: ["01", "02", "03"]
+migrations: ["0008_progress"]
+phases:
+  - { id: P1, name: "DB — correction_reviews", status: done }
+  - { id: P2, name: "API — progress.service / corrections.service / progress.routes", status: done }
+  - { id: P3, name: "프론트 — progress-store.jsx / progress.jsx 컷오버", status: done }
+  - { id: P4, name: "검증 자동화 — e2e-progress.mjs", status: done }
+verify: ["scripts/e2e-progress.mjs"]
+follow_ups:
+  - "progress_snapshots 테이블 — monthly_scores·weeks_to_target 실계산 (v1은 []/null 고정)"
+  - "TOEIC 추정 점수 계수 보정 (v1 placeholder)"
+  - "첨삭 복습 버튼 4단계 → 2단계 축약 검토"
+---
+
 # 04 — 학습 통계 탭 실기능 전환 (GET /api/progress 집계 + 첨삭 SRS 복습)
 
 > 이 문서는 `docs/PLAN-vocab-backend.md`(단어장 구현 완료본)의 구조와 규범을 따르는 **구현 계획서**입니다.

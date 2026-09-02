@@ -1,3 +1,24 @@
+---
+# status: draft | in_progress | done · phase.status: done | pending_verification | todo
+plan: "08"
+title: "오답 노트 · 리스닝(LC) · 스피킹"
+status: done
+created: 2026-08-31
+updated: 2026-09-01
+depends_on: ["02", "07"]
+migrations: ["0015_listening_lc"]
+phases:
+  - { id: A, name: "오답 노트 — GET /api/mistakes 파생 쿼리 · mistakes.jsx", status: done, done_at: 2026-09-01 }
+  - { id: B, name: "리스닝 LC 연습 모드 — lessons.kind=toeic_lc · 기기 TTS · listening.jsx", status: done, done_at: 2026-09-01 }
+  - { id: C, name: "스피킹 v1 — 브라우저 STT 받아쓰기 일치율 · 문장 은행 · 회화 탭 🎤", status: done, done_at: 2026-09-01 }
+verify: ["scripts/e2e-plan08-screens.mjs", "scripts/e2e-stt-settings.mjs"]
+follow_ups:
+  - "리스닝 시험 모드 — 서버 TTS, 스크립트 완전 비노출"
+  - "스피킹 결과 저장(speaking_attempts) → 플랜 10 Phase 3"
+  - "오답 노트 SRS 복습 큐 통합"
+  - "모바일 오답 노트 (v2 검토)"
+---
+
 # 08 — 오답 노트 · 리스닝(LC) · 스피킹 플랜 (2026-08-31)
 
 사이드바 '준비 중' 3항목(`app-nav.jsx`의 `mistakes`/`listening`/`speaking`)을 실기능으로 전환하는 플랜.

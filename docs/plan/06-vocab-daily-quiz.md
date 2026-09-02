@@ -1,3 +1,22 @@
+---
+# status: draft | in_progress | done · phase.status: done | pending_verification | todo
+plan: "06"
+title: "단어장 '오늘의 단어' AI 퀴즈"
+status: done
+created: 2026-08-30
+updated: 2026-08-30
+depends_on: ["PLAN-vocab-backend"]
+migrations: ["0010_vocab_quizzes"]
+phases:
+  - { id: "1", name: "vocab_quiz task + 퀴즈 API + DailyQuizPanel + 🔊 발음", status: done }
+verify: ["scripts/e2e-vocab.mjs", "scripts/verify-quiz.mjs"]
+follow_ups:
+  - "실시간 웹 검색(뉴스) 도구 허용 정책 — 현재는 AI 지식 기준"
+  - "퀴즈 이력 화면"
+  - "대시보드 '오늘의 학습'에 퀴즈 항목"
+  - "동기 40~60초 퀴즈 생성의 ai_jobs 이관 (플랜 07 메모)"
+---
+
 # 06 — 단어장 '오늘의 단어' AI 퀴즈 (2026-08-30)
 
 사용자 요청: 단어장에 '오늘의 단어' 기능 — AI로 관련 랜덤 주제 단어 10개 퀴즈. 주제는 최신 뉴스 / 게임 / 블로그 / 사용자 입력 키워드.

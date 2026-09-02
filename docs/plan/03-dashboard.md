@@ -1,3 +1,23 @@
+---
+# status: draft | in_progress | done · phase.status: done | pending_verification | todo
+plan: "03"
+title: "대시보드 탭 (읽기 전용 집계 API + user_goals)"
+status: done
+created: 2026-08-19
+updated: 2026-08-19
+depends_on: ["PLAN-vocab-backend", "01", "02"]
+migrations: ["0007_user_goals"]
+phases:
+  - { id: "1", name: "DB — user_goals + dev 시드", status: done }
+  - { id: "2", name: "API — dashboard.service / dashboard.routes (실시간 집계)", status: done }
+  - { id: "3", name: "프론트 컷오버 — dashboard-store.jsx / 데스크탑·모바일", status: done }
+  - { id: "4", name: "자동 검증 — e2e-dashboard.mjs", status: done }
+verify: ["scripts/e2e-dashboard.mjs"]
+follow_ups:
+  - "daily_progress 적재 테이블 (v1은 실시간 집계)"
+  - "목표 편집 UI + PATCH /api/dashboard/goal"
+---
+
 # 03 — 대시보드 탭 (읽기 전용 집계 API + user_goals)
 
 > 단어장(vocabulary) 탭에서 확립한 패턴을 대시보드 탭에 복제한다:

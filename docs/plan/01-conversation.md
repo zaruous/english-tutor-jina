@@ -1,3 +1,25 @@
+---
+# status: draft | in_progress | done · phase.status: done | pending_verification | todo
+plan: "01"
+title: "AI 회화 탭 영속화 (conversation_sessions / conversation_messages / corrections)"
+status: done
+created: 2026-08-19
+updated: 2026-08-19
+depends_on: ["PLAN-vocab-backend"]
+migrations: ["0004_conversation"]
+phases:
+  - { id: C1, name: "DB 마이그레이션", status: done }
+  - { id: C2, name: "API — conversation.service / conversation.routes", status: done }
+  - { id: C3, name: "프론트 스토어 — conversation-store.jsx", status: done }
+  - { id: C4, name: "화면 컷오버", status: done }
+  - { id: C5, name: "검증 자동화 — e2e-conversation.mjs", status: done }
+verify: ["scripts/e2e-conversation.mjs"]
+follow_ups:
+  - "모바일 세션 전환 UI (v1은 최근 active 세션 자동 이어가기)"
+  - "세션 삭제 UI (DELETE API는 있음, 사이드바 버튼 보류)"
+  - "CLI 세션 resume(0009)은 플랜 07에서 추가됨"
+---
+
 # 01 — AI 회화 탭 영속화 (conversation_sessions / conversation_messages / corrections)
 
 > 이 문서는 `docs/PLAN-vocab-backend.md`(단어장 구현 완료본)의 구조와 규범을 따르는 **구현 계획서**입니다.
