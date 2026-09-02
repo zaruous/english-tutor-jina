@@ -15,18 +15,19 @@
 브라우저 (React CDN + Babel, 빌드 없음)
   index.html  ── 실제 앱 (로그인 · 사이드바 · 9개 페이지 · 설정 패널)
   canvas.html ── 디자인 캔버스 (읽기 전용 아트보드 · Tweaks 패널)
-        │  fetch  (X-Requested-With: jina, 세션 쿠키)
+        │  fetch  같은 출처 /api/*  (X-Requested-With: jina, 세션 쿠키)
         ▼
-server.js (정적, :3003)          api/server.js (node:http, :3004, Express 없음)
-  /config.js 로 .env 값 주입        ├─ PostgreSQL (pg)  — db/migrations 0001~0015
-                                    ├─ AI 프록시  api/ai/ — CLI 5종 provider + JSON 스키마 검증
-                                    │     claude · agy(Antigravity) · codex · cursor  (child_process)
-                                    │     ollama                                  (HTTP :11434)
-                                    ├─ AI job 워커 — 레슨/시나리오/단어 세트 생성 (ai_jobs 큐)
-                                    └─ 발음 평가 어댑터 — lib/pronounce 사이드카(:8000) 또는 Speechace
+server.js (정적, :3003)   ──/api/* 중계──▶  api/server.js (node:http, :3004, Express 없음)
+  /config.js 로 .env 값 주입                   ├─ PostgreSQL (pg)  — db/migrations 0001~0015
+                                               ├─ AI 프록시  api/ai/ — CLI 5종 provider + JSON 스키마 검증
+                                               │     claude · agy(Antigravity) · codex · cursor  (child_process)
+                                               │     ollama                                  (HTTP :11434)
+                                               ├─ AI job 워커 — 레슨/시나리오/단어 세트 생성 (ai_jobs 큐)
+                                               └─ 발음 평가 어댑터 — lib/pronounce 사이드카(:8000) 또는 Speechace
 ```
 
 브라우저 → LLM 직결(구 `callOllama`/`window.claude.complete`)은 폐기되었습니다. 시스템 프롬프트·JSON 파싱·검증·강등은 전부 API 서버에 있습니다.
+브라우저는 API 포트를 직접 부르지 않습니다. 정적 서버가 `/api/*` 를 `127.0.0.1:API_PORT` 로 양방향 무버퍼 파이프하고 `apiBase = location.origin` 을 주입하므로 교차 출처 XHR 이 없습니다(교차 출처 localhost XHR 을 막는 브라우저 보안 확장이 있는 환경 대응). API 가 꺼져 있으면 프록시가 `code: NETWORK` 봉투를 502 로 돌려주고 화면은 오프라인 안내를 띄웁니다.
 
 ---
 
@@ -40,7 +41,7 @@ server.js (정적, :3003)          api/server.js (node:http, :3004, Express 없�
 | AI 회화 | 구현 | 세션/메시지/첨삭 영속화, 서버 채점, 시나리오 선택, CLI 세션 resume(`--resume` 등), 🎤 STT 입력 | `docs/plan/01-conversation.md`, `07` |
 | 주제별 학습 | 구현 | 레슨 3·시나리오 1·단어 20 임계치를 채운 토픽만 노출(배타 FK `topic_contents`). 시드: 비즈니스 면접 | `docs/plan/07-…md` Phase 3 |
 | 스피킹 연습 | 구현(v1) | 기본: 기기 TTS + 브라우저 SpeechRecognition → **받아쓰기 일치율**(발음 점수 아님). 선택: OpenPronounce 사이드카 → 음소 단위 발음 점수. 무저장 연습 모드 | `docs/plan/08-…md` Phase C, `docs/plan/10-…md` |
-| 리스닝 | 구현(연습 모드) | `lessons.kind='toeic_lc'` — 레슨 엔진 재사용, 기기 TTS 재생(속도 칩), 제출 전 스크립트 잠금. 시험 모드(서버 TTS)는 후속 | `docs/plan/08-…md` Phase B |
+| 리스닝 | 구현(연습 모드) | `lessons.kind='toeic_lc'` — 레슨 엔진 재사용, 기기 TTS 재생(속도 칩, 화자 라벨은 읽지 않음), 제출 전 스크립트 잠금, 재생 중 화면 이동 시 확인 모달. 시험 모드(서버 TTS)는 후속 | `docs/plan/08-…md` Phase B |
 | TOEIC 학습 | 구현 | Part 7 리딩 레슨 목록/풀이/서버 채점, `skill_code` 약점 코드, Jina Q&A(정답·해설 미전송), AI 레슨 생성(`ai_jobs` → `lesson_drafts` 검증 → private 게시), 문항 신고 | `docs/plan/02-lesson.md`, `07` |
 | 단어장 | 구현 | **전체 단어장(풀)** / **나만의 단어장(SRS)** 분리, AI 단어 추가, 플래시카드, '오늘의 단어' AI 퀴즈(10문항 4지선다 + 어원·유의어·반의어), 🔊 발음 | `docs/PLAN-vocab-backend.md`, `06`, `09` |
 | 학습 통계 | 구현 | `GET /api/progress` 집계 — 점수 추이·스킬·첨삭 SRS 복습(`correction_reviews`), TOEIC 추정 점수 v1(`200 + 790 × accuracy`) | `docs/plan/04-progress.md` |
@@ -74,7 +75,7 @@ npm run dev                 # server.js(:3003) + api/server.js(:3004) 동시 실
 ```
 
 - `DEV_AUTOLOGIN=1`(예제 기본값)이면 쿠키 없는 요청에 개발 계정 세션이 자동 발급되어 로그인 화면 없이 들어간다. `NODE_ENV=production` 과 함께 켜면 API 가 부팅을 거부한다.
-- 한쪽만 띄우려면 `npm run dev:web` / `npm run dev:api`. 포트는 `.env` 의 `PORT` / `API_PORT`(예제 3003/3004). `localhost` 와 `127.0.0.1` 을 섞지 말 것 — 오리진/쿠키가 갈라진다.
+- 한쪽만 띄우려면 `npm run dev:web` / `npm run dev:api`. 포트는 `.env` 의 `PORT` / `API_PORT`(예제 3003/3004). 브라우저는 정적 서버 한 포트만 보면 된다(`/api/*` 는 정적 서버가 중계). API 쪽 `API_ALLOWED_ORIGINS` 검사는 그대로 살아 있으니 `localhost` 외 호스트로 열면 그 오리진을 추가해야 한다.
 - 디자인 캔버스는 `http://localhost:3003/canvas.html`. 읽기 전용(클라이언트 가드 + 서버 `X-Jina-Mode: canvas` 2중 차단, `/api/ai/chat` 만 예외).
 
 ### 2. AI 제공자 고르기
@@ -123,7 +124,7 @@ npm run dev                 # server.js(:3003) + api/server.js(:3004) 동시 실
 | `scripts/verify-lesson-qa.mjs` | 레슨 Q&A(dry_run + 실호출 resume) | `SKIP_AI=1` 로 AI 단계 생략 가능 |
 | `scripts/verify-lesson-gen.mjs` | `ai_jobs` 큐 · 복구 · 레슨 생성 검증 | DB 직접 접근, `SKIP_AI=1` |
 | `scripts/verify-resume.mjs [provider]` | CLI 세션 resume 하이브리드(턴1 새 세션 → 턴2 resume → 핸들 훼손 후 히스토리 폴백) | AI provider, DB. 기본 대상은 3103/3104 — `E2E_API` 로 지정 |
-| `scripts/verify-pronunciation.mjs` | 정규화·multipart 파서(서버 없이 항상) + 실호출(사이드카/Speechace 있을 때만, 없으면 스킵) | 픽스처 wav 는 `--good/--bad` 또는 espeak-ng 합성 |
+| `scripts/verify-pronunciation.mjs` | 정규화·multipart 파서(서버 없이 항상) + 실호출(사이드카/Speechace 있을 때만, 없으면 스킵). 오독 픽스처는 espeak 합성음에서도 점수가 갈리는 문장(실측 78 vs 41) | 픽스처 wav 는 `--good/--bad` 또는 espeak-ng 합성 |
 | `scripts/render-mockups.mjs` | `docs/plan/mockups/*.html` → `docs/plan/img/*.png` | 서버 불필요 |
 
 공용 환경 옵션(`scripts/e2e-env.mjs`): 기본은 Playwright 번들 chromium, `PW_CHROMIUM=<실행파일>` 로 교체, unpkg 가 막힌 환경은 `E2E_VENDOR=<react/react-dom/babel 로컬 디렉터리>`. 다른 포트의 인스턴스는 `E2E_BASE=http://localhost:3103 E2E_API=http://localhost:3104`. 데스크탑 페이지 이동은 `aside[aria-label="주요 메뉴"]` 기준.
@@ -136,7 +137,7 @@ npm run dev                 # server.js(:3003) + api/server.js(:3004) 동시 실
 .
 ├── index.html                  # 실제 앱 진입점 (스크립트 로더 — canvas.html 과 태그 순서 동기화 필수)
 ├── canvas.html                 # 디자인 캔버스 (읽기 전용, window.JINA_READONLY)
-├── server.js                   # 정적 서버 :3003 — /config.js 로 .env 주입, api/db/scripts/.env 정적 노출 차단
+├── server.js                   # 정적 서버 :3003 — /api/* 를 API 로 동일 출처 중계, /config.js 로 .env 주입, db/scripts/.env 정적 노출 차단
 ├── package.json
 ├── .env.example                # 모든 설정 키의 예제 (실제 값은 .env)
 ├── api/                        # API 서버 :3004 (node:http)
@@ -166,9 +167,9 @@ npm run dev                 # server.js(:3003) + api/server.js(:3004) 동시 실
     ├── shared/
     │   ├── tokens.jsx · icons.jsx        # 테마 4종 · SVG 아이콘
     │   ├── app-nav.jsx                   # APP_PAGES(페이지 단일 소스) · 데스크탑 사이드바 · 모바일 탭
-    │   ├── api-client.jsx                # window.JINA_API — fetch 래퍼 (쿠키·CSRF 헤더·캔버스 차단·31분 타임아웃)
+    │   ├── api-client.jsx                # window.JINA_API — fetch 래퍼 (같은 출처 /api/* · 쿠키·CSRF 헤더·캔버스 차단·31분 타임아웃)
     │   ├── ai-provider.jsx               # window.JINA_AI — /api/ai/* 얇은 어댑터
-    │   ├── speech.jsx                    # 기기 TTS(jinaSpeak) · STT 모드 훅
+    │   ├── speech.jsx                    # 기기 TTS(jinaSpeak) · STT 모드 훅 · 재생 중 이동 확인 가드(useSpeechNavGuard)
     │   └── *-store.jsx                   # auth · vocab · conversation · lesson · dashboard · progress — Context 스토어(캔버스 fallback)
     ├── runtime/chat-runtime.jsx          # useJinaChat · 메시지 버블 · 입력 바(🎤)
     ├── canvas/                           # design-canvas · ios-frame · tweaks-panel
@@ -225,7 +226,7 @@ npm run dev                 # server.js(:3003) + api/server.js(:3004) 동시 실
 
 ## 🛠️ API 엔드포인트
 
-모든 요청은 `X-Requested-With: jina` 헤더(CSRF)와 세션 쿠키가 필요하고, 허용 오리진은 `API_ALLOWED_ORIGINS`. 응답은 `{ ok, … }` / `{ ok:false, code, error }`.
+모든 요청은 `X-Requested-With: jina` 헤더(CSRF)와 세션 쿠키가 필요하고, 허용 오리진은 `API_ALLOWED_ORIGINS`. 응답은 `{ ok, … }` / `{ ok:false, code, error }`. 브라우저에서는 정적 서버의 같은 경로(`http://localhost:3003/api/...`)로 부르면 중계되고, 스크립트에서는 API 포트로 직접 불러도 된다.
 
 ```
 GET   /api/health                          GET  /api/ai/health   GET /api/ai/providers   POST /api/ai/chat
@@ -284,7 +285,7 @@ PostgreSQL, `db/migrate.mjs` 로만 적용한다(`psql -f` 금지 — Windows �
 | 키 | 기본값 | 의미 |
 |---|---|---|
 | `PORT` / `API_PORT` | 3003 / 3004 | 정적 / API 포트 |
-| `API_ALLOWED_ORIGINS` | `http://localhost:3003,http://127.0.0.1:3003` | CORS 허용 오리진 |
+| `API_ALLOWED_ORIGINS` | `http://localhost:3003,http://127.0.0.1:3003` | API 가 검사하는 허용 오리진(프록시 경유 요청도 Origin 헤더가 그대로 전달된다) |
 | `PGHOST` `PGPORT` `PGDATABASE` `PGUSER` `PGPASSWORD` | (필수) | PostgreSQL |
 | `AI_PROVIDER` | `claude` | 기본 provider (`claude` \| `agy` \| `codex` \| `cursor` \| `ollama`) |
 | `*_MODEL`, `OLLAMA_URL` | 위 표 참조 | provider 별 모델 |
@@ -363,6 +364,9 @@ A. 기본 모드의 수치는 **받아쓰기 일치율**입니다. 브라우저 
 
 **Q. 로그인 화면이 안 나오고 바로 들어가요.**
 A. `.env` 의 `DEV_AUTOLOGIN=1` 때문입니다. 로그아웃하면 그 탭에서는 재발급을 막고(`X-Jina-No-Autologin`), 완전히 끄려면 값을 지우세요. production 에서는 켤 수 없습니다.
+
+**Q. 브라우저 콘솔에 API 요청이 막힌다고 나와요.**
+A. 일부 브라우저 보안 확장은 교차 출처 localhost XHR 을 차단합니다. 지금은 정적 서버가 `/api/*` 를 중계하므로 브라우저는 3003 한 포트만 씁니다. 그래도 막히면 확장이 같은 출처 요청까지 막는 경우이니 해당 확장의 예외 설정이 필요합니다.
 
 **Q. 캔버스(canvas.html)에서 저장이 안 돼요.**
 A. 의도된 동작입니다. 캔버스는 읽기 전용이며 클라이언트·서버 양쪽에서 non-GET 을 차단합니다(`/api/ai/chat` 라이브 데모만 예외).
