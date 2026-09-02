@@ -43,8 +43,9 @@ await routeCdn(page);
 // 모킹 스위치 — 테스트 중 시나리오를 바꾼다
 let scenario = 'notInstalled';
 const calls = { install: 0, start: 0, stop: 0, assess: 0 };
-await page.route(`${API}/api/speaking/assess/status**`, (route) => route.fulfill({ json: scenarios[scenario] }));
-await page.route(`${API}/api/speaking/sidecar/**`, (route) => {
+// 오리진 무관 패턴(**) — 웹 서버의 동일 출처 /api 프록시 경유든 API 직결이든 같은 모킹이 잡힌다
+await page.route('**/api/speaking/assess/status**', (route) => route.fulfill({ json: scenarios[scenario] }));
+await page.route('**/api/speaking/sidecar/**', (route) => {
   const what = route.request().url().split('/').pop();
   calls[what] = (calls[what] || 0) + 1;
   if (what === 'install') scenario = 'installing';
@@ -52,7 +53,7 @@ await page.route(`${API}/api/speaking/sidecar/**`, (route) => {
   if (what === 'stop') scenario = 'stopped';
   return route.fulfill({ status: what === 'install' ? 202 : 200, json: { ok: true } });
 });
-await page.route(`${API}/api/speaking/assess`, async (route) => {
+await page.route('**/api/speaking/assess', async (route) => {
   calls.assess += 1;
   const body = route.request().postDataBuffer()?.toString('latin1') || '';
   const m = /name="reference_text"\r\n\r\n([^\r]+)/.exec(body);

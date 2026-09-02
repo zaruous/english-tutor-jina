@@ -40,3 +40,5 @@ lib/pronounce/.venv/
 lib/pronounce/.sidecar.pid
 lib/pronounce/sidecar.log
 __pycache__/
+# 사내 프록시(SSL 검사) 환경 전용 — Dockerfile 이 있으면 신뢰 저장소에 넣는다. 커밋 금지.
+lib/pronounce/corp-ca.crt

@@ -81,7 +81,9 @@ function LcPlayer({ theme, lesson, revealed, compact = false }) {
 
   const play = () => {
     if (!script || playing) return;
-    const ok = window.jinaSpeak(script, {
+    // 화자 라벨("M: "/"W: ")은 화면 표시용이지 대사가 아니다 — TTS 가 "더블유"를 읽지 않게
+    // 재생 시에만 뗀다 (speaking.service.js 의 문장 은행과 같은 규칙).
+    const ok = window.jinaSpeak(script.replace(/^[MW]:\s*/gm, ''), {
       rate,
       onStart: () => setPlaying(true),
       onEnd: () => setPlaying(false),

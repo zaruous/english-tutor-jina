@@ -26,8 +26,11 @@ const skip = (name, why) => console.log(`– ${name} (스킵: ${why})`);
 const argv = process.argv.slice(2);
 const arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
 const TEXT = arg('--text') || 'I would recommend the new vendor because their pricing is more competitive.';
-// 틀리게 읽은 픽스처의 대본 — 단어 여러 개를 다른 소리로 바꿔 "발음이 틀렸다"를 크게 만든다.
-const WRONG_TEXT = 'I would recommend the new bender because their prizing is more competitive.';
+// 틀리게 읽은 픽스처의 대본 — 단어 여러 개를 **음향적으로 먼** 단어로 바꾼다.
+// vendor→bender 같은 한 음소 차이(minimal pair)는 espeak 합성음의 노이즈 플로어에 묻힌다 —
+// 올바른 낭독조차 vendor 가 MENDER 로 전사될 만큼 TTS 음질이 낮아, 실측에서 good=bad=78 동점이 났다.
+// (실제 사람 음성은 문장 불일치 시 94→1 로 확실히 분리된다.) 아래 문장은 espeak 기준 실측 41 vs 78.
+const WRONG_TEXT = 'I could recommend the new painter because their schedule is most expensive.';
 
 // ── A. 순수 단정 ──────────────────────────────────────────────
 console.log('\n[A] 정규화·파서 (서버 불필요)');

@@ -524,7 +524,10 @@ function JinaApp() {
   }, [checkHealth]);
 
   const theme = JINA_THEMES[themeName] || JINA_THEMES.aurora;
-  const commonProps = { theme, aiConfig, onNavigate: navigate };
+  // 소리(TTS) 재생 중 화면 이동은 확인 모달을 거친다 — 사이드바·모바일 탭·화면 내 이동 버튼 전부
+  // 이 래퍼를 쓰므로 한 곳에서 가드된다 (speech.jsx 공통 컴포넌트).
+  const [guardedNavigate, speechGuardModal] = useSpeechNavGuard(navigate, theme);
+  const commonProps = { theme, aiConfig, onNavigate: guardedNavigate };
 
   const renderPage = () => {
     if (isMobile) {
@@ -568,7 +571,7 @@ function JinaApp() {
       {!isMobile && (
         <TopNav
           page={page}
-          onNavigate={navigate}
+          onNavigate={guardedNavigate}
           theme={theme}
           onOpenSettings={() => setShowSettings(true)}
         />
@@ -578,7 +581,7 @@ function JinaApp() {
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative', display: 'flex' }}>
         {/* 데스크탑 좌측 사이드바 — 모든 페이지에서 같은 자리(1차 내비). 모바일은 하단 탭이 담당 */}
         {!isMobile && (
-          <AppDesktopSidebar theme={theme} page={page} onNavigate={navigate} user={user}
+          <AppDesktopSidebar theme={theme} page={page} onNavigate={guardedNavigate} user={user}
             collapsed={sidebarRail} onOpenSettings={() => setShowSettings(true)} />
         )}
         <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
@@ -599,7 +602,7 @@ function JinaApp() {
       {/* 모바일 하단 탭 */}
       {isMobile && (
         <div style={{ flexShrink: 0, position: 'relative', background: theme.glassBg, borderTop: `1px solid ${theme.border}` }}>
-          <AppMobileNav theme={theme} active={page} onNavigate={navigate} />
+          <AppMobileNav theme={theme} active={page} onNavigate={guardedNavigate} />
         </div>
       )}
 
@@ -619,6 +622,9 @@ function JinaApp() {
           onClose={() => setShowSettings(false)}
         />
       )}
+
+      {/* 소리 재생 중 이동 확인 모달 (speech.jsx 공통 가드) */}
+      {speechGuardModal}
     </div>
   );
 }
