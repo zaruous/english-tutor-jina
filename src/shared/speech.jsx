@@ -110,6 +110,80 @@ function SpeakButton({ text, theme, size = 16, style, label, lang = 'en-US', rat
 }
 
 
+// ── 재생 중 화면 이동 가드 ──────────────────────────────────────────
+// 리스닝 재생·발음 듣기 등 소리가 나오는 도중 화면을 옮기면 소리만 남아 떠돈다 —
+// 이동 전에 물어보고, [중지하고 이동]이면 소리를 끊은 뒤 진행하는 공통 가드.
+// speechSynthesis.speaking 이 단일 진실이다(큐 대기 포함, cancel/자연 종료 시 false).
+function jinaSpeechActive() {
+  return JINA_TTS.supported && window.speechSynthesis.speaking;
+}
+function jinaSpeechStop() {
+  if (!JINA_TTS.supported) return;
+  try { window.speechSynthesis.cancel(); } catch { /* 무해 */ }
+  // cancel 은 재생 중이던 utterance 의 onend/onerror 를 부른다 — 화면의 playing 스피너가 스스로 풀린다.
+}
+
+function SpeechGuardModal({ theme, onConfirm, onCancel }) {
+  // Escape = 계속 듣기 (이동 취소)
+  React.useEffect(() => {
+    const h = (e) => { if (e.key === 'Escape') onCancel(); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [onCancel]);
+  const btn = {
+    border: 'none', fontFamily: 'inherit', cursor: 'pointer',
+    padding: '10px 18px', borderRadius: 12, fontSize: 13.5, fontWeight: 600,
+  };
+  return (
+    <div data-testid="speech-guard-modal" role="alertdialog" aria-modal="true" aria-label="소리 재생 중 이동 확인"
+      onClick={onCancel}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.45)',
+        display: 'grid', placeItems: 'center',
+      }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 20,
+        padding: '26px 26px 22px', width: 340, maxWidth: 'calc(100vw - 48px)',
+        boxShadow: theme.shadow, color: theme.text, textAlign: 'center',
+      }}>
+        <div style={{ fontSize: 15.5, fontWeight: 700, marginBottom: 8 }}>소리가 재생 중이에요</div>
+        <div style={{ fontSize: 13, color: theme.textMuted, lineHeight: 1.55, marginBottom: 20 }}>
+          화면을 이동하면 재생 중인 소리가 멈춥니다.<br />이동할까요?
+        </div>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+          <button type="button" data-testid="speech-guard-stay" onClick={onCancel}
+            style={{ ...btn, background: theme.chipBg, color: theme.textMuted }}>계속 듣기</button>
+          <button type="button" data-testid="speech-guard-stop" onClick={onConfirm}
+            style={{ ...btn, background: theme.accent, color: '#fff' }}>중지하고 이동</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 사용: const [guardedNavigate, speechGuardModal] = useSpeechNavGuard(navigate, theme);
+// 이동뿐 아니라 "소리를 끊는 어떤 동작"이든 proceed 로 감싸 재사용할 수 있다.
+function useSpeechNavGuard(proceed, theme) {
+  const [pending, setPending] = React.useState(null); // 대기 중인 proceed 인자 배열 | null
+  const guarded = React.useCallback((...args) => {
+    if (jinaSpeechActive()) setPending(args);
+    else proceed(...args);
+  }, [proceed]);
+  const confirm = React.useCallback(() => {
+    jinaSpeechStop();
+    if (pending) proceed(...pending);
+    setPending(null);
+  }, [pending, proceed]);
+  const cancel = React.useCallback(() => setPending(null), []);
+  const modal = pending == null ? null
+    : <SpeechGuardModal theme={theme} onConfirm={confirm} onCancel={cancel} />;
+  return [guarded, modal];
+}
+
+window.jinaSpeechActive = jinaSpeechActive;
+window.jinaSpeechStop = jinaSpeechStop;
+window.useSpeechNavGuard = useSpeechNavGuard;
+
 // ── 브라우저 STT (SpeechRecognition) ─────────────────────────────────
 // 스피킹 연습(문장 읽기)과 회화 탭 마이크 입력이 같은 구현을 쓴다.
 // 미지원/권한 거부를 화면이 구분해 안내할 수 있도록 error 를 'unsupported'|'denied'|<code> 로 노출한다.
