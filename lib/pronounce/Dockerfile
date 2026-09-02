@@ -5,10 +5,15 @@
 FROM python:3.11-slim
 
 # 사내 프록시가 TLS 를 검사(MITM)하는 망 지원: corp-ca.crt 가 옆에 있으면 신뢰 저장소에 넣는다.
-# 글롭(*)이라 파일이 없으면 아무것도 복사하지 않는다 — 일반 망에서는 이 단계가 그냥 비어 있다.
-# SSL_CERT_FILE 등은 pip · requests(huggingface 모델 다운로드)가 같은 번들을 보게 한다.
-COPY corp-ca.crt* /usr/local/share/ca-certificates/
-RUN update-ca-certificates
+# 주의: `COPY corp-ca.crt* …` 만 쓰면 글롭이 아무 파일에도 안 맞을 때 빌드가 실패한다(Docker COPY 규칙).
+# 항상 존재하는 requirements.txt 를 같은 COPY 에 끼워 소스가 비지 않게 하고, 인증서는 있을 때만 설치한다.
+# SSL_CERT_FILE 등은 pip · requests(huggingface 모델 다운로드)가 같은 번들을 보게 한다 — 인증서가 없어도
+# 시스템 기본 번들을 가리키므로 무해하다.
+COPY requirements.txt corp-ca.crt* /tmp/build/
+RUN if [ -f /tmp/build/corp-ca.crt ]; then \
+      cp /tmp/build/corp-ca.crt /usr/local/share/ca-certificates/corp-ca.crt \
+      && update-ca-certificates; \
+    fi
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
     REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
     PIP_CERT=/etc/ssl/certs/ca-certificates.crt
