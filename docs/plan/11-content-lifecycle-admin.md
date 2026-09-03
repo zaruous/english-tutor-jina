@@ -10,9 +10,9 @@ group:                       # 원래 한 플랜이었던 것을 셋으로 나�
   order: 1
 created: 2026-09-03
 updated: 2026-09-03
-depends_on: ["07", "08", "10.5"]   # requireAdmin 은 10.5 Phase 1 산출물을 그대로 쓴다
+depends_on: ["07", "08", "10.5", "10.7"]   # requireAdmin=10.5 Phase 1 · 스키마(content_items·status)=10.7 Phase 2
 blocks: ["12", "13"]
-migrations: ["0017_content_status"]
+migrations: []   # 스키마는 10.7 의 0001_baseline 이 담당 — 이 플랜은 마이그레이션 0개
 phases:
   - { id: "1", name: "상태 축 + 가시성 헬퍼 2종 + 표시부 정리 (UI 없음)", status: todo }
   - { id: "2", name: "admin.html 최소 관리 UI — 목록 · 상태 전이", status: todo }
@@ -39,6 +39,11 @@ follow_ups:
 > | [13](13-authoring-editors.md) | LC 에디터(최소형) · 토픽 구성 · 스피킹 세트(플랜 10 실측 통과 조건부) | 3 · 5 |
 >
 > 12 는 11 만 있으면 시작할 수 있고, 13 은 11 이 끝나야 한다(쓰기 API 가 11 의 상태 축을 전제).
+>
+> **2026-09-03 2차 개정.** [플랜 10.7](10.7-db-rebaseline.md)이 DB 를 새 baseline 으로 다시 잡으면서
+> `content_items` 통합과 `status`·`visibility` 축을 **스키마 차원에서** 담당하게 됐다. 그래서 이 문서의
+> 마이그레이션(`0017_content_status.sql`)과 스키마 결정 5건은 10.7 로 이관됐고, 11 은 **애플리케이션 계층**
+> (가시성 헬퍼 · 표시부 · 관리 UI)만 남았다. Phase 1 은 이제 마이그레이션 0개다.
 
 ## 0. 출발점 — 이 플랜이 건드리는 것
 
@@ -61,25 +66,20 @@ follow_ups:
 
 ## 2. 설계 결정
 
-1. **게시 상태 축을 `status` 로 통일한다.** 지금 게시 상태를 나타내는 축이 이미 둘이다 —
-   `lessons.published`(boolean)와 `visibility`(public\|private), 그나마 시나리오·단어 세트엔
-   `published` 가 없다. 저작에는 "작성 중 / 검토 / 공개 / 내림" 4단계가 필요하므로
-   `status TEXT (draft|review|published|archived)` 를 콘텐츠 3종 + `topics` 에 통일 도입한다
-   (`speaking_sets` 는 13 에서 같은 모양으로).
-   의미를 못 박는다: **`status` = 생명주기(작성자·관리자 관점), `visibility` = 누가 볼 수 있나(public 전체 / private 만든 사람).**
-2. **두 축의 합법 조합을 DB 가 강제한다.** `status × visibility` 여덟 조합 중 의미 있는 것은
-   `published + public`(카탈로그), `published + private`(개인 소유 — 지금 AI 생성물), 그리고
-   `draft|review|archived + private` 뿐이다. **"공개 상태가 아닌데 public" 은 없다** —
-   `CHECK (status = 'published' OR visibility = 'private')`. 없으면 12 의 검수 큐에서 `review + public`
-   이 새어 나가는 순간 "승인 전에는 어떤 학습 API 에도 안 나온다" 가 깨진다.
-3. **`lessons.published` 는 한 사이클 남기되 `status` 와 어긋날 수 없게 CHECK 로 묶는다** —
-   `CHECK (published = (status = 'published'))`. 읽는 곳을 다 바꿔도 **쓰는 곳**이 남으면 두 축이 갈라지는데,
-   이 제약이 있으면 `published` 만 세팅하는 옛 INSERT 가 시끄럽게 실패한다(조용히 갈라지는 대신).
-   다음 사이클에 컬럼과 제약을 함께 지운다. 대안(바로 DROP, down.sql 로 복원)도 가능 — 열린 질문 5.
-4. **새 행의 기본 `status` 는 `draft` 다.** 마이그레이션은 백필을 위해 `DEFAULT 'published'` 로 컬럼을 만들지만,
-   백필 직후 `SET DEFAULT 'draft'` 로 바꾼다. 기본값이 `published` 면 `status` 를 빠뜨린 INSERT 가
-   **즉시 공개**된다 — 워커의 저장 코드가 정확히 이 함정 위치다.
-5. **가시성 조건은 단일 소스 `api/lib/content-scope.js` 로 뽑되, 헬퍼는 두 개다.**
+> **스키마 결정은 [10.7](10.7-db-rebaseline.md) 로 이관됐다.** `content_items` 통합, `status` 4단계,
+> `status × visibility` CHECK, 새 행 기본값 `draft`, 감사 로그 `content_audit_log`, `lessons.published` 폐지는
+> 10.7 의 `0001_baseline.sql` 이 만든다. 이 절에는 그 위에서 **애플리케이션이 정해야 하는 것**만 남긴다.
+> 아래 1은 10.7 이 만든 스키마의 요약(참조용)이고, 2~5가 이 플랜의 실제 결정이다.
+> 이관 전 원문은 git 이력(`11-content-lifecycle-admin.md` 초판)에 있다.
+
+1. **(10.7 이 제공) 상태 축과 콘텐츠 카탈로그.** 콘텐츠 4종은 `content_items` 한 테이블에 살고
+   `status TEXT (draft|review|published|archived)` · `visibility (public|private)` 를 가진다.
+   `CHECK (status = 'published' OR visibility = 'private')` 로 "공개 상태가 아닌데 public" 은 저장되지 않고,
+   새 행 기본값은 `draft` 다. `topic_contents` 는 `(topic_id, content_id)` 단일 FK 이고,
+   `lessons.published` 는 존재하지 않는다.
+   의미를 못 박는다: **`status` = 생명주기(작성자·관리자 관점), `visibility` = 누가 볼 수 있나.**
+
+2. **가시성 조건은 단일 소스 `api/lib/content-scope.js` 로 뽑되, 헬퍼는 두 개다.**
    현재 `visibility = 'public' OR created_by` 조건이 **27곳**(topic 13 · lesson 10 · speaking 3 · ai-job 1),
    `published` 가 20곳에 흩어져 있다. 뽑지 않으면 "관리자가 내렸는데 어떤 화면엔 계속 보이는" 버그가 반드시 난다.
    그런데 **모든 쿼리가 같은 규칙을 원하지 않는다**:
@@ -90,24 +90,21 @@ follow_ups:
      내린 레슨을 오답 노트가 조인에서 떨어뜨리면 **사용자의 오답이 사라진다**(원문 열린 질문 2) —
      이것은 열린 질문이 아니라 Phase 1 의 선결 규범이다: **archived 는 이력에는 남고, 새 시도만 막는다.**
    §3 표의 "헬퍼" 열이 쿼리마다 어느 쪽인지 지정한다. 저작 기능보다 이 정리가 먼저다(Phase 1 을 UI 없이 두는 이유).
-6. **토픽 노출은 `status` 가 결정하고, `eligible` 임계치는 경고로 격하한다.**
+3. **토픽 노출은 `status` 가 결정하고, `eligible` 임계치는 경고로 격하한다.**
    지금 `topicDto` 의 임계치(레슨 3 + 시나리오 1 + 단어 20)를 못 채운 토픽은 목록에서 아예 숨는다 —
    관리자가 토픽을 새로 만들면 **콘텐츠를 다 채우기 전까지 화면에 안 보여** 저작이 막힌다.
    임계치 계산은 유지하되(집계는 그대로 쓸모 있다) 필터가 아니라 admin 화면의 배지로 쓴다.
-7. **admin 클라이언트는 별도 엔트리(`admin.html`)로 분리한다.** `canvas.html` 선례를 따른다.
+4. **admin 클라이언트는 별도 엔트리(`admin.html`)로 분리한다.** `canvas.html` 선례를 따른다.
    - 학습 앱 번들에 저작 UI가 섞이지 않는다(`index.html` 은 이미 script 21개 + babel standalone 런타임 컴파일).
    - 일반 사용자 브라우저에 admin 코드가 전달되지 않는다.
    - `APP_PAGES`(`app-nav.jsx` 단일 소스)에 손대지 않는다. 진입은 **설정 화면의 "콘텐츠 관리" 링크(새 탭)** 한 줄, `is_admin` 일 때만.
    - `admin.html` 자체에는 가드를 두지 않는다 — 인증을 클라이언트에 맡기지 않는다. 열려도 모든 `/api/admin/*` 이 403이면 빈 화면이다.
    - **비용을 적어 둔다**: HTML 진입점이 셋이 되고 `<script>` 태그 순서를 세 파일에서 수동 동기화한다.
      빌드 단계를 도입할 마지막으로 싼 시점이다(열린 질문 4).
-8. **감사 흔적을 남긴다.** 콘텐츠 3종 + topics 에 `updated_by`,
-   게시 전이는 `content_audit_log`(누가·무엇을·언제·어디서 어디로)에 append-only 로 기록한다.
-   append-only 이므로 **행위자 계정이 지워져도 로그는 남아야 한다** — `actor_id` 는 `ON DELETE SET NULL`
-   (원문 초안의 `CASCADE` 는 관리자 삭제 = 감사 기록 삭제였다).
+5. **`requireAdmin` 과 `content_audit_log` 는 만들지 않고 쓴다.** 전자는 플랜 10.5 Phase 1 이
+   `api/middleware/auth.js` 에 추가하고, 후자는 10.7 baseline 이 만든다(`actor_id` 는 `ON DELETE SET NULL` —
+   append-only 로그가 관리자 삭제로 사라지지 않게). 이 플랜은 **상태 전이마다 로그 1행을 쓰는 것**만 담당한다.
    콘텐츠 본문 리비전(되돌리기)은 v1 범위 밖 — 열린 질문 3.
-9. **`requireAdmin` 은 만들지 않고 쓴다.** 플랜 10.5 Phase 1 이 `api/middleware/auth.js` 에 추가한다.
-   10.5 가 아직이면 이 플랜의 Phase 1 에서 같은 정의로 먼저 만들고 10.5 는 그것을 승계한다(정의는 하나).
 
 ## 3. 표시부 변경 목록 — 저작과 같은 크기의 작업
 
@@ -134,17 +131,18 @@ follow_ups:
 
 | 산출물 | 세부 |
 |---|---|
-| 마이그레이션 `0017_content_status.sql` | 아래 §5 SQL. `lessons.published` → `status` 백필, 기존 행은 전부 `published`, 이후 기본값 `draft`, 정합성 CHECK 2종 |
+| (마이그레이션 없음) | 스키마는 10.7 `0001_baseline.sql` 이 이미 제공한다 — `content_items` · `status` · CHECK · `content_audit_log` |
 | `api/lib/content-scope.js` | `discoverable` / `resolvable`. 27+20곳을 여기로 — §3 "헬퍼" 열대로 |
 | `requireAdmin` | 10.5 Phase 1 산출물 사용(결정 9) |
 | 표시부 일괄 수정 | §3 표 전부 |
 | 검증 `scripts/verify-content-status.mjs` | 아래 세 묶음 |
 
-**검증 — 무회귀만으로는 부족하다.** 백필로 기존 행이 전부 `published` 가 되므로 "마이그레이션 전후 목록 결과 동일" 은
+**검증 — 무회귀만으로는 부족하다.** 시드 콘텐츠가 전부 `published` 이므로 "헬퍼 도입 전후 목록 결과 동일" 은
 새 헬퍼가 `status` 를 **아예 무시하는 버그**가 있어도 통과한다. Phase 1 에는 쓰기 API 가 없으니 스크립트가 DB 에 직접
-픽스처를 심는다(`e2e-topics.mjs` 의 DB 직접 접근 선례).
+픽스처를 심는다(`e2e-topics.mjs` 의 DB 직접 접근 선례). 10.7 Phase 1 의 테스트 하네스가 있으면 이 픽스처는
+서버 없이 도는 단위 테스트로 쓰는 편이 빠르다.
 
-1. **무회귀** — 마이그레이션 전후 `GET /api/lessons`·`/api/topics`·`/api/dashboard`·`/api/progress`·`/api/mistakes` 응답 동일.
+1. **무회귀** — 헬퍼 도입 전후 `GET /api/lessons`·`/api/topics`·`/api/dashboard`·`/api/progress`·`/api/mistakes` 응답 동일.
 2. **음성 픽스처** — 레슨·시나리오·단어 세트·토픽 각 1행을 `draft`, 1행을 `archived` 로 INSERT(public, 다른 사용자 소유).
    - `draft` 는 **모든** 학습 API 에서 0건(목록·추천·토픽 상세·진행률 분모·오답 노트·통계).
    - `archived` 레슨에 기존 attempt 를 심어 두면 **오답 노트·통계에는 남고**(resolvable), 목록·추천·분모에서는 빠진다(discoverable).
@@ -185,67 +183,16 @@ follow_ups:
 
 ## 5. 구현자 메모
 
-### 마이그레이션 `0017_content_status.sql` 초안
+### 스키마 — 10.7 이 만든다
 
-```sql
--- 상태 축 통일. 기존 행은 전부 published 로 백필한다(무회귀가 Phase 1 완료 판정의 첫 묶음).
-DO $$ DECLARE t text;
-BEGIN
-  FOREACH t IN ARRAY ARRAY['lessons','conversation_scenarios','vocab_sets','topics'] LOOP
-    EXECUTE format('ALTER TABLE public.%I ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT ''published''', t);
-    EXECUTE format('ALTER TABLE public.%I ADD COLUMN IF NOT EXISTS updated_by BIGINT REFERENCES public.users(id) ON DELETE SET NULL', t);
-    BEGIN
-      EXECUTE format('ALTER TABLE public.%I ADD CONSTRAINT %I CHECK (status IN (''draft'',''review'',''published'',''archived''))',
-                     t, t || '_status_ck');
-    EXCEPTION WHEN duplicate_object THEN NULL;
-    END;
-  END LOOP;
-END $$;
+`content_items` · `status` · `status × visibility` CHECK · 새 행 기본값 `draft` · `content_audit_log` ·
+`topic_contents (topic_id, content_id)` 는 [10.7 §3.2](10.7-db-rebaseline.md) 의 `0001_baseline.sql` 산출물이다.
+**이 플랜은 마이그레이션을 만들지 않는다.** `db/migrate.mjs` 의 `RESET_TABLES` 수기 목록도 10.7 에서
+`DROP SCHEMA … CASCADE` 로 대체돼 갱신할 것이 없다.
 
--- lessons.published → status 이관. 컬럼은 한 사이클 남기되 어긋날 수 없게 묶는다(결정 3).
-UPDATE public.lessons SET status = 'draft' WHERE NOT published;
-ALTER TABLE public.lessons ADD CONSTRAINT lessons_published_status_ck CHECK (published = (status = 'published'));
-
--- 결정 2: 공개 상태가 아닌데 public 인 행은 없다. 백필 후 CHECK. (영향 행 수를 verify 가 기록한다)
-DO $$ DECLARE t text;
-BEGIN
-  FOREACH t IN ARRAY ARRAY['lessons','conversation_scenarios','vocab_sets','topics'] LOOP
-    EXECUTE format('UPDATE public.%I SET visibility = ''private'' WHERE status <> ''published'' AND visibility = ''public''', t);
-    BEGIN
-      EXECUTE format('ALTER TABLE public.%I ADD CONSTRAINT %I CHECK (status = ''published'' OR visibility = ''private'')',
-                     t, t || '_status_vis_ck');
-    EXCEPTION WHEN duplicate_object THEN NULL;
-    END;
-    -- 결정 4: 백필이 끝났으니 새 행의 기본값은 draft.
-    EXECUTE format('ALTER TABLE public.%I ALTER COLUMN status SET DEFAULT ''draft''', t);
-  END LOOP;
-END $$;
-
-CREATE INDEX IF NOT EXISTS lessons_status_idx    ON public.lessons (position, id) WHERE status = 'published';
-CREATE INDEX IF NOT EXISTS scenarios_status_idx  ON public.conversation_scenarios (id) WHERE status = 'published';
-CREATE INDEX IF NOT EXISTS vocab_sets_status_idx ON public.vocab_sets (id) WHERE status = 'published';
-CREATE INDEX IF NOT EXISTS topics_status_idx     ON public.topics (created_at, id) WHERE status = 'published';
-
--- 게시 전이 감사 로그 (append-only). 행위자가 지워져도 로그는 남는다(결정 8) — CASCADE 금지.
-CREATE TABLE IF NOT EXISTS public.content_audit_log (
-  id           BIGSERIAL   PRIMARY KEY,
-  actor_id     BIGINT      REFERENCES public.users(id) ON DELETE SET NULL,
-  content_type TEXT        NOT NULL,
-  content_id   BIGINT      NOT NULL,
-  action       TEXT        NOT NULL,
-  from_status  TEXT,
-  to_status    TEXT,
-  note         TEXT,
-  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT content_audit_type_ck CHECK (content_type IN ('lesson','scenario','vocab_set','speaking_set','topic')),
-  CONSTRAINT content_audit_action_ck CHECK (action IN ('create','update','status_change','delete'))
-);
-CREATE INDEX IF NOT EXISTS content_audit_target_idx ON public.content_audit_log (content_type, content_id, created_at DESC);
-```
-
-`speaking_sets` 와 `topic_contents` 배타 FK 확장은 **13 의 `0018`** 로 옮겼다(`content_type` CHECK 에 `speaking_set` 을
-미리 넣어 두는 것은 무해). `db/migrate.mjs` 의 `RESET_TABLES` 에 `content_audit_log` 를 **FK 역순**으로 추가하고,
-`FOREIGN_TABLES` self-assert(기존 앱 테이블 11개 불가침)를 통과하는지 확인한다.
+10.7 이 아직 착수 전이라면 두 갈래가 있다: (a) 10.7 을 먼저 끝낸다(권장 — 이 플랜의 47곳 수정을 10.7 이
+이미 건드리므로 두 번 고치지 않는다), (b) 옛 스키마 위에 `0017_content_status.sql` 로 `status` 만 얹는다
+(이 문서 이전 개정판의 §5 SQL, git 이력 참조).
 
 ### API 표면 (이 플랜 범위)
 
@@ -273,9 +220,6 @@ CSRF 규칙을 그대로 탄다.
 3. **본문 리비전** — 공개된 콘텐츠를 수정했을 때 되돌릴 수단. v1은 감사 로그(상태 전이)만 남기고 본문 스냅샷은 두지 않는다.
 4. **빌드 단계** — `admin.html` 로 HTML 진입점이 셋이 된다. 이 시점에 번들러를 들이지 않으면 13 의 에디터까지 Babel
    런타임 컴파일 위에 쌓인다. 결정 7 의 비용 항목.
-5. **`lessons.published` 처리** — CHECK 로 묶어 한 사이클 유지(결정 3) vs 0017 에서 바로 DROP(down.sql 로 복원).
-   전자는 옛 쓰기 코드를 시끄럽게 잡고, 후자는 축이 하나라 단순하다.
-6. **seed 콘텐츠와 마이그레이션** — 시드 콘텐츠는 SQL 마이그레이션 안에 있고 그 파일은 체크섬으로 불변이다. 관리자가
-   시드 행의 `status` 를 바꾸는 것(이 플랜)은 데이터 변경이라 무해하지만, 13 에서 **본문**을 고치면 `db:reset` 한 번에
-   사라진다. 저작이 들어오는 순간 콘텐츠는 스키마가 아니라 데이터여야 한다 — 시드를 마이그레이션에서 꺼내
-   export/import 스크립트로 옮기는 결정을 13 착수 전에 한다(13 열린 질문 1).
+5. ~~`lessons.published` 처리~~ → **10.7 에서 해소**. baseline 에 `published` 컬럼이 없다(축은 `status` 하나).
+6. ~~seed 콘텐츠와 마이그레이션~~ → **10.7 Phase 2 에서 해소**. 콘텐츠 시드가 `db/content/*.json` +
+   import 스크립트로 나오므로 관리자 편집과 `db:reset` 이 충돌하지 않는다.

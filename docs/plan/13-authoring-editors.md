@@ -10,10 +10,10 @@ group:
   order: 3
 created: 2026-09-03
 updated: 2026-09-03
-depends_on: ["11", "12"]
+depends_on: ["10.7", "11", "12"]
 preconditions:
   - { phase: C, requires: "플랜 10 Phase 1·2 실측 검증 통과 (pending_verification → done)", reason: "focus 음소·target_wpm 은 발음 점수가 있어야 의미가 있다" }
-migrations: ["0018_speaking_sets"]   # Phase C 에서만
+migrations: ["0018_speaking_set_details"]   # Phase C 에서만. 10.7 baseline 위에 detail 테이블 1개
 phases:
   - { id: A, name: "LC 에디터 최소형 — AI 초안·기존 레슨을 폼으로 고친다", status: todo }
   - { id: B, name: "토픽 생성 · 구성 · 순서", status: todo }
@@ -21,7 +21,7 @@ phases:
 verify: ["scripts/e2e-admin-authoring.mjs (신규)", "scripts/e2e-topics.mjs", "scripts/e2e-plan08-screens.mjs"]
 follow_ups:
   - "풀 기능 LC 에디터(줄 순서 드래그·문항 추가/삭제) — 최소형으로 부족하다고 판명될 때"
-  - "시드 콘텐츠의 마이그레이션 → 데이터 이관 (열린 질문 1)"
+  - "Part 7 복수 지문 지원 — 최소형 폼으로 부족할 때 (열린 질문 4)"
 ---
 
 # 13 — 관리자 콘텐츠 ③: LC 에디터(최소형) · 토픽 구성 · 스피킹 세트 (2026-09-03)
@@ -53,13 +53,16 @@ LC 에디터는 **최소형**으로 줄이고, 스피킹 세트는 **플랜 10 �
 3. **리스닝 오디오는 v1 그대로 브라우저 TTS(`jinaSpeak`)를 유지한다.** 관리자 오디오 업로드는 하지 않는다 —
    파일 저장소가 새로 필요하고(현재 없음), 08 §2.3 이 규정한 '연습 모드'의 전제가 바뀐다.
    시험 모드(서버 TTS)와 함께 후속으로 미룬다.
-4. **스피킹 콘텐츠는 `speaking_sets` 단일 테이블(items 는 JSONB).** `vocab_sets` 와 같은 모양.
-   문항 테이블로 쪼개지 않는 이유는 스피킹이 아직 채점 이력을 저장하지 않아서(`POST /api/speaking/assess` 는
-   오디오를 메모리에서만 다루고 결과를 반환만 한다) **FK 대상이 될 일이 없기 때문**이다. 이력을 남기게 되면
-   (플랜 10 Phase 3) 그때 쪼갠다. 기존 파생 로직은 버리지 않고 **3단 폴백**으로 격하: 세트 → 파생 → 화면 고정 시드 20문장.
-5. **시드 편집은 `source` 를 바꾼다.** `source='seed'` 콘텐츠를 관리자가 본문 편집하면 `source='curated'` 로 표시한다
-   (`*_source_ck` 확장). 마이그레이션 시드와 DB 가 어긋난 행을 구분할 수 있어야 `db:reset` 이 무엇을 지우는지
-   말할 수 있다. 근본 해결(시드를 데이터로)은 열린 질문 1.
+4. **스피킹 콘텐츠는 `content_items` 의 한 `type` 이다.** 10.7 이 콘텐츠를 `content_items` + detail 로 통합했으므로
+   추가할 것은 `speaking_set_details(content_id PK, items JSONB)` **한 테이블**이다 — 원안의 배타 FK 확장
+   (`num_nonnulls` 4개 · 부분 UNIQUE 추가)은 필요 없다. 문항 테이블로 쪼개지 않는 이유는 스피킹이 아직 채점
+   이력을 저장하지 않아서(`POST /api/speaking/assess` 는 오디오를 메모리에서만 다루고 결과를 반환만 한다)
+   **FK 대상이 될 일이 없기 때문**이다. 이력을 남기게 되면(플랜 10 Phase 3) 그때 쪼갠다.
+   기존 파생 로직은 버리지 않고 **3단 폴백**으로 격하: 세트 → 파생 → 화면 고정 시드 20문장.
+5. **시드 편집은 `source` 를 `curated` 로 바꾼다.** 10.7 이 콘텐츠 시드를 `db/content/*.json` 으로 꺼냈으므로
+   관리자 편집이 `db:reset` 으로 사라지는 문제는 사라졌다. 그래도 "JSON 시드와 DB 가 어긋난 행" 은 구분해야
+   한다 — `content_items.source` 에 `curated` 를 둔다(10.7 baseline 의 CHECK 에 포함). 재시드 스크립트는
+   `curated` 행을 덮어쓰지 않는다.
 
 ## 2. Phase 플랜
 
@@ -102,42 +105,24 @@ LC 에디터는 **최소형**으로 줄이고, 스피킹 세트는 **플랜 10 �
 
 ## 3. 구현자 메모
 
-### 마이그레이션 `0018_speaking_sets.sql` 초안 (Phase C)
+### 마이그레이션 `0018_speaking_set_details.sql` 초안 (Phase C)
+
+10.7 baseline 이 `content_items` 와 `status`·`visibility`·CHECK 를 이미 갖고 있으므로 추가분만 쓴다.
+원안의 `speaking_sets` 전체 테이블(컬럼 15개 · CHECK 6개)과 `topic_contents` 배타 FK 교체는 사라졌다.
 
 ```sql
--- 스피킹 콘텐츠 (결정 4) — vocab_sets 와 같은 모양. 문항 테이블로 쪼개지 않는다.
--- 기본값은 11 결정 4 와 같이 draft (published 로 두면 status 를 빠뜨린 INSERT 가 즉시 공개된다).
-CREATE TABLE IF NOT EXISTS public.speaking_sets (
-  id          BIGSERIAL   PRIMARY KEY,
-  slug        TEXT        NOT NULL UNIQUE,
-  title       TEXT        NOT NULL,
-  description TEXT        NOT NULL DEFAULT '',
-  items       JSONB       NOT NULL,   -- [{text, text_ko, focus, target_wpm}]
-  difficulty  SMALLINT    NOT NULL DEFAULT 3,
-  source      TEXT        NOT NULL DEFAULT 'curated',
-  status      TEXT        NOT NULL DEFAULT 'draft',
-  visibility  TEXT        NOT NULL DEFAULT 'private',
-  created_by  BIGINT      REFERENCES public.users(id) ON DELETE SET NULL,
-  updated_by  BIGINT      REFERENCES public.users(id) ON DELETE SET NULL,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT speaking_sets_items_ck      CHECK (jsonb_typeof(items) = 'array' AND jsonb_array_length(items) BETWEEN 1 AND 60),
-  CONSTRAINT speaking_sets_source_ck     CHECK (source IN ('seed','ai','curated')),
-  CONSTRAINT speaking_sets_status_ck     CHECK (status IN ('draft','review','published','archived')),
-  CONSTRAINT speaking_sets_vis_ck        CHECK (visibility IN ('public','private')),
-  CONSTRAINT speaking_sets_status_vis_ck CHECK (status = 'published' OR visibility = 'private'),  -- 11 결정 2
-  CONSTRAINT speaking_sets_diff_ck       CHECK (difficulty BETWEEN 1 AND 5)
+-- 스피킹 detail (결정 4). 공통 컬럼(slug·title·status·visibility·source·created_by…)은 content_items 에 있다.
+CREATE TABLE IF NOT EXISTS speaking_set_details (
+  content_id BIGINT PRIMARY KEY REFERENCES content_items(id) ON DELETE CASCADE,
+  items      JSONB  NOT NULL,   -- [{text, text_ko, focus, target_wpm}]
+  CONSTRAINT speaking_set_items_ck
+    CHECK (jsonb_typeof(items) = 'array' AND jsonb_array_length(items) BETWEEN 1 AND 60)
 );
-
--- 배타 FK 를 4개로 확장 (0013 은 적용된 파일이라 수정 금지 — 제약을 여기서 교체한다)
-ALTER TABLE public.topic_contents ADD COLUMN IF NOT EXISTS speaking_set_id BIGINT
-  REFERENCES public.speaking_sets(id) ON DELETE CASCADE;
-ALTER TABLE public.topic_contents DROP CONSTRAINT IF EXISTS topic_contents_one_target_ck;
-ALTER TABLE public.topic_contents ADD CONSTRAINT topic_contents_one_target_ck
-  CHECK (num_nonnulls(lesson_id, scenario_id, vocab_set_id, speaking_set_id) = 1);
-CREATE UNIQUE INDEX IF NOT EXISTS topic_contents_speaking_set_uq
-  ON public.topic_contents (topic_id, speaking_set_id) WHERE speaking_set_id IS NOT NULL;
 ```
+
+`content_items.type` 의 CHECK 에 `speaking_set` 은 10.7 baseline 에 이미 들어 있다(비어 있어도 무해).
+`topic_contents` 는 `(topic_id, content_id)` 단일 FK 라 **손댈 것이 없다**.
+`db/migrate.mjs` 의 `RESET_TABLES` 갱신도 필요 없다 — 10.7 이 `DROP SCHEMA … CASCADE` 로 바꿨다.
 
 ### API 표면 (이 플랜 범위)
 
@@ -159,9 +144,8 @@ PUT    /api/admin/topics/:id/contents           구성·순서 일괄 저장
 
 ## 4. 열린 질문
 
-1. **시드 콘텐츠를 마이그레이션에서 꺼낼 것인가** — 0006·0014·0015 의 콘텐츠 시드는 체크섬 불변 파일 안에 있다.
-   관리자가 본문을 고치는 순간 `db:reset` 이 편집을 지운다. 결정 5(`curated` 표시)는 표식일 뿐 해결이 아니다.
-   해결은 시드를 `db/content/*.json` + import 스크립트로 옮기고 마이그레이션은 스키마만 두는 것 — 별도 플랜 후보.
+1. ~~시드 콘텐츠를 마이그레이션에서 꺼낼 것인가~~ → **10.7 Phase 2 에서 해소**(`db/content/*.json` + import).
+   남은 세부: 관리자가 편집한 `curated` 행을 재시드가 건너뛰는 규칙을 어디에 둘지(import 스크립트 vs DB CHECK).
 2. **Phase C 의 착수 조건** — 플랜 10 이 `done` 이 아니라 "사이드카는 포기, Speechace 로 간다" 로 결론나도
    음소 점수는 나오므로 착수 가능. 조건은 "발음 점수 백엔드가 하나 확정" 으로 읽는다.
 3. **세트 선택 UI 노출 기준** — 세트 2개 이상일 때만(원안). 세트 1개 + 파생 문장이 섞이는 화면을 어떻게 표시할지.
