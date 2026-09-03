@@ -27,6 +27,7 @@ export function applyCors(req, res) {
 export function requireCsrfHeader(req) {
   if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return;
   if (req.headers['x-requested-with'] !== 'jina') {
-    throw new HttpError(403, 'BAD_REQUEST', 'X-Requested-With 헤더가 필요합니다.');
+    // 403 인데 code 가 BAD_REQUEST 라 상태와 코드가 어긋나 있었다. 거절 이유는 권한/출처 문제다.
+    throw new HttpError(403, 'FORBIDDEN', 'X-Requested-With 헤더가 필요합니다.');
   }
 }

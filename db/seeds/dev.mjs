@@ -41,9 +41,13 @@ await client.connect();
 try {
   const passwordHash = await hashPassword(DEV_PASSWORD);
   const { rows: [user] } = await client.query(
-    `INSERT INTO public.users (email, display_name, password_hash, tz, is_dev)
-     VALUES ($1, '수민 (dev)', $2, $3, true)
-     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, is_dev = true
+    // role='admin' — DEV_AUTOLOGIN 으로 도는 개발 세션이 관리 화면에 들어갈 수 있어야 한다.
+    // 이것이 10.5 열린 질문 2(사이드카 버튼을 dev 계정에도 열지)의 답이다: `is_dev OR is_admin`
+    // 같은 세 번째 권한 등급을 만들지 않고 시드가 역할을 주면 된다. (10.7 §3.3)
+    `INSERT INTO public.users (email, display_name, password_hash, tz, is_dev, role, is_admin)
+     VALUES ($1, '수민 (dev)', $2, $3, true, 'admin', true)
+     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, is_dev = true,
+       role = 'admin', is_admin = true
      RETURNING id`,
     [DEV_EMAIL, passwordHash, TZ],
   );

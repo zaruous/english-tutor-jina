@@ -1,6 +1,7 @@
 import { config } from '../config.js';
 import { parseCookies, serializeCookie } from '../lib/cookies.js';
 import { HttpError } from '../lib/errors.js';
+import { atLeast, loadRoles } from '../lib/roles.js';
 import { devLogin, resolveSession } from '../services/auth.service.js';
 
 export function setSessionCookie(res, token) {
@@ -38,3 +39,16 @@ export async function requireUser(req, res) {
   if (!resolved) throw new HttpError(401, 'UNAUTHORIZED', '로그인이 필요합니다.');
   return resolved;
 }
+
+export function requireRole(required) {
+  return async function requireRoleMiddleware(req, res) {
+    const ctx = await requireUser(req, res);
+    await loadRoles();
+    if (!atLeast(ctx.user.role, required)) {
+      throw new HttpError(403, 'FORBIDDEN', '권한이 없습니다.');
+    }
+    return ctx;
+  };
+}
+
+export const requireAdmin = requireRole('admin');

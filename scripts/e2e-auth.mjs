@@ -137,7 +137,7 @@ check('로그아웃 → 로그인 화면', await onLoginScreen(page));
 let text = await rootText(page);
 check('로그인 폼 필드 (이메일/비밀번호)',
   text.includes('이메일') && text.includes('비밀번호')
-  && (await page.locator('input[type=email]').count()) === 1);
+  && (await page.locator('#jina-login-email').count()) === 1);
 check('DEV에서 "개발 계정으로 계속" 노출',
   (await page.locator('[data-testid=dev-continue]').count()) === 1
   && (await page.evaluate(() => window.JINA_CONFIG?.devAutologin === true)));
@@ -149,7 +149,7 @@ check('새로고침 후에도 로그인 화면 (autologin 차단 지속)', await
   await page.evaluate(() => localStorage.jina_auth_optout || '(플래그 없음)'));
 
 // ── 6) 잘못된 비밀번호 ──
-await page.locator('input[type=email]').fill(DEV_EMAIL);
+await page.locator('#jina-login-email').fill(DEV_EMAIL);
 await page.locator('input[type=password]').fill('wrongpass!');
 await page.locator('[data-testid=login-submit]').click();
 await page.waitForTimeout(1500);
@@ -162,7 +162,7 @@ check('실패 후에도 로그인 화면 유지 (크래시 없음)', await onLog
 const rand = Math.random().toString(36).slice(2, 8);
 const NEW_EMAIL = `e2e-${rand}@test.dev`;
 await page.locator('[data-testid=tab-signup]').click();
-await page.locator('input[type=email]').fill(NEW_EMAIL);
+await page.locator('#jina-login-email').fill(NEW_EMAIL);
 await page.locator('input[type=password]').fill('password123');
 await page.locator('#jina-login-name').fill('E2E');
 await page.locator('[data-testid=login-submit]').click();
@@ -182,7 +182,7 @@ check('신규 계정 단어장 0장 (user_id 분리)', newTotal === 0 && text.in
 await openSettings(page);
 await page.locator('[data-testid=account-logout]').click();
 await page.waitForTimeout(1200);
-await page.locator('input[type=email]').fill(NEW_EMAIL);
+await page.locator('#jina-login-email').fill(NEW_EMAIL);
 await page.locator('input[type=password]').fill('password123');
 await page.locator('[data-testid=login-submit]').click();
 await page.waitForTimeout(2500);

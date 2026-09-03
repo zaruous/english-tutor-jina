@@ -315,6 +315,19 @@ function SettingsPanel({ theme, themeName, setThemeName, aiConfig, setAiConfig, 
                 fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
               }}>로그아웃</button>
 
+              {user.can_author && (
+                <a
+                  href="admin.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid="admin-open"
+                  style={{
+                    display: 'block', marginTop: 12, fontSize: 12.5, fontWeight: 600,
+                    color: theme.accent, textDecoration: 'none',
+                  }}
+                >콘텐츠 관리 열기</a>
+              )}
+
               <div style={{ margin: '20px 0 20px', borderTop: `1px solid ${theme.border}` }} />
             </React.Fragment>
           )}

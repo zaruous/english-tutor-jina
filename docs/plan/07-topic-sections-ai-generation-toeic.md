@@ -22,7 +22,7 @@ follow_ups:
 # 07 — 주제별 섹션 · AI 섹션 생성 · TOEIC 학습 보강 플랜 (2026-08-30)
 
 Cursor ↔ Codex 2자 라운드 토론(4라운드 8턴, coworks `trio-chat --only cursor,codex`)으로 도출한 합의 플랜.
-원문: `docs/reviews/2026-08-30-trio-cursor-codex-plan.md` (coworks `trio-chat/logs/trio-jina-plan-2026-08-30.md`).
+원문: `docs/reviews/02-2026-08-30-trio-cursor+codex-plan.md` (coworks `trio-chat/logs/trio-jina-plan-2026-08-30.md`).
 토론 요청서: coworks `prompts/jina-plan-topic-2026-08-30.md`.
 
 ## 0. 출발점 — 섹션별 현재 상태
