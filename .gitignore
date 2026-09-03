@@ -6,7 +6,6 @@
 
 # Dependencies (none required for prototype, but for future)
 node_modules/
-package-lock.json
 yarn.lock
 
 # Build outputs
@@ -42,3 +41,6 @@ lib/pronounce/sidecar.log
 __pycache__/
 # 사내 프록시(SSL 검사) 환경 전용 — Dockerfile 이 있으면 신뢰 저장소에 넣는다. 커밋 금지.
 lib/pronounce/corp-ca.crt
+
+# PGlite 파일 영속 디렉터리 (PGLITE_DATA_DIR)
+.pglite/

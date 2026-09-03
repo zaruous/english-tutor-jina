@@ -32,7 +32,7 @@ review: "플랜을 새로 쓸 때, Phase 를 done 으로 넘길 때 이 표를 �
 |---|---|---|---|---|---|---|
 | **R1** | 단위 테스트·린트·CI 가 전부 0. 회귀를 사람 눈과 수동 스크립트로만 잡는다 | `tests/` 없음, `.github/` 없음, `package.json` 에 `test`·`lint` 스크립트 없음. `api` 6.7k + `src` 12.1k LOC | 높음 | **발생 중** | 10.7 Phase 1(하네스) → Phase 3(CI) | 10.7 |
 | **R2** | 검증 스크립트 16개가 **서버 + PostgreSQL** 을 요구하고, 그중 6개는 **실 AI provider** 까지 요구한다 (`e2e-auth`, `e2e-conversation`, `verify-lesson-gen`, `verify-quiz`, `verify-resume`, `try-provider`) | `scripts/*.mjs` grep | 중간 | **발생 중** | `DB_DRIVER=pglite` 하네스로 DB·AI 불필요 계층 분리. AI 경로는 릴리스 전 수동 유지 | 10.7 |
-| **R3** | 의존성 설치가 재현되지 않는다. `package-lock.json` 이 `.gitignore` 에 있고 `pg ^8.23.0`·`playwright ^1.60.0` 는 캐럿 범위 | `.gitignore:11`, `package.json` | 중간 | 높음 | 락파일 추적 + 신규 의존성은 정확한 버전 고정 | 10.7 P1 |
+| **R3** | 의존성 설치가 재현되지 않는다. `package-lock.json` 이 `.gitignore` 에 있고 `pg ^8.23.0`·`playwright ^1.60.0` 는 캐럿 범위 | `.gitignore:11`, `package.json` | 중간 | 높음 | **해소 (10.7 Phase 1, 2026-09-03)** — `package-lock.json` 추적 시작, `@electric-sql/pglite` 는 정확한 버전 고정. 기존 캐럿 범위(`pg`·`playwright`)는 락파일이 잡는다 | 10.7 P1 |
 | **R6** | 진행 상황의 단일 소스가 없다. 플랜 01~05 의 "완료 판정 체크리스트" **48개 항목이 전부 미체크**인데 프런트매터는 `status: done` | `grep -c '- \[ \]' docs/plan/0[1-5]*.md` = 48, 체크된 항목 0 | 중간 | **발생 중** | 프런트매터를 단일 소스로 선언하고 본문 체크박스는 "실행 명령 목록"으로 성격을 분리하거나 삭제 | — |
 
 ### 데이터베이스
