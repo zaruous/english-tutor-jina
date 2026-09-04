@@ -81,7 +81,7 @@ function aiBodyFields() {
   return {
     provider,
     model: cfg.model?.[provider] ?? (provider === 'ollama' ? cfg.ollamaModel : null) ?? null,
-    ollamaUrl: provider === 'ollama' ? cfg.ollamaUrl : undefined,
+    // ollamaUrl 은 보내지 않는다 — 서버가 config.ai.ollamaUrl 만 쓴다 (플랜 10.5 S2 SSRF).
   };
 }
 

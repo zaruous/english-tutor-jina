@@ -33,6 +33,9 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm test
+      # 서버·브라우저·AI 없이 도는 순수 단위 절(§A 16건)만 실행된다 — 실호출 절(§B)은 스스로 스킵한다.
+      # npm test 로 옮기지 않는 이유: 이 스크립트는 node:test 가 아니라 자체 check() 하네스다.
+      - run: node scripts/verify-pronunciation.mjs
 
   pg:
     name: 전체 회귀 (실 PostgreSQL)
