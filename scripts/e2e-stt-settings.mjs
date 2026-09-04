@@ -13,7 +13,6 @@ import { chromium } from 'playwright';
 import { launchOptions, routeCdn } from './e2e-env.mjs';
 
 const BASE = process.env.E2E_BASE || 'http://localhost:3003';
-const API = process.env.E2E_API || 'http://localhost:3004';
 const BOOT_MS = Number(process.env.E2E_BOOT_MS || 9000);
 const results = [];
 const check = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? '✔' : '✖'} ${name}${detail ? ' — ' + detail : ''}`); };
