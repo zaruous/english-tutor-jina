@@ -11,7 +11,7 @@ const USER_SELECT = `
 const SESSION_COUNT_JOIN = `
   LEFT JOIN LATERAL (
     SELECT count(*)::int AS cnt
-      FROM public.auth_sessions s
+      FROM auth_sessions s
      WHERE s.user_id = u.id AND s.revoked_at IS NULL AND s.expires_at > now()
   ) s ON true
 `;
@@ -26,7 +26,7 @@ function isDemotion(fromRole, toRole) {
 // (count(*) 에는 FOR UPDATE 를 붙일 수 없다 — 0A000. 그래서 행을 가져와 센다.)
 async function countOtherActiveAdmins(client, excludeUserId) {
   const { rows } = await client.query(
-    `SELECT id FROM public.users
+    `SELECT id FROM users
       WHERE role = 'admin' AND is_active AND id <> $1 FOR UPDATE`,
     [excludeUserId],
   );
@@ -80,7 +80,7 @@ function mapUserRow(row, actorId, adminCount) {
 async function fetchUserById(client, userId, actorId, adminCount) {
   const { rows: [row] } = await client.query(
     `SELECT ${USER_SELECT}
-       FROM public.users u
+       FROM users u
        ${SESSION_COUNT_JOIN}
       WHERE u.id = $1`,
     [userId],
@@ -91,14 +91,14 @@ async function fetchUserById(client, userId, actorId, adminCount) {
 
 async function assertRoleExists(client, code) {
   const { rows: [role] } = await client.query(
-    `SELECT code FROM public.roles WHERE code = $1`, [code],
+    `SELECT code FROM roles WHERE code = $1`, [code],
   );
   if (!role) throw new HttpError(400, 'BAD_REQUEST', '유효하지 않은 역할입니다.');
 }
 
 async function writeAudit(client, { targetUserId, action, fromRole, toRole, description, createdBy }) {
   await client.query(
-    `INSERT INTO public.user_audit_log
+    `INSERT INTO user_audit_log
        (target_user_id, action, from_role, to_role, description, created_by)
      VALUES ($1, $2, $3, $4, $5, $6)`,
     [targetUserId, action, fromRole ?? null, toRole ?? null, description || '', createdBy],
@@ -120,14 +120,14 @@ export async function listUsers(actorId, { q, role, limit = 50, offset = 0 } = {
   const whereSql = where.join(' AND ');
 
   const { rows: [{ total }] } = await pool.query(
-    `SELECT count(*)::int AS total FROM public.users u WHERE ${whereSql}`,
+    `SELECT count(*)::int AS total FROM users u WHERE ${whereSql}`,
     params,
   );
 
   params.push(limit, offset);
   const { rows } = await pool.query(
     `SELECT ${USER_SELECT}
-       FROM public.users u
+       FROM users u
        ${SESSION_COUNT_JOIN}
       WHERE ${whereSql}
       ORDER BY u.id
@@ -136,14 +136,14 @@ export async function listUsers(actorId, { q, role, limit = 50, offset = 0 } = {
   );
 
   const adminCount = (await pool.query(
-    `SELECT count(*)::int AS cnt FROM public.users WHERE role = 'admin' AND is_active`,
+    `SELECT count(*)::int AS cnt FROM users WHERE role = 'admin' AND is_active`,
   )).rows[0].cnt;
 
   const { rows: roles } = await pool.query(
-    `SELECT code, rank, name, description FROM public.roles ORDER BY rank`,
+    `SELECT code, rank, name, description FROM roles ORDER BY rank`,
   );
   const { rows: countRows } = await pool.query(
-    `SELECT role, count(*)::int AS cnt FROM public.users GROUP BY role`,
+    `SELECT role, count(*)::int AS cnt FROM users GROUP BY role`,
   );
   const counts = Object.fromEntries(countRows.map((r) => [r.role, r.cnt]));
   for (const r of roles) {
@@ -153,8 +153,8 @@ export async function listUsers(actorId, { q, role, limit = 50, offset = 0 } = {
   const { rows: recent_audit } = await pool.query(
     `SELECT a.id, a.target_user_id, a.action, a.from_role, a.to_role, a.description,
             a.created_at, a.created_by, u.email AS target_email
-       FROM public.user_audit_log a
-       JOIN public.users u ON u.id = a.target_user_id
+       FROM user_audit_log a
+       JOIN users u ON u.id = a.target_user_id
       ORDER BY a.created_at DESC
       LIMIT 3`,
   );
@@ -176,14 +176,14 @@ export async function changeRole(actorId, targetId, { to, note = '' }) {
     await assertRoleExists(client, to);
 
     const { rows: [target] } = await client.query(
-      `SELECT id, role, is_active FROM public.users WHERE id = $1 FOR UPDATE`,
+      `SELECT id, role, is_active FROM users WHERE id = $1 FOR UPDATE`,
       [targetId],
     );
     if (!target) throw new HttpError(404, 'NOT_FOUND', '사용자를 찾을 수 없습니다.');
     if (target.role === to) {
       await client.query('ROLLBACK');
       const adminCount = (await pool.query(
-        `SELECT count(*)::int AS cnt FROM public.users WHERE role = 'admin' AND is_active`,
+        `SELECT count(*)::int AS cnt FROM users WHERE role = 'admin' AND is_active`,
       )).rows[0].cnt;
       const user = await fetchUserById(pool, targetId, actorId, adminCount);
       return { user };
@@ -201,7 +201,7 @@ export async function changeRole(actorId, targetId, { to, note = '' }) {
     }
 
     await client.query(
-      `UPDATE public.users SET role = $1, updated_at = now() WHERE id = $2`,
+      `UPDATE users SET role = $1, updated_at = now() WHERE id = $2`,
       [to, targetId],
     );
     await writeAudit(client, {
@@ -215,7 +215,7 @@ export async function changeRole(actorId, targetId, { to, note = '' }) {
     await client.query('COMMIT');
 
     const adminCount = (await pool.query(
-      `SELECT count(*)::int AS cnt FROM public.users WHERE role = 'admin' AND is_active`,
+      `SELECT count(*)::int AS cnt FROM users WHERE role = 'admin' AND is_active`,
     )).rows[0].cnt;
     const user = await fetchUserById(pool, targetId, actorId, adminCount);
     return { user };
@@ -233,14 +233,14 @@ export async function setActive(actorId, targetId, { to, note = '' }) {
   try {
     await client.query('BEGIN');
     const { rows: [target] } = await client.query(
-      `SELECT id, role, is_active FROM public.users WHERE id = $1 FOR UPDATE`,
+      `SELECT id, role, is_active FROM users WHERE id = $1 FOR UPDATE`,
       [targetId],
     );
     if (!target) throw new HttpError(404, 'NOT_FOUND', '사용자를 찾을 수 없습니다.');
     if (target.is_active === to) {
       await client.query('ROLLBACK');
       const adminCount = (await pool.query(
-        `SELECT count(*)::int AS cnt FROM public.users WHERE role = 'admin' AND is_active`,
+        `SELECT count(*)::int AS cnt FROM users WHERE role = 'admin' AND is_active`,
       )).rows[0].cnt;
       const user = await fetchUserById(pool, targetId, actorId, adminCount);
       return { user };
@@ -259,7 +259,7 @@ export async function setActive(actorId, targetId, { to, note = '' }) {
     }
 
     await client.query(
-      `UPDATE public.users SET is_active = $1, updated_at = now() WHERE id = $2`,
+      `UPDATE users SET is_active = $1, updated_at = now() WHERE id = $2`,
       [to, targetId],
     );
     await writeAudit(client, {
@@ -273,7 +273,7 @@ export async function setActive(actorId, targetId, { to, note = '' }) {
     await client.query('COMMIT');
 
     const adminCount = (await pool.query(
-      `SELECT count(*)::int AS cnt FROM public.users WHERE role = 'admin' AND is_active`,
+      `SELECT count(*)::int AS cnt FROM users WHERE role = 'admin' AND is_active`,
     )).rows[0].cnt;
     const user = await fetchUserById(pool, targetId, actorId, adminCount);
     return { user };
@@ -290,12 +290,12 @@ export async function revokeSessions(actorId, targetId) {
   try {
     await client.query('BEGIN');
     const { rows: [target] } = await client.query(
-      `SELECT id FROM public.users WHERE id = $1`, [targetId],
+      `SELECT id FROM users WHERE id = $1`, [targetId],
     );
     if (!target) throw new HttpError(404, 'NOT_FOUND', '사용자를 찾을 수 없습니다.');
 
     const { rows: revokedRows } = await client.query(
-      `UPDATE public.auth_sessions SET revoked_at = now()
+      `UPDATE auth_sessions SET revoked_at = now()
         WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()
         RETURNING id`,
       [targetId],

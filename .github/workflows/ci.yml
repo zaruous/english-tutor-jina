@@ -1,0 +1,74 @@
+# 이 프로젝트 최초의 자동 회귀 게이트 (플랜 10.7 Phase 3).
+#
+# test  — push·PR 마다. DB·서버·AI provider 없이 돈다(DB_DRIVER=pglite 가 기본).
+#         Node 20(engines 하한)과 22 두 버전으로 돌린다. 이 게이트의 첫 실행이 잡은 결함이
+#         정확히 그 드리프트였다: Node 22 는 `--test` 에 글롭 패턴을 직접 펼치지만 20 은 못 한다.
+# pg    — 수동 실행(workflow_dispatch). PGlite 는 PostgreSQL 18(WASM)이고 실제 서버 버전은
+#         환경마다 다르다. 18 에서 통과한 문법이 구버전에서 거부될 수 있으므로 릴리스 전
+#         한 번은 실 PostgreSQL 로 전체를 돌린다 (docs/RISKS.md R12 버전 스큐).
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: lint + test (pglite, Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22']
+    env:
+      # 테스트는 playwright 브라우저를 쓰지 않는다 — postinstall 다운로드를 건너뛴다.
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+
+  pg:
+    name: 전체 회귀 (실 PostgreSQL)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: jina
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      DB_DRIVER: pg
+      DB_SCHEMA: jina
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGDATABASE: jina
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      DEV_USER_PASSWORD: ci-dev-password
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm run db:migrate
+      - run: npm run db:seed
+      - name: 마이그레이션 왕복 (rollback → 재적용)
+        run: |
+          npm run db:rollback
+          npm run db:migrate
+          npm run db:seed
+      - run: npm run test:pg

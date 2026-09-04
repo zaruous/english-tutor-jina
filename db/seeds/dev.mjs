@@ -6,8 +6,9 @@
 // 카드 타임스탬프는 now() 기준 상대 시각 — 고정값이면 며칠 뒤 전부 due로 몰려
 // "In 3 days" 상태를 재현할 수 없다. 배분: due 3 / learned 3 / new 2.
 import 'dotenv/config';
-import pg from 'pg';
+import { pool } from '../../api/lib/db.js';
 import { hashPassword } from '../../api/services/password.js';
+import { seedContent } from './content.mjs';
 
 const DEV_EMAIL = process.env.DEV_USER_EMAIL || 'jina@dev.local';
 const DEV_PASSWORD = process.env.DEV_USER_PASSWORD;
@@ -30,21 +31,24 @@ const CARDS = [
   { word: 'scrutinize',  interval: 1, ef: 2.5, reviews: 0, fails: 0, offsetDays: null, last: null },
 ];
 
-const client = new pg.Client({
-  host: process.env.PGHOST,
-  port: Number(process.env.PGPORT || 5432),
-  database: process.env.PGDATABASE,
-  user: process.env.PGUSER,
-  password: process.env.PGPASSWORD,
-});
-await client.connect();
+// 커넥션 1개를 빌린다 — 아래에 BEGIN/COMMIT 구간이 있어 풀에 흩어지면 안 된다.
+// 연결 자체가 실패할 수 있다(pglite 잠금 충돌 등) — 스택 대신 이유를 보여준다.
+let client;
 try {
+  client = await pool.connect();
+} catch (err) {
+  console.error(`[seed] ${err.message}`);
+  process.exit(1);
+}
+try {
+  // 콘텐츠(db/content/*.json)가 먼저다 — 아래 attempt 시드가 레슨 slug 를 찾아야 한다.
+  const contentCounts = await seedContent(client);
   const passwordHash = await hashPassword(DEV_PASSWORD);
   const { rows: [user] } = await client.query(
     // role='admin' — DEV_AUTOLOGIN 으로 도는 개발 세션이 관리 화면에 들어갈 수 있어야 한다.
     // 이것이 10.5 열린 질문 2(사이드카 버튼을 dev 계정에도 열지)의 답이다: `is_dev OR is_admin`
     // 같은 세 번째 권한 등급을 만들지 않고 시드가 역할을 주면 된다. (10.7 §3.3)
-    `INSERT INTO public.users (email, display_name, password_hash, tz, is_dev, role, is_admin)
+    `INSERT INTO users (email, display_name, password_hash, tz, is_dev, role, is_admin)
      VALUES ($1, '수민 (dev)', $2, $3, true, 'admin', true)
      ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, is_dev = true,
        role = 'admin', is_admin = true
@@ -54,12 +58,12 @@ try {
 
   for (const c of CARDS) {
     const { rows: [word] } = await client.query(
-      `SELECT id FROM public.vocab_words WHERE word_key = lower(btrim($1)) AND lang = 'en'`,
+      `SELECT id FROM vocab_words WHERE word_key = lower(btrim($1)) AND lang = 'en'`,
       [c.word],
     );
     if (!word) throw new Error(`vocab_words에 없는 시드 단어: ${c.word} — 먼저 npm run db:migrate`);
     await client.query(
-      `INSERT INTO public.user_vocab_cards
+      `INSERT INTO user_vocab_cards
          (user_id, word_id, next_review, interval_days, ease_factor,
           review_count, fail_count, last_result, last_reviewed_at)
        VALUES ($1, $2,
@@ -83,12 +87,12 @@ try {
   // 타임스탬프는 전부 now() 상대시각.
   async function ensureSession({ title, scenario, status, startedAtSql, lastMessageAtSql, endedAtSql }) {
     const { rows: [existing] } = await client.query(
-      `SELECT id FROM public.conversation_sessions WHERE user_id = $1 AND title = $2`,
+      `SELECT id FROM conversation_sessions WHERE user_id = $1 AND title = $2`,
       [user.id, title],
     );
     if (existing) return { id: existing.id, created: false };
     const { rows: [s] } = await client.query(
-      `INSERT INTO public.conversation_sessions
+      `INSERT INTO conversation_sessions
          (user_id, title, scenario, status, started_at, last_message_at, ended_at)
        VALUES ($1, $2, $3::jsonb, $4, ${startedAtSql}, ${lastMessageAtSql}, ${endedAtSql})
        RETURNING id`,
@@ -129,7 +133,7 @@ try {
     // 세션 1 메시지 4개 — id 순서 = 대화 순서. created_at도 순서대로.
     const insertMsg = async (fields, createdAtSql) => {
       const { rows: [m] } = await client.query(
-        `INSERT INTO public.conversation_messages
+        `INSERT INTO conversation_messages
            (session_id, user_id, role, content, content_ko, corrections, scores,
             suggestion, provider, client_request_id, created_at)
          VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9, $10, ${createdAtSql})
@@ -171,7 +175,7 @@ try {
 
   if (s2.created) {
     await client.query(
-      `INSERT INTO public.conversation_messages (session_id, user_id, role, content, created_at)
+      `INSERT INTO conversation_messages (session_id, user_id, role, content, created_at)
        VALUES ($1, $2, 'user', 'Can I get a iced americano, please?', now() - interval '1 day' - interval '10 minutes'),
               ($1, $2, 'assistant', 'Almost perfect! Just say "an iced americano" — iced starts with a vowel sound.', now() - interval '1 day')`,
       [s2.id, user.id],
@@ -182,7 +186,7 @@ try {
   // 미래 1건은 make_interval(days => $n::int) — ($n || ' days')::interval에 같은 파라미터 재사용 금지(42804).
   const upsertCorrection = (c, { sessionId = null, messageId = null, seenCount = 1, nextReviewSql, extraParams = [] }) =>
     client.query(
-      `INSERT INTO public.corrections
+      `INSERT INTO corrections
          (user_id, session_id, message_id, original, corrected, reason, type, seen_count, next_review)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, ${nextReviewSql})
        ON CONFLICT (user_id, dedup_key) DO UPDATE SET
@@ -210,12 +214,12 @@ try {
   // 타임스탬프는 make_interval — ($n || ' days')::interval 텍스트 연결 금지(42804).
   // 결과: 시드 직후 진도 = 1/2 (set23 시도됨, set24 미시도).
   await client.query(
-    `INSERT INTO public.user_lesson_attempts
-       (user_id, lesson_id, answers, correct_count, total_count, elapsed_ms, client_request_id, created_at)
+    `INSERT INTO user_lesson_attempts
+       (user_id, content_id, answers, correct_count, total_count, elapsed_ms, client_request_id, created_at)
      SELECT $1, l.id, '{"1":"B","2":"A","3":"B"}'::jsonb, 2, 3, 214000,
             '11111111-1111-4111-8111-111111111111'::uuid,
             now() - make_interval(days => 1)
-       FROM public.lessons l WHERE l.slug = 'toeic-part7-set23'
+       FROM content_items l WHERE l.slug = 'toeic-part7-set23'
      ON CONFLICT (client_request_id) WHERE client_request_id IS NOT NULL DO NOTHING`,
     [user.id],
   );
@@ -224,7 +228,7 @@ try {
   // exam_date는 date + 정수(일) 덧셈 — 시드가 언제 돌아도 D-42가 재현된다.
   // ($n || ' days')::interval 텍스트 연결 금지(42804): $2는 TZ 텍스트로만 쓴다.
   await client.query(
-    `INSERT INTO public.user_goals (user_id, target_score, exam_date, target_test)
+    `INSERT INTO user_goals (user_id, target_score, exam_date, target_test)
      VALUES ($1, 900, (now() AT TIME ZONE $2)::date + 42, 'TOEIC')
      ON CONFLICT (user_id) DO UPDATE
        SET target_score = EXCLUDED.target_score, exam_date = EXCLUDED.exam_date,
@@ -239,7 +243,7 @@ try {
   // CHECK 정합 유지. 간격은 전부 make_interval (($n || ' days')::interval 금지 — 42804).
   await client.query('BEGIN');
   const { rows: [corr] } = await client.query(
-    `UPDATE public.corrections
+    `UPDATE corrections
         SET review_count = GREATEST(review_count, 1), last_result = 'good',
             last_reviewed_at = now() - interval '1 day',
             interval_days = 3, ease_factor = 2.50,
@@ -252,7 +256,7 @@ try {
   );
   if (corr) {
     await client.query(
-      `INSERT INTO public.correction_reviews
+      `INSERT INTO correction_reviews
          (correction_id, user_id, result, reviewed_at, prev_interval_days, prev_ease_factor,
           next_interval_days, next_ease_factor, next_review, elapsed_ms, client_request_id)
        SELECT $1, $2, 'good', now() - interval '1 day', 1, 2.50, 3, 2.50,
@@ -268,10 +272,12 @@ try {
     `SELECT count(*) FILTER (WHERE review_count = 0)                          AS new,
             count(*) FILTER (WHERE review_count > 0 AND next_review <= now()) AS due,
             count(*) FILTER (WHERE review_count > 0 AND next_review >  now()) AS learned
-       FROM public.user_vocab_cards WHERE user_id = $1`,
+       FROM user_vocab_cards WHERE user_id = $1`,
     [user.id],
   );
+  console.log(`콘텐츠 — 단어 ${contentCounts.words} · 레슨 ${contentCounts.lessons} · 시나리오 ${contentCounts.scenarios} · 단어세트 ${contentCounts.sets} · 토픽 ${contentCounts.topics}(연결 ${contentCounts.links})`);
   console.log(`시드 완료 — user #${user.id} (${DEV_EMAIL}), 카드: due ${counts.due} / learned ${counts.learned} / new ${counts.new}`);
 } finally {
-  await client.end();
+  client.release();
+  await pool.end();
 }

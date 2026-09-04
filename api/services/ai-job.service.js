@@ -100,7 +100,7 @@ export function jobDto(row) {
 async function assertTopicAccess(client, userId, topicId) {
   if (!topicId) return;
   const { rowCount } = await client.query(
-    `SELECT 1 FROM public.topics
+    `SELECT 1 FROM topics
       WHERE id = $1 AND (visibility = 'public' OR created_by = $2)`,
     [topicId, userId],
   );
@@ -116,7 +116,7 @@ export async function createJob(user, { task, input, clientRequestId, provider, 
     await assertTopicAccess(client, user.id, normalized.topic_id);
 
     const { rows: [byRequest] } = await client.query(
-      `SELECT * FROM public.ai_jobs WHERE user_id = $1 AND client_request_id = $2`,
+      `SELECT * FROM ai_jobs WHERE user_id = $1 AND client_request_id = $2`,
       [user.id, clientRequestId],
     );
     if (byRequest) {
@@ -128,7 +128,7 @@ export async function createJob(user, { task, input, clientRequestId, provider, 
 
     // 성공 결과뿐 아니라 현재 처리 중인 같은 요청도 재사용해 중복 CLI 비용을 막는다.
     const { rows: [same] } = await client.query(
-      `SELECT * FROM public.ai_jobs
+      `SELECT * FROM ai_jobs
         WHERE user_id = $1 AND task = $2 AND request_hash = $3
           AND status IN ('queued', 'running', 'succeeded')
         ORDER BY CASE status WHEN 'succeeded' THEN 0 WHEN 'running' THEN 1 ELSE 2 END, id DESC
@@ -138,7 +138,7 @@ export async function createJob(user, { task, input, clientRequestId, provider, 
     if (same) return { job: jobDto(same), reused: true };
 
     const { rows: [pending] } = await client.query(
-      `SELECT count(*)::int AS count FROM public.ai_jobs WHERE user_id = $1 AND status = 'queued'`,
+      `SELECT count(*)::int AS count FROM ai_jobs WHERE user_id = $1 AND status = 'queued'`,
       [user.id],
     );
     if (pending.count >= 3) {
@@ -146,7 +146,7 @@ export async function createJob(user, { task, input, clientRequestId, provider, 
     }
 
     const { rows: [row] } = await client.query(
-      `INSERT INTO public.ai_jobs
+      `INSERT INTO ai_jobs
          (user_id, task, input, request_hash, client_request_id, provider, model)
        VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7)
        RETURNING *`,
@@ -158,7 +158,7 @@ export async function createJob(user, { task, input, clientRequestId, provider, 
 
 export async function getJob(user, jobId) {
   const { rows: [row] } = await pool.query(
-    `SELECT * FROM public.ai_jobs WHERE id = $1 AND user_id = $2`,
+    `SELECT * FROM ai_jobs WHERE id = $1 AND user_id = $2`,
     [jobId, user.id],
   );
   if (!row) throw new HttpError(404, 'NOT_FOUND', 'AI 생성 작업을 찾을 수 없습니다.');
@@ -174,7 +174,7 @@ export async function listJobs(user, { status, limit = 20 } = {}) {
   if (status) { params.push(status); filter = ` AND status = $${params.length}`; }
   params.push(limit);
   const { rows } = await pool.query(
-    `SELECT * FROM public.ai_jobs WHERE user_id = $1${filter}
+    `SELECT * FROM ai_jobs WHERE user_id = $1${filter}
       ORDER BY created_at DESC, id DESC LIMIT $${params.length}`,
     params,
   );
@@ -183,7 +183,7 @@ export async function listJobs(user, { status, limit = 20 } = {}) {
 
 export async function recoverRunningJobs() {
   const { rowCount } = await pool.query(
-    `UPDATE public.ai_jobs
+    `UPDATE ai_jobs
         SET status = 'queued', started_at = NULL, updated_at = now(),
             error_code = NULL, error_message = NULL
       WHERE status = 'running'`,
@@ -194,7 +194,7 @@ export async function recoverRunningJobs() {
 export async function claimNextJob() {
   return withTx(async (client) => {
     const { rows: [row] } = await client.query(
-      `SELECT * FROM public.ai_jobs
+      `SELECT * FROM ai_jobs
         WHERE status = 'queued'
         ORDER BY created_at, id
         FOR UPDATE SKIP LOCKED
@@ -202,7 +202,7 @@ export async function claimNextJob() {
     );
     if (!row) return null;
     const { rows: [claimed] } = await client.query(
-      `UPDATE public.ai_jobs
+      `UPDATE ai_jobs
           SET status = 'running', started_at = now(), finished_at = NULL,
               attempts = attempts + 1, updated_at = now(),
               error_code = NULL, error_message = NULL
@@ -215,7 +215,7 @@ export async function claimNextJob() {
 
 export async function markJobSucceeded(jobId, result) {
   await pool.query(
-    `UPDATE public.ai_jobs
+    `UPDATE ai_jobs
         SET status = 'succeeded', result = $2::jsonb, finished_at = now(), updated_at = now(),
             error_code = NULL, error_message = NULL
       WHERE id = $1`,
@@ -227,7 +227,7 @@ export async function markJobFailed(jobId, error, result = null) {
   const code = String(error?.code || 'GENERATION_FAILED').slice(0, 80);
   const message = String(error?.message || 'AI 생성 작업에 실패했습니다.').slice(0, 1000);
   await pool.query(
-    `UPDATE public.ai_jobs
+    `UPDATE ai_jobs
         SET status = 'failed', result = $2::jsonb, error_code = $3, error_message = $4,
             finished_at = now(), updated_at = now()
       WHERE id = $1`,
@@ -235,21 +235,23 @@ export async function markJobFailed(jobId, error, result = null) {
   );
 }
 
-// 자동 검증: 문항 수/보기 중복/정답 범위/해설의 정답 지시를 모두 통과해야 lessons에 들어간다.
+// 자동 검증: 문항 수/보기 중복/정답 범위/해설의 정답 지시를 모두 통과해야 카탈로그에 들어간다.
 // LC 스크립트 규칙 — 4~8줄, 각 줄 화자 라벨("M: "/"W: ")로 시작, 실제 대사가 있어야 한다.
 // 화면이 jinaSpeak 으로 읽으므로 괄호 지시문·빈 줄이 섞이면 그대로 읽혀 버린다.
-const LC_SPEAKER_RE = /^[MW]:\s+\S/;
+const LC_SPEAKERS = ['M', 'W'];
 function validateLcScript(script) {
   const errors = [];
   if (!Array.isArray(script) || script.length < 4 || script.length > 8) {
     errors.push('script는 4~8줄 배열이어야 합니다.');
     return errors;
   }
+  // 화자와 대사가 분리된 객체다 (플랜 10.7 §3.2) — 문자열 파싱이 사라졌다.
   script.forEach((line, i) => {
-    const text = String(line || '');
-    if (!LC_SPEAKER_RE.test(text)) errors.push(`script[${i}]는 "M: " 또는 "W: " 로 시작해야 합니다.`);
-    else if (text.trim().length < 12) errors.push(`script[${i}]의 대사가 너무 짧습니다.`);
-    if (/[([]/.test(text)) errors.push(`script[${i}]에 괄호 지시문이 있습니다.`);
+    const text = String(line?.text || '').trim();
+    if (!LC_SPEAKERS.includes(line?.speaker)) errors.push(`script[${i}].speaker 는 "M" 또는 "W" 여야 합니다.`);
+    if (text.length < 12) errors.push(`script[${i}].text 의 대사가 너무 짧습니다.`);
+    if (/^[MW]\s*:/.test(text)) errors.push(`script[${i}].text 에 화자 라벨이 남아 있습니다.`);
+    if (/[([]/.test(text)) errors.push(`script[${i}].text 에 괄호 지시문이 있습니다.`);
   });
   return errors;
 }
@@ -293,7 +295,7 @@ export async function saveGeneratedLesson(job, data, aiMeta) {
   const errors = validateGeneratedLesson(data, job.input.count, { part: job.input.part });
   return withTx(async (client) => {
     const { rows: [draft] } = await client.query(
-      `INSERT INTO public.lesson_drafts
+      `INSERT INTO lesson_drafts
          (user_id, job_id, payload, validation_errors, provider, model)
        VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, $6)
        RETURNING id`,
@@ -302,9 +304,10 @@ export async function saveGeneratedLesson(job, data, aiMeta) {
     );
     if (errors.length) return { draft_id: draft.id, validation_errors: errors, lesson_id: null };
 
-    const { rows: [pos] } = await client.query(`SELECT COALESCE(max(position), 0)::int + 1 AS next FROM public.lessons`);
+    const { rows: [pos] } = await client.query(
+      `SELECT COALESCE(max(position), 0)::int + 1 AS next FROM lesson_details`);
     const slug = `ai-toeic-${isLc ? 'lc' : 'part5'}-${job.user_id}-${job.id}`;
-    // LC 는 시드(0015)와 같은 모양으로 저장한다 — 스크립트는 passage.body 의 화자 라벨 줄 배열.
+    // LC 는 시드와 같은 모양으로 저장한다 — 스크립트는 passage.body 의 [{speaker,text}] 배열.
     const passage = isLc
       ? { type: 'LISTENING', subject: 'Short Conversation', body: data.script }
       : {
@@ -314,23 +317,26 @@ export async function saveGeneratedLesson(job, data, aiMeta) {
     const faq = isLc
       ? ['이 대화의 핵심 표현을 정리해 주세요', '놓치기 쉬운 발음·연음을 짚어 주세요']
       : ['틀린 보기의 문법적 차이를 설명해 주세요', '이 문항과 비슷한 예문을 만들어 주세요'];
+    // 카탈로그 상위 + 타입별 detail 1:1 (플랜 10.7 Phase 2). 생성물은 공개 상태이되 본인에게만 보인다.
     const { rows: [lesson] } = await client.query(
-      `INSERT INTO public.lessons
-         (slug, kind, title, subtitle, difficulty, est_minutes, passage, vocab, faq,
-          position, published, created_by, source, visibility)
-       VALUES ($1, $10, $2, $3, $4, $5, $6::jsonb, '[]'::jsonb, $7::jsonb,
-               $8, true, $9, 'ai', 'private')
+      `INSERT INTO content_items (type, slug, title, difficulty, status, visibility, source, created_by)
+       VALUES ('lesson', $1, $2, $3, 'published', 'private', 'ai', $4)
        RETURNING id`,
-      [slug, data.title, data.subtitle, job.input.difficulty,
+      [slug, data.title, job.input.difficulty, job.user_id],
+    );
+    await client.query(
+      `INSERT INTO lesson_details
+         (content_id, kind, subtitle, est_minutes, passage, vocab, faq, position)
+       VALUES ($1, $2, $3, $4, $5::jsonb, '[]'::jsonb, $6::jsonb, $7)`,
+      [lesson.id, isLc ? 'toeic_lc' : 'toeic_part5', data.subtitle,
        Math.max(3, Math.ceil(data.items.length * 1.2)), JSON.stringify(passage),
-       JSON.stringify(faq),
-       pos.next, job.user_id, isLc ? 'toeic_lc' : 'toeic_part5'],
+       JSON.stringify(faq), pos.next],
     );
     for (let i = 0; i < data.items.length; i += 1) {
       const item = data.items[i];
       await client.query(
-        `INSERT INTO public.lesson_items
-           (lesson_id, position, stem, options, answer, explanation, skill_code)
+        `INSERT INTO lesson_items
+           (content_id, position, stem, options, answer, explanation, skill_code)
          VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7)`,
         [lesson.id, i + 1, item.stem, JSON.stringify(item.options), item.answer,
          item.explanation, item.skill_code],
@@ -338,13 +344,13 @@ export async function saveGeneratedLesson(job, data, aiMeta) {
     }
     if (job.input.topic_id) {
       await client.query(
-        `INSERT INTO public.topic_contents (topic_id, lesson_id, position)
+        `INSERT INTO topic_contents (topic_id, content_id, position)
          VALUES ($1, $2, 0) ON CONFLICT DO NOTHING`,
         [job.input.topic_id, lesson.id],
       );
     }
     await client.query(
-      `UPDATE public.lesson_drafts SET published_lesson_id = $2, updated_at = now() WHERE id = $1`,
+      `UPDATE lesson_drafts SET published_content_id = $2, updated_at = now() WHERE id = $1`,
       [draft.id, lesson.id],
     );
     return { draft_id: draft.id, validation_errors: [], lesson_id: lesson.id };
@@ -358,17 +364,21 @@ export async function saveGeneratedScenario(job, data) {
   return withTx(async (client) => {
     const slug = `ai-scenario-${job.user_id}-${job.id}`;
     const { rows: [row] } = await client.query(
-      `INSERT INTO public.conversation_scenarios
-         (slug, title, tag, level, description, system_prompt, opening_message,
-          objectives, source, visibility, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, 'ai', 'private', $9)
+      `INSERT INTO content_items (type, slug, title, description, difficulty, status, visibility, source, created_by)
+       VALUES ('scenario', $1, $2, $3, $4, 'published', 'private', 'ai', $5)
        RETURNING id`,
-      [slug, data.title, data.tag, job.input.difficulty, data.description,
-       data.system_prompt, data.opening_message, JSON.stringify(data.objectives), job.user_id],
+      [slug, data.title, data.description, job.input.difficulty, job.user_id],
+    );
+    await client.query(
+      `INSERT INTO scenario_details
+         (content_id, tag, level, system_prompt, opening_message, objectives)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
+      [row.id, data.tag, job.input.difficulty, data.system_prompt,
+       data.opening_message, JSON.stringify(data.objectives)],
     );
     if (job.input.topic_id) {
       await client.query(
-        `INSERT INTO public.topic_contents (topic_id, scenario_id, position)
+        `INSERT INTO topic_contents (topic_id, content_id, position)
          VALUES ($1, $2, 0) ON CONFLICT DO NOTHING`,
         [job.input.topic_id, row.id],
       );
@@ -384,15 +394,18 @@ export async function saveGeneratedVocabSet(job, data) {
   const result = await withTx(async (client) => {
     const slug = `ai-vocab-set-${job.user_id}-${job.id}`;
     const { rows: [row] } = await client.query(
-      `INSERT INTO public.vocab_sets
-         (slug, title, description, words, source, visibility, created_by)
-       VALUES ($1, $2, $3, $4::jsonb, 'ai', 'private', $5)
+      `INSERT INTO content_items (type, slug, title, description, status, visibility, source, created_by)
+       VALUES ('vocab_set', $1, $2, $3, 'published', 'private', 'ai', $4)
        RETURNING id`,
-      [slug, data.title, data.description, JSON.stringify(data.words), job.user_id],
+      [slug, data.title, data.description, job.user_id],
+    );
+    await client.query(
+      `INSERT INTO vocab_set_details (content_id, words) VALUES ($1, $2::jsonb)`,
+      [row.id, JSON.stringify(data.words)],
     );
     if (job.input.topic_id) {
       await client.query(
-        `INSERT INTO public.topic_contents (topic_id, vocab_set_id, position)
+        `INSERT INTO topic_contents (topic_id, content_id, position)
          VALUES ($1, $2, 0) ON CONFLICT DO NOTHING`,
         [job.input.topic_id, row.id],
       );

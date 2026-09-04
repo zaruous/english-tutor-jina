@@ -1,5 +1,11 @@
 # db/ — 스키마 관리
 
+이 앱은 **전용 스키마**(`DB_SCHEMA`, 기본 `jina`)에 산다. 마이그레이션 SQL 은 스키마 접두를 쓰지 않고,
+러너와 런타임 어댑터가 `search_path` 를 그 스키마 하나로 고정한다 — 스키마 이름이 코드에 박히지 않는다.
+
+콘텐츠(레슨·시나리오·단어 세트·토픽·단어)는 마이그레이션이 아니라 `db/content/*.json` 이 단일 소스다.
+`db/seeds/content.mjs` 가 slug 기준 upsert 로 넣는다(재실행 안전).
+
 ## 접속
 
 접속 정보는 git에 추적되지 않는 `.env`의 `PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD`.
@@ -9,34 +15,41 @@ psql로 직접 볼 때(Windows 콘솔은 `chcp 65001` 먼저):
 psql "postgresql://$PGUSER@$PGHOST:$PGPORT/$PGDATABASE"
 ```
 
-**이전 중**: 새 전용 DB `jina_eng` / 스키마 `app` 으로 옮기는 중이다([플랜 10.7](../docs/plan/10.7-db-rebaseline.md)).
-`db/baseline/` 이 새 스키마, `db/migrations/` 는 옛 DB `jina` 용이다. 완료 전까지 둘이 공존한다.
+## PostgreSQL 없이 돌리기 — `DB_DRIVER=pglite`
+
+PGlite 는 PostgreSQL 자체의 WASM 빌드다. SQL 도 마이그레이션도 그대로 쓰고, 설치와 `PG*` 접속 정보가
+필요 없다. `.env` 에:
+
+```
+DB_DRIVER=pglite
+PGLITE_DATA_DIR=.pglite/dev     # 비우면 메모리 — 프로세스가 끝나면 사라진다
+```
+
+그다음은 아래 명령이 전부 같다(`db:migrate` · `db:seed` · `db:rollback` · `db:reset`).
+
+**한 번에 한 프로세스만 열 수 있다.** PGlite 는 프로세스마다 독립된 인스턴스라, 같은 데이터 디렉터리를
+둘이 열면 서로의 쓰기를 보지 못하고 나중에 flush 한 쪽이 이긴다(실측: API 서버가 다른 프로세스의
+`UPDATE` 를 끝내 보지 못했다). 그래서 `api/lib/pglite-lock.js` 가 PID 잠금을 걸고 두 번째 프로세스를
+거부한다 — **마이그레이션·시드는 API 서버를 멈춘 뒤에 실행**한다. 강제 종료로 남은 잠금은 다음 실행이
+자동 회수한다. 여러 프로세스가 동시에 붙어야 하면 `DB_DRIVER=pg` 를 쓴다.
+
+`npm test` 는 이 설정과 무관하게 항상 메모리 DB 를 쓴다(`tests/setup.mjs`) — 개발 데이터를 건드리지 않는다.
 
 ## 명령
 
-러너는 `--target` 으로 두 대상을 가린다. 기본은 `legacy`(옛 DB `jina` / `public`),
-`app` 은 새 DB `jina_eng` / `app` 스키마다. 명령 첫 줄에 어디에 붙었는지 항상 찍는다.
-
 ```bash
-# 대상 무관
-npm run db:verify           # 오프라인 점검 — 번호·down 짝·공통 컬럼·COMMENT (DB 불필요, CI용)
+npm run db:migrate    # 미적용 마이그레이션 적용
+npm run db:status     # applied / pending / MODIFIED! 표시
+npm run db:rollback   # 마지막 1개를 .down.sql로 되돌림
+npm run db:seed       # 콘텐츠(db/content) + 개발 계정 + 카드 8장 (재실행 안전)
+npm run db:seed:content     # 콘텐츠만
+npm run db:reset -- --yes   # DROP SCHEMA <DB_SCHEMA> CASCADE 후 빈 스키마 재생성
+
+# DB 없이 도는 것
+npm run db:verify           # 오프라인 점검 — 파일명·번호·down 짝·인코딩·금지 SQL (CI용)
 npm run db:new -- add_foo   # 마이그레이션 짝(up+down) 생성. 번호 자동
-npm run db:inspect          # 적용된 스키마를 COMMENT 와 함께 덤프 (기본 --target app)
-
-# 새 DB (jina_eng / app)
-npm run db:app:status
-npm run db:app:migrate
-npm run db:app:reset -- --yes    # DROP SCHEMA app CASCADE
-
-# 옛 DB (jina / public) — 10.7 Phase 2 까지만
-npm run db:status
-npm run db:migrate
-npm run db:rollback         # 마지막 1개를 .down.sql로 되돌림
-npm run db:seed             # 개발 계정 + 카드 8장 (재실행 안전)
-npm run db:reset -- --yes   # 명시 목록의 테이블만 DROP (다른 앱 테이블과 동거하므로)
+npm run db:inspect          # 적용된 스키마를 COMMENT 와 함께 덤프 (DB_DRIVER=pg 전용)
 ```
-
-`.env` 에 `PGDATABASE_APP`(기본 `jina_eng`)·`DB_SCHEMA`(기본 `app`)로 새 대상을 바꿀 수 있다.
 
 ## 변경 관리 도구 — 라이브러리를 넣지 않는다 (2026-09-03 결정)
 
@@ -64,7 +77,6 @@ Flyway·Liquibase·dbmate·Atlas·node-pg-migrate 같은 전용 도구를 검토
 |---|---|
 | 번호를 손으로 매기다 중복 | `db:new` 가 다음 번호로 up+down 을 만든다 |
 | down 파일을 잊음 | `db:verify` 가 짝 없는 마이그레이션을 실패시킨다 |
-| 새 테이블에 공통 컬럼·COMMENT 누락 | `db:verify` 가 baseline 을 파싱해 확인한다 |
 | 규칙이 문서에만 있음 | `db:verify` 를 CI 에 걸면 게이트가 된다 |
 
 재검토 시점: 사람이 둘 이상이 되어 마이그레이션이 병렬로 만들어지거나, 배포 환경이 여럿이 될 때.
@@ -77,61 +89,18 @@ Flyway·Liquibase·dbmate·Atlas·node-pg-migrate 같은 전용 도구를 검토
 - 모든 DDL 멱등(`IF NOT EXISTS`)
 - `.sql`은 BOM 없는 UTF-8. **`psql -f`로 밀지 말 것** — Windows 콘솔 코드페이지에서 한글/IPA가 깨진다. 반드시 `npm run db:migrate`
 - 파일당 1 트랜잭션. 트랜잭션 밖에서 실행해야 하는 문(예: `CREATE INDEX CONCURRENTLY`)은 1행에 `-- migrate:no-transaction`
-- 옛 DB(`jina`)에서 `DROP SCHEMA public CASCADE` **절대 금지** — 같은 스키마에 다른 앱의 테이블 11개가 산다
-
-### 새 스키마(`app`)의 공통 컬럼 규약
-
-[10.7 §3.4](../docs/plan/10.7-db-rebaseline.md). 모든 테이블 = 고유 컬럼 + 아래 세트.
-
-```
-description  TEXT NOT NULL DEFAULT ''    -- 행 설명(데이터). 테이블 설명은 COMMENT ON
-is_active    BOOLEAN NOT NULL DEFAULT true    -- 사용 여부
-is_deleted   BOOLEAN NOT NULL DEFAULT false   -- 삭제 여부(soft delete). 물리 삭제 안 함
-deleted_at / deleted_by · created_at / created_by · updated_at / updated_by
-cmf_1 … cmf_10 TEXT              -- 확장 슬롯
-CHECK (is_deleted = (deleted_at IS NOT NULL))
-```
-
-- `updated_at` 은 트리거(`app.set_updated_at()`)가 채운다. 쿼리에 `updated_at = now()` 를 쓰지 않는다.
-- soft delete 이므로 **UNIQUE 는 `WHERE NOT is_deleted` 부분 인덱스**로 건다. 안 그러면 지운 행이
-  이메일·slug 를 계속 붙들어 같은 값으로 다시 만들 수 없다.
-- 조회 조건에 `is_deleted`·`is_active` 가 들어간다 — `api/lib/content-scope.js` 헬퍼가 함께 건다.
-- `cmf_*` 는 **쓰기 시작할 때 `COMMENT ON COLUMN` 을 단다.** 자리를 잡으면 이름 있는 컬럼으로 승격.
-- append-only 로그(`*_audit_log`)는 예외 — `created_at`/`created_by` 만 갖는다. 파일에
-  `-- common:exempt <table>` 로 선언하고 이유를 적는다. `db:verify` 가 선언 없는 예외를 잡는다.
-
-### 기준정보(공통 코드) — 무엇을 `codes` 에 두는가
-
-`code_groups` + `codes`(`0002_common_codes.sql`)는 **긴 꼬리 열거값**만 담는다.
-
-- **전용 테이블로 남긴다** — 다른 테이블이 FK 로 참조하거나(`roles`, `content_statuses`),
-  값에 동작이 딸린 것(`roles.rank` 서열 비교, `content_transitions` 전이 규칙).
-- **`codes` 로 온다** — 화면 라벨·필터 칩·드롭다운. 코드가 늘어도 로직이 안 바뀌는 것.
-  `skill_code`, 첨삭 유형, 레슨 종류, 복습 평가, 신고 사유, 난이도 라벨.
-
-`codes` 를 쓰는 컬럼에도 **진짜 FK 를 걸 수 있다.** 그룹을 고정한 생성 컬럼을 옆에 두면 된다
-(PostgreSQL 16.15 실측 — 다른 그룹의 코드를 거부한다):
-
-```sql
-ALTER TABLE app.lesson_items
-  ADD COLUMN skill_group TEXT GENERATED ALWAYS AS ('SKILL_CODE') STORED,
-  ADD CONSTRAINT lesson_items_skill_fk
-    FOREIGN KEY (skill_group, skill_code) REFERENCES app.codes(group_code, code);
-```
-
-주의 둘. **`is_active = false` 는 FK 가 막지 않는다** — 사용 중지한 코드를 새로 쓰는 것은 앱이 거른다.
-그리고 `codes` 는 다른 테이블과 달리 **부분 UNIQUE 를 걸지 않는다**. 지운 코드의 값을 재사용하지
-못하는 것이 의도다 — 과거 이력이 그 문자열을 가리키고 있어서 뜻이 바뀌면 지난 데이터가 조용히 오염된다.
+- 전용 스키마이므로 `reset` 은 `DROP SCHEMA <DB_SCHEMA> CASCADE` 한 줄이다. `public` 은 건드리지 않는다 — 거기에 다른 앱의 테이블이 산다
+- 콘텐츠를 마이그레이션에 넣지 말 것 — 체크섬 불변 파일 안에 있으면 관리자가 편집한 순간 `db:reset` 이 그것을 되돌린다. `db/content/*.json` 에 둔다
 
 ## 후속 과제 — 최소권한 롤
 
-현재 접속 롤이 슈퍼유저다. 전용 스키마로 옮기면 GRANT 범위가 스키마 하나로 떨어진다:
+현재 접속 롤이 슈퍼유저다. 전용 스키마를 쓰므로 GRANT 범위를 스키마 하나로 좁힐 수 있다:
 
 ```sql
 -- CREATE ROLE jina_app LOGIN PASSWORD '...';
--- GRANT USAGE ON SCHEMA app TO jina_app;
--- GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA app TO jina_app;
--- GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA app TO jina_app;   -- BIGSERIAL용
--- ALTER DEFAULT PRIVILEGES IN SCHEMA app GRANT ... TO jina_app;     -- 이후 만들어질 것까지
+-- GRANT USAGE ON SCHEMA <DB_SCHEMA> TO jina_app;
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA <DB_SCHEMA> TO jina_app;
+-- GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA <DB_SCHEMA> TO jina_app;   -- BIGSERIAL용
+-- ALTER DEFAULT PRIVILEGES IN SCHEMA <DB_SCHEMA> GRANT ... TO jina_app;     -- 이후 만들어질 것까지
 -- schema_migrations 는 마이그레이션 전용 계정만 쓰기 가능하게 분리
 ```

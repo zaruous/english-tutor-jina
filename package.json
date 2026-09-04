@@ -14,14 +14,15 @@
     "db:status": "node db/migrate.mjs status",
     "db:rollback": "node db/migrate.mjs down",
     "db:seed": "node db/seeds/dev.mjs",
+    "db:seed:content": "node db/seeds/content.mjs",
     "db:reset": "node db/migrate.mjs reset",
     "db:verify": "node db/verify.mjs",
     "db:new": "node db/new-migration.mjs",
     "db:inspect": "node db/inspect.mjs",
     "e2e:admin-users": "node scripts/e2e-admin-users.mjs",
-    "db:app:migrate": "node db/migrate.mjs up --target app",
-    "db:app:status": "node db/migrate.mjs status --target app",
-    "db:app:reset": "node db/migrate.mjs reset --target app",
+    "test": "node --import ./tests/setup.mjs --test tests/*.test.mjs",
+    "test:pg": "DB_DRIVER=pg node --import ./tests/setup.mjs --test tests/*.test.mjs",
+    "lint": "eslint .",
     "ollama": "OLLAMA_ORIGINS=\"*\" ollama serve",
     "ollama:pull": "ollama pull gemma4:e2b",
     "ollama:list": "ollama list"
@@ -36,12 +37,14 @@
     "korean"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=20.6"
   },
   "devDependencies": {
+    "eslint": "9.39.0",
     "playwright": "^1.60.0"
   },
   "dependencies": {
+    "@electric-sql/pglite": "0.5.8",
     "dotenv": "^17.4.2",
     "pg": "^8.23.0"
   }

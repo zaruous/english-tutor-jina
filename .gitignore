@@ -6,7 +6,6 @@
 
 # Dependencies (none required for prototype, but for future)
 node_modules/
-package-lock.json
 yarn.lock
 
 # Build outputs
@@ -48,3 +47,6 @@ lib/pronounce/corp-ca.crt
 
 # e2e 스크린샷 등 실행마다 덮어써지는 산출물 (라운드 폴더에는 골라 복사)
 docs/reviews/_artifacts/
+
+# PGlite 파일 영속 디렉터리 (PGLITE_DATA_DIR)
+.pglite/

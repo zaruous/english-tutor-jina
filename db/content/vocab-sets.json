@@ -1,0 +1,111 @@
+[
+  {
+    "slug": "business-interview-core-20",
+    "title": "비즈니스 면접 핵심 20단어",
+    "description": "역량·성과·협업·문제 해결을 설명할 때 자주 쓰는 표현입니다.",
+    "words": [
+      {
+        "pos": "n.",
+        "word": "accomplishment",
+        "meaning_ko": "성과, 업적"
+      },
+      {
+        "pos": "n.",
+        "word": "adaptability",
+        "meaning_ko": "적응력"
+      },
+      {
+        "pos": "v.",
+        "word": "collaborate",
+        "meaning_ko": "협업하다"
+      },
+      {
+        "pos": "n.",
+        "word": "competency",
+        "meaning_ko": "역량"
+      },
+      {
+        "pos": "n.",
+        "word": "deadline",
+        "meaning_ko": "마감 기한"
+      },
+      {
+        "pos": "v.",
+        "word": "delegate",
+        "meaning_ko": "위임하다"
+      },
+      {
+        "pos": "v.",
+        "word": "demonstrate",
+        "meaning_ko": "입증하다, 보여 주다"
+      },
+      {
+        "pos": "n.",
+        "word": "initiative",
+        "meaning_ko": "주도성"
+      },
+      {
+        "pos": "n.",
+        "word": "leadership",
+        "meaning_ko": "리더십"
+      },
+      {
+        "pos": "adj.",
+        "word": "measurable",
+        "meaning_ko": "측정 가능한"
+      },
+      {
+        "pos": "v.",
+        "word": "negotiate",
+        "meaning_ko": "협상하다"
+      },
+      {
+        "pos": "v.",
+        "word": "prioritize",
+        "meaning_ko": "우선순위를 정하다"
+      },
+      {
+        "pos": "adj.",
+        "word": "proactive",
+        "meaning_ko": "선제적인"
+      },
+      {
+        "pos": "adj.",
+        "word": "productive",
+        "meaning_ko": "생산적인"
+      },
+      {
+        "pos": "v.",
+        "word": "resolve",
+        "meaning_ko": "해결하다"
+      },
+      {
+        "pos": "n.",
+        "word": "responsibility",
+        "meaning_ko": "책임"
+      },
+      {
+        "pos": "n.",
+        "word": "stakeholder",
+        "meaning_ko": "이해관계자"
+      },
+      {
+        "pos": "v.",
+        "word": "streamline",
+        "meaning_ko": "효율화하다"
+      },
+      {
+        "pos": "n.",
+        "word": "strength",
+        "meaning_ko": "강점"
+      },
+      {
+        "pos": "n.",
+        "word": "workload",
+        "meaning_ko": "업무량"
+      }
+    ],
+    "source": "seed",
+    "visibility": "public"
+  }
+]

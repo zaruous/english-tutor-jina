@@ -15,6 +15,24 @@ function int(name, fallback) {
   return n;
 }
 
+// DB_DRIVER — 실행 방식만 둘로 둔다(플랜 10.7). 방언은 하나(PostgreSQL)다.
+//   pg     운영·통합 검증. PGHOST 등이 필요하다.
+//   pglite 테스트. WASM PostgreSQL — 접속 정보가 없어도 뜬다.
+const dbDriver = (process.env.DB_DRIVER || 'pg').trim();
+if (dbDriver !== 'pg' && dbDriver !== 'pglite') {
+  throw new Error(`.env DB_DRIVER=${dbDriver} 는 pg | pglite 중 하나여야 합니다.`);
+}
+// 전용 스키마 (플랜 10.7 Phase 2). 쿼리는 접두를 쓰지 않고 어댑터가 search_path 를 고정한다.
+const dbSchema = (process.env.DB_SCHEMA || 'jina').trim();
+if (!/^[a-z_][a-z0-9_]*$/.test(dbSchema)) {
+  throw new Error(`.env DB_SCHEMA=${dbSchema} 는 소문자 식별자여야 합니다.`);
+}
+
+// pglite 는 접속 정보를 쓰지 않는다 — 테스트가 .env 없이 돌게 하는 것이 Phase 1 의 목적이다.
+function requiredForPg(name) {
+  return dbDriver === 'pg' ? required(name) : (process.env[name] || null);
+}
+
 const isProduction = process.env.NODE_ENV === 'production';
 const devAutologin = process.env.DEV_AUTOLOGIN === '1';
 if (isProduction && devAutologin) {
@@ -39,12 +57,19 @@ export const config = {
     .split(',').map((s) => s.trim()).filter(Boolean),
   appTz: process.env.APP_TZ || 'Asia/Seoul',
 
+  db: {
+    driver: dbDriver,
+    schema: dbSchema,
+    // 비우면 메모리(프로세스마다 새 DB), 경로를 주면 파일 영속. pglite 전용.
+    pgliteDataDir: process.env.PGLITE_DATA_DIR || null,
+  },
+
   pg: {
-    host: required('PGHOST'),
+    host: requiredForPg('PGHOST'),
     port: int('PGPORT', 5432),
-    database: required('PGDATABASE'),
-    user: required('PGUSER'),
-    password: required('PGPASSWORD'),
+    database: requiredForPg('PGDATABASE'),
+    user: requiredForPg('PGUSER'),
+    password: requiredForPg('PGPASSWORD'),
     max: int('PG_POOL_MAX', 8),
     statementTimeoutMs: int('PG_STATEMENT_TIMEOUT_MS', 5000),
   },
@@ -94,8 +119,12 @@ export const config = {
 };
 
 export function logBootConfig() {
-  const { pg } = config;
-  console.log(`[api] postgres://${pg.user}:***@${pg.host}:${pg.port}/${pg.database} (pool ${pg.max})`);
+  const { pg, db } = config;
+  if (db.driver === 'pglite') {
+    console.log(`[api] pglite (WASM PostgreSQL) ${db.pgliteDataDir || '메모리'} schema=${db.schema}`);
+  } else {
+    console.log(`[api] postgres://${pg.user}:***@${pg.host}:${pg.port}/${pg.database} (pool ${pg.max}, schema ${db.schema})`);
+  }
   console.log(`[api] origins: ${config.allowedOrigins.join(', ')}`);
   console.log(`[api] ai: default=${config.ai.defaultProvider} concurrency=${config.ai.maxConcurrency}`);
   const p = config.pronunciation;

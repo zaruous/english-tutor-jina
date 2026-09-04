@@ -28,7 +28,7 @@ const check = (name, ok, detail = '') => {
 async function createUser(email, role, displayName = 'E2E') {
   const passwordHash = await hashPassword(PASS);
   const { rows: [u] } = await pool.query(
-    `INSERT INTO public.users (email, display_name, password_hash, role, is_admin)
+    `INSERT INTO users (email, display_name, password_hash, role, is_admin)
      VALUES ($1, $2, $3, $4, $5)
      RETURNING id, email, role`,
     [email, displayName, passwordHash, role, role === 'admin'],
@@ -45,7 +45,7 @@ async function loginCookie(email) {
 
 async function auditCount(userId) {
   const { rows: [{ cnt }] } = await pool.query(
-    `SELECT count(*)::int AS cnt FROM public.user_audit_log WHERE target_user_id = $1`,
+    `SELECT count(*)::int AS cnt FROM user_audit_log WHERE target_user_id = $1`,
     [userId],
   );
   return cnt;
@@ -53,7 +53,7 @@ async function auditCount(userId) {
 
 async function activeSessions(userId) {
   const { rows: [{ cnt }] } = await pool.query(
-    `SELECT count(*)::int AS cnt FROM public.auth_sessions
+    `SELECT count(*)::int AS cnt FROM auth_sessions
       WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()`,
     [userId],
   );
@@ -75,17 +75,18 @@ async function jsonFetch(path, { method = 'GET', cookie, body, headers = {} } = 
 }
 
 // ── 픽스처 ──
-let learner, reviewer, admin, admin2;
+// id 를 뒤에서 쓰는 것만 잡아 둔다. 나머지는 이메일·쿠키로만 쓴다.
+let learner, admin2;
 try {
   learner = await createUser(EMAILS.learner, 'learner');
-  reviewer = await createUser(EMAILS.reviewer, 'reviewer');
-  admin = await createUser(EMAILS.admin, 'admin');
+  await createUser(EMAILS.reviewer, 'reviewer');
+  await createUser(EMAILS.admin, 'admin');
   admin2 = await createUser(EMAILS.admin2, 'admin');
 
   const learnerCookie = await loginCookie(EMAILS.learner);
   const reviewerCookie = await loginCookie(EMAILS.reviewer);
   const adminCookie = await loginCookie(EMAILS.admin);
-  const admin2Cookie = await loginCookie(EMAILS.admin2);
+  await loginCookie(EMAILS.admin2);   // 쿠키는 안 쓰지만 '활성 세션 수' 단정이 이 세션을 센다
 
   // 1 learner → 403
   const r1 = await jsonFetch('/api/admin/users', { cookie: learnerCookie });
@@ -146,7 +147,7 @@ try {
   //   강등해도 쓸 수 있는 관리자 수는 변하지 않으므로 막을 이유가 없다.
   //   이 시나리오는 **테스트가 만든 계정만** 쓴다 — 실계정(admin@jina.local)을 건드리지 않는다.
   await pool.query(
-    `UPDATE public.users SET is_active = false WHERE id = $1`, [admin2.id],
+    `UPDATE users SET is_active = false WHERE id = $1`, [admin2.id],
   );
   const r8 = await jsonFetch(`/api/admin/users/${admin2.id}/role`, {
     method: 'PATCH', cookie: adminCookie, body: { to: 'reviewer' },
@@ -156,7 +157,7 @@ try {
     `status=${r8.status} code=${r8.code ?? '-'} role=${r8.user?.role}`);
   // 원복 — admin2 를 다시 활성 admin 으로
   await pool.query(
-    `UPDATE public.users SET role = 'admin', is_admin = true, is_active = true WHERE id = $1`,
+    `UPDATE users SET role = 'admin', is_admin = true, is_active = true WHERE id = $1`,
     [admin2.id],
   );
 
@@ -269,7 +270,7 @@ try {
 
 } finally {
   await pool.query(
-    `DELETE FROM public.users WHERE email LIKE $1`,
+    `DELETE FROM users WHERE email LIKE $1`,
     [`${TAG}%`],
   );
 }

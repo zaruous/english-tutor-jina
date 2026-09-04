@@ -5,7 +5,7 @@ let roleRankCache = null;
 export async function loadRoles() {
   if (roleRankCache) return roleRankCache;
   const { rows } = await pool.query(
-    `SELECT code, rank, name, description FROM public.roles ORDER BY rank`,
+    `SELECT code, rank, name, description FROM roles ORDER BY rank`,
   );
   roleRankCache = Object.fromEntries(rows.map((r) => [r.code, r.rank]));
   return roleRankCache;

@@ -52,7 +52,7 @@ export async function signup({ email, password, displayName }) {
   const passwordHash = await hashPassword(password);
   try {
     const { rows: [user] } = await pool.query(
-      `INSERT INTO public.users (email, display_name, password_hash)
+      `INSERT INTO users (email, display_name, password_hash)
        VALUES ($1, $2, $3)
        RETURNING id, email, display_name, tz, is_dev, is_admin, role, is_active`,
       [normalized, displayName || '', passwordHash],
@@ -70,7 +70,7 @@ export async function login({ email, password, userAgent, ip }) {
   checkRateLimit(normalized, ip || '');
   const { rows: [user] } = await pool.query(
     `SELECT id, email, display_name, password_hash, tz, is_dev, is_admin, role, is_active
-       FROM public.users WHERE email = $1`,
+       FROM users WHERE email = $1`,
     [normalized],
   );
   // 사용자가 없어도 더미 해시로 verify 1회 → 이메일 존재 여부의 타이밍 차이 축소
@@ -79,7 +79,7 @@ export async function login({ email, password, userAgent, ip }) {
   if (!user.is_active) throw new HttpError(401, 'UNAUTHORIZED', '로그인이 필요합니다.');
 
   const session = await createSession(user.id, { userAgent, ip });
-  await pool.query(`UPDATE public.users SET last_login_at = now() WHERE id = $1`, [user.id]);
+  await pool.query(`UPDATE users SET last_login_at = now() WHERE id = $1`, [user.id]);
   return { user: toAuthUser(user), ...session };
 }
 
@@ -87,7 +87,7 @@ export async function login({ email, password, userAgent, ip }) {
 export async function createSession(userId, { userAgent, ip } = {}) {
   const token = randomBytes(32).toString('base64url');
   const { rows: [row] } = await pool.query(
-    `INSERT INTO public.auth_sessions (user_id, token_hash, expires_at, user_agent, ip)
+    `INSERT INTO auth_sessions (user_id, token_hash, expires_at, user_agent, ip)
      VALUES ($1, $2, now() + ($3 || ' days')::interval, $4, $5)
      RETURNING id, expires_at`,
     [userId, sha256(token), String(config.sessionTtlDays), userAgent || null, ip || null],
@@ -101,14 +101,14 @@ export async function resolveSession(token) {
   const { rows: [row] } = await pool.query(
     `SELECT s.id AS session_id, u.id, u.email, u.display_name, u.tz, u.is_dev, u.is_admin,
             u.role, u.is_active
-       FROM public.auth_sessions s
-       JOIN public.users u ON u.id = s.user_id
+       FROM auth_sessions s
+       JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()
         AND u.is_active`,
     [sha256(token)],
   );
   if (!row) return null;
-  pool.query(`UPDATE public.auth_sessions SET last_seen_at = now() WHERE id = $1`, [row.session_id])
+  pool.query(`UPDATE auth_sessions SET last_seen_at = now() WHERE id = $1`, [row.session_id])
     .catch(() => {});
   const { session_id, ...userRow } = row;
   return { user: toAuthUser(userRow), sessionId: session_id };
@@ -117,7 +117,7 @@ export async function resolveSession(token) {
 export async function logout(token) {
   if (!token) return;
   await pool.query(
-    `UPDATE public.auth_sessions SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL`,
+    `UPDATE auth_sessions SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL`,
     [sha256(token)],
   );
 }
@@ -127,7 +127,7 @@ export async function devLogin({ userAgent, ip } = {}) {
   await loadRoles();
   const { rows: [user] } = await pool.query(
     `SELECT id, email, display_name, tz, is_dev, is_admin, role, is_active
-       FROM public.users WHERE email = $1 AND is_dev = true AND is_active`,
+       FROM users WHERE email = $1 AND is_dev = true AND is_active`,
     [config.devUserEmail],
   );
   if (!user) return null; // 시드 전이면 자동로그인 불가 — 401로 흘려보냄
@@ -138,10 +138,10 @@ export async function devLogin({ userAgent, ip } = {}) {
   // 최근 것 몇 개는 남긴다 — 여러 탭·기기에서 동시에 열어 둘 수 있어야 한다.
   const DEV_SESSION_KEEP = 5;
   await pool.query(
-    `UPDATE public.auth_sessions SET revoked_at = now()
+    `UPDATE auth_sessions SET revoked_at = now()
       WHERE user_id = $1 AND revoked_at IS NULL
         AND id NOT IN (
-          SELECT id FROM public.auth_sessions
+          SELECT id FROM auth_sessions
            WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()
            ORDER BY last_seen_at DESC
            LIMIT $2
@@ -158,7 +158,7 @@ export async function devLogin({ userAgent, ip } = {}) {
 export async function updateProfile(userId, { displayName }) {
   await loadRoles();
   const { rows: [user] } = await pool.query(
-    `UPDATE public.users SET display_name = $1, updated_at = now()
+    `UPDATE users SET display_name = $1, updated_at = now()
       WHERE id = $2
       RETURNING id, email, display_name, tz, is_dev, is_admin, role, is_active`,
     [displayName, userId],
@@ -176,7 +176,7 @@ export async function ensureAdminAccount() {
   const { email, password, displayName } = config.admin;
 
   const { rows: [existing] } = await pool.query(
-    `SELECT id, is_admin FROM public.users WHERE email = $1`, [email],
+    `SELECT id, is_admin FROM users WHERE email = $1`, [email],
   );
   if (existing && !existing.is_admin) {
     console.warn(`[api] ${email} 은 이미 일반 계정이라 관리자 프로비저닝을 건너뜁니다 — .env ADMIN_EMAIL 을 바꾸세요.`);
@@ -185,7 +185,7 @@ export async function ensureAdminAccount() {
 
   const passwordHash = await hashPassword(password);
   const { rows: [user] } = await pool.query(
-    `INSERT INTO public.users (email, display_name, password_hash, tz, is_admin, role)
+    `INSERT INTO users (email, display_name, password_hash, tz, is_admin, role)
      VALUES ($1, $2, $3, $4, true, 'admin')
      ON CONFLICT (email) DO UPDATE
        SET password_hash = EXCLUDED.password_hash, is_admin = true, role = 'admin', updated_at = now()

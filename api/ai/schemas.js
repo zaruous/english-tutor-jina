@@ -142,8 +142,19 @@ export const LESSON_GEN_SCHEMA = {
   properties: {
     title: { type: 'string' },
     subtitle: { type: 'string' },
-    // LC(part='lc') 전용 — 화자 라벨이 붙은 대화/설명문 4~8줄. Part 5 응답에는 없다(선택 필드).
-    script: { type: 'array', minItems: 4, maxItems: 8, items: { type: 'string' } },
+    // LC(part='lc') 전용 — 대화/설명문 4~8줄. Part 5 응답에는 없다(선택 필드).
+    // 화자와 대사를 분리한 구조다(플랜 10.7 §3.2) — 재생·에디터가 문자열을 파싱하지 않는다.
+    script: {
+      type: 'array', minItems: 4, maxItems: 8,
+      items: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          speaker: { type: 'string', enum: ['M', 'W'] },
+          text: { type: 'string' },
+        },
+        required: ['speaker', 'text'],
+      },
+    },
     items: {
       type: 'array', minItems: 3, maxItems: 10,
       items: {

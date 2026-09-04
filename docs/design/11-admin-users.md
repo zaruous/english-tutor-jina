@@ -4,20 +4,16 @@
 - 미리보기: [`../plan/img/11-admin-users.png`](../plan/img/11-admin-users.png) · 목업 소스 `../plan/mockups/11-admin-users.html`
 - 작성 2026-09-03
 
-## 0. 이 문서의 전제 — 어느 DB에 만드는가
+## 0. 이 문서의 전제 — 어느 스키마에 만드는가
 
-앱은 지금 **옛 DB `jina`(`public`, `users.is_admin`)** 로 돈다. 새 스키마 `jina_eng`/`app` 은
-[`db/baseline/`](../../db/baseline/) 에 만들어져 있지만 **앱이 연결돼 있지 않다**(10.7 Phase 1·2 미착수).
+> **갱신 (2026-09-04, main 병합).** 작성 시점의 전제는 "앱이 옛 DB `jina`/`public` 로 돈다" 였고
+> 마이그레이션도 `public.` 접두로 썼다. 10.7 Phase 2 가 끝나면서 앱은 **전용 스키마**(`DB_SCHEMA`,
+> 기본 `jina`) 하나로 돌고, SQL 은 접두 없이 쓰며 러너·런타임이 `search_path` 를 고정한다.
+> 아래 DDL 과 쿼리에서 `public.` 을 모두 걷어냈다 — 동작은 같다.
 
-그래서 이 기능은 **옛 DB 위에 만든다.** `0017_user_roles.sql` 로 `roles` · `users.role` ·
-`user_audit_log` 를 `public` 에 올린다. 근거:
-
-- 앱이 도는 DB 에 없으면 "역할을 바꿔도 아무 일이 안 일어나는" 기능이 된다.
-- DDL 은 baseline 과 **같은 모양**이라 Phase 2 가 baseline 을 적용할 때 그대로 수렴한다. 버려지지 않는다.
-- 10.5 의 `requireAdmin` 도 `is_admin` 대신 `role` 위에서 시작할 수 있게 된다.
-
-"옛 DB 는 더 이상 열지 않는다"(10.7 §3.1)는 **baseline 재작성 대상에서 뺀다**는 뜻이지,
-Phase 2 전까지 운영 DB 를 동결한다는 뜻이 아니다. 이 문서가 그 해석을 못 박는다.
+이 기능은 `db/migrations/0017_user_roles.sql` 로 `roles` · `users.role` · `user_audit_log` 를
+[`0001_baseline.sql`](../../db/migrations/0001_baseline.sql) 위에 얹는다. baseline 은
+`users`·`auth_sessions` 까지만 만들고 역할 체계를 두지 않으므로, 이 마이그레이션이 그 빈칸을 채운다.
 
 `is_admin` 은 **지우지 않는다.** `role` 을 채우고 읽기는 `role` 만 한다. 한 사이클 뒤 제거(롤백 여지).
 
@@ -39,11 +35,11 @@ Phase 2 전까지 운영 DB 를 동결한다는 뜻이 아니다. 이 문서가 
 
 ### 2.1 마이그레이션 `db/migrations/0017_user_roles.sql`
 
-`npm run db:new -- --target legacy user_roles` 로 짝을 만든 뒤 채운다. baseline(`db/baseline/0001_baseline.sql`)의
-`roles` · `users.role` · `user_audit_log` 와 **컬럼 이름·의미가 같아야 한다.**
+`npm run db:new -- user_roles` 로 짝을 만든 뒤 채운다. 스키마 접두는 쓰지 않는다 — 러너가
+`search_path` 를 `DB_SCHEMA` 하나로 고정한다(db/README.md).
 
 ```sql
-CREATE TABLE IF NOT EXISTS public.roles (
+CREATE TABLE IF NOT EXISTS roles (
   code        TEXT     PRIMARY KEY,
   rank        SMALLINT NOT NULL UNIQUE,
   name        TEXT     NOT NULL,
@@ -51,37 +47,37 @@ CREATE TABLE IF NOT EXISTS public.roles (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-INSERT INTO public.roles (code, rank, name, description) VALUES
+INSERT INTO roles (code, rank, name, description) VALUES
   ('learner',  10, '학습자', '학습만 한다. 관리 API 는 전부 403.'),
   ('author',   20, '저작자', '콘텐츠 생성·수정, 검수 요청(draft → review).'),
   ('reviewer', 30, '검수자', '저작자 권한에 더해 승인·반려·공개·내림.'),
   ('admin',    40, '관리자', '검수자 권한에 더해 시스템 조작과 역할 부여.')
 ON CONFLICT (code) DO NOTHING;
 
-ALTER TABLE public.users
+ALTER TABLE users
   ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'learner',
   ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
 -- 기존 is_admin 을 role 로 백필. is_admin 컬럼은 남긴다(한 사이클).
-UPDATE public.users SET role = 'admin' WHERE is_admin AND role = 'learner';
-ALTER TABLE public.users
-  ADD CONSTRAINT users_role_fk FOREIGN KEY (role) REFERENCES public.roles(code)
+UPDATE users SET role = 'admin' WHERE is_admin AND role = 'learner';
+ALTER TABLE users
+  ADD CONSTRAINT users_role_fk FOREIGN KEY (role) REFERENCES roles(code)
   ON UPDATE CASCADE ON DELETE RESTRICT;
-CREATE INDEX IF NOT EXISTS users_role_idx ON public.users (role) WHERE role <> 'learner';
+CREATE INDEX IF NOT EXISTS users_role_idx ON users (role) WHERE role <> 'learner';
 
-CREATE TABLE IF NOT EXISTS public.user_audit_log (
+CREATE TABLE IF NOT EXISTS user_audit_log (
   id             BIGSERIAL   PRIMARY KEY,
-  target_user_id BIGINT      NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  target_user_id BIGINT      NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   action         TEXT        NOT NULL,
-  from_role      TEXT        REFERENCES public.roles(code) ON UPDATE CASCADE,
-  to_role        TEXT        REFERENCES public.roles(code) ON UPDATE CASCADE,
+  from_role      TEXT        REFERENCES roles(code) ON UPDATE CASCADE,
+  to_role        TEXT        REFERENCES roles(code) ON UPDATE CASCADE,
   description    TEXT        NOT NULL DEFAULT '',
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-  created_by     BIGINT      REFERENCES public.users(id) ON DELETE SET NULL,
+  created_by     BIGINT      REFERENCES users(id) ON DELETE SET NULL,
   CONSTRAINT user_audit_action_ck
     CHECK (action IN ('role_change','session_revoke','disable','enable','delete'))
 );
 CREATE INDEX IF NOT EXISTS user_audit_target_idx
-  ON public.user_audit_log (target_user_id, created_at DESC);
+  ON user_audit_log (target_user_id, created_at DESC);
 ```
 
 `db/migrate.mjs` 의 `RESET_TABLES` 맨 앞(FK 역순)에 `user_audit_log`, `roles` 는 `users` 뒤에 넣는다.

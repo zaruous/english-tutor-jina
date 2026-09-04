@@ -1,23 +1,19 @@
 // db/inspect.mjs — 적용된 스키마를 사람이 읽는 형태로 덤프한다.
 //
-// 사용: npm run db:inspect [-- --target legacy|app]
+// 사용: npm run db:inspect
 //
 // psql \d+ 를 못 쓰는 환경(Windows 콘솔 코드페이지)에서도 스키마를 확인하려고 만들었다.
-// COMMENT ON 을 규약으로 붙였으므로 이 출력이 곧 스키마 문서다.
+// 대상은 러너와 같다 — PGDATABASE 의 DB_SCHEMA 스키마 하나.
+// DB_DRIVER=pglite 는 대상이 아니다(외부 접속이 없는 인프로세스 DB).
 import 'dotenv/config';
 import pg from 'pg';
 
-const TARGETS = {
-  legacy: { schema: 'public', database: () => process.env.PGDATABASE },
-  app: { schema: process.env.DB_SCHEMA || 'app', database: () => process.env.PGDATABASE_APP || 'jina_eng' },
-};
-const i = process.argv.indexOf('--target');
-const name = i === -1 ? 'app' : process.argv[i + 1];
-if (!TARGETS[name]) {
-  console.error(`알 수 없는 --target: ${name} (가능: ${Object.keys(TARGETS).join(', ')})`);
+const schema = (process.env.DB_SCHEMA || 'jina').trim();
+if (!/^[a-z_][a-z0-9_]*$/.test(schema)) {
+  console.error(`DB_SCHEMA=${schema} 는 소문자 식별자여야 합니다.`);
   process.exit(1);
 }
-const { schema, database } = TARGETS[name];
+const database = () => process.env.PGDATABASE;
 
 const c = new pg.Client({
   host: process.env.PGHOST,

@@ -1,24 +1,14 @@
 // db/new-migration.mjs — 마이그레이션 짝(up + down) 생성기
 //
-// 사용: npm run db:new -- [--target legacy|app] add_speaking_set_details
+// 사용: npm run db:new -- add_speaking_set_details
 //
 // 번호를 손으로 매기면 언젠가 중복되고, down 파일은 잊는다. 둘 다 자동으로 만든다.
-// 템플릿에는 공통 컬럼 규약(10.7 §3.4)이 주석으로 들어 있어 새 테이블을 만들 때 빠뜨리지 않는다.
 import { readdirSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const DIRS = { legacy: 'migrations', app: 'baseline' };
 const argv = process.argv.slice(2);
-const ti = argv.indexOf('--target');
-const target = ti === -1 ? 'app' : argv[ti + 1];
-if (!DIRS[target]) {
-  console.error(`알 수 없는 --target: ${target} (가능: ${Object.keys(DIRS).join(', ')})`);
-  process.exit(1);
-}
-if (ti !== -1) argv.splice(ti, 2);
-
-const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), DIRS[target]);
+const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'migrations');
 
 const raw = argv.join('_').trim();
 if (!raw) {
@@ -52,14 +42,8 @@ const up = `-- ${upFile}
 --   · 적용된 뒤에는 수정 금지 — 체크섬 불일치로 러너가 실패한다. 고칠 것은 새 번호로.
 --   · 멱등하게(IF NOT EXISTS). 파일당 1 트랜잭션(러너가 감싼다).
 --   · 트랜잭션 밖에서 돌아야 하면 이 파일 1행에 -- migrate:no-transaction
---
--- 새 테이블을 만든다면 공통 컬럼 규약(10.7 §3.4)을 지킬 것:
---   description · is_active · is_deleted · deleted_at/by · created_at/by · updated_at/by · cmf_1~10
---   + CHECK (is_deleted = (deleted_at IS NOT NULL))
---   + CREATE TRIGGER trg_<t>_updated BEFORE UPDATE … EXECUTE FUNCTION app.set_updated_at()
---   + UNIQUE 는 WHERE NOT is_deleted 부분 인덱스로
---   + COMMENT ON TABLE 과 자명하지 않은 컬럼의 COMMENT ON COLUMN
---   (append-only 로그는 예외 — 파일에 '-- common:exempt <table>' 을 이유와 함께 남긴다)
+--   · 스키마 접두를 쓰지 않는다 — 러너가 search_path 를 DB_SCHEMA 하나로 고정한다.
+--   · 콘텐츠(레슨·시나리오·단어)는 마이그레이션이 아니라 db/content/*.json 에 넣는다.
 
 `;
 
@@ -70,5 +54,5 @@ const down = `-- ${downFile}
 
 writeFileSync(join(MIGRATIONS_DIR, upFile), up, 'utf8');
 writeFileSync(join(MIGRATIONS_DIR, downFile), down, 'utf8');
-console.log(`+ db/${DIRS[target]}/${upFile}`);
-console.log(`+ db/${DIRS[target]}/${downFile}`);
+console.log(`+ db/migrations/${upFile}`);
+console.log(`+ db/migrations/${downFile}`);

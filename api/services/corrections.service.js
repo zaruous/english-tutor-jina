@@ -16,7 +16,7 @@ export async function reviewCorrection(user, correctionId, { result, clientReque
     // 멱등: 같은 client_request_id가 이미 처리됐으면 현재 상태를 replay로 응답
     if (clientRequestId) {
       const { rows: [existing] } = await client.query(
-        `SELECT correction_id FROM public.correction_reviews
+        `SELECT correction_id FROM correction_reviews
           WHERE client_request_id = $1 AND user_id = $2`,
         [clientRequestId, user.id],
       );
@@ -30,7 +30,7 @@ export async function reviewCorrection(user, correctionId, { result, clientReque
     }
 
     const { rows: [row] } = await client.query(
-      `SELECT * FROM public.corrections WHERE id = $1 AND user_id = $2 FOR UPDATE`,
+      `SELECT * FROM corrections WHERE id = $1 AND user_id = $2 FOR UPDATE`,
       [correctionId, user.id],
     );
     if (!row) throw new HttpError(404, 'NOT_FOUND', '첨삭을 찾을 수 없습니다.');
@@ -39,7 +39,7 @@ export async function reviewCorrection(user, correctionId, { result, clientReque
     // again → now()+10분, 그 외 → 사용자 TZ 자정 버킷 + N일.
     // 같은 파라미터를 ::int 캐스트와 || 텍스트 연결에 재사용하면 PG 42804 — make_interval만 쓴다.
     const { rows: [updated] } = await client.query(
-      `UPDATE public.corrections
+      `UPDATE corrections
           SET next_review = CASE WHEN $3::int IS NOT NULL
                                  THEN now() + make_interval(mins => $3::int)
                                  ELSE (date_trunc('day', now() AT TIME ZONE $4) + make_interval(days => $5::int)) AT TIME ZONE $4
@@ -55,7 +55,7 @@ export async function reviewCorrection(user, correctionId, { result, clientReque
     );
 
     await client.query(
-      `INSERT INTO public.correction_reviews
+      `INSERT INTO correction_reviews
          (correction_id, user_id, result, prev_interval_days, prev_ease_factor,
           next_interval_days, next_ease_factor, next_review, elapsed_ms, client_request_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
