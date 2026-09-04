@@ -8,6 +8,7 @@
 //  - SQL 문 분할 금지: client.query(파일 전체) — $$ … $$ 본문 보호
 //  - 파일당 1 트랜잭션 (1행 "-- migrate:no-transaction" 이면 예외)
 //  - reset 은 명시적 목록만 DROP + --yes 필수 (DROP SCHEMA 절대 금지)
+//  - DB_DRIVER=pglite 면 PGLITE_DATA_DIR 의 파일 DB 에 같은 절차를 적용 (플랜 10.7 Phase 1)
 import 'dotenv/config';
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -82,7 +83,29 @@ function readMigration(file) {
   return { file, version: file.replace(/\.sql$/, ''), sql, checksum: sha256(sql), noTransaction };
 }
 
+// 러너는 커넥션 1개를 붙잡고 있어야 한다 — pg_advisory_lock 이 세션 단위이기 때문이다.
+// 그래서 풀(api/lib/db.js)이 아니라 여기서 직접 연결한다. exec 는 문장이 여럿 든 마이그레이션 파일용.
+const DRIVER = (process.env.DB_DRIVER || 'pg').trim();
+
 async function connect() {
+  if (DRIVER === 'pglite') {
+    // 메모리 DB 는 프로세스와 함께 사라진다 — 마이그레이션이 남지 않으니 실수를 미리 막는다.
+    if (!process.env.PGLITE_DATA_DIR) {
+      throw new Error(
+        'DB_DRIVER=pglite 로 마이그레이션하려면 PGLITE_DATA_DIR 이 필요합니다 ' +
+        '(빈 값 = 메모리 DB 라 종료와 함께 사라집니다).',
+      );
+    }
+    const { PGlite } = await import('@electric-sql/pglite');
+    const { lockDataDir } = await import('../api/lib/pglite-lock.js');
+    lockDataDir(process.env.PGLITE_DATA_DIR);   // API 서버가 같은 디렉터리를 열고 있으면 여기서 멈춘다
+    const db = await PGlite.create(process.env.PGLITE_DATA_DIR);
+    return {
+      query: (sql, params) => db.query(sql, params ?? [], { parsers: { 20: Number, 1700: Number } }),
+      exec: (sql) => db.exec(sql),
+      end: () => db.close(),
+    };
+  }
   const client = new pg.Client({
     host: process.env.PGHOST,
     port: Number(process.env.PGPORT || 5432),
@@ -92,6 +115,7 @@ async function connect() {
   });
   await client.connect();
   await client.query(`SET client_encoding = 'UTF8'`);
+  client.exec = (sql) => client.query(sql);   // pg 는 파라미터 없는 query 가 곧 simple protocol 이다
   return client;
 }
 
@@ -137,11 +161,11 @@ async function up(client) {
   for (const m of pending) {
     const started = Date.now();
     if (m.noTransaction) {
-      await client.query(m.sql);
+      await client.exec(m.sql);
     } else {
       await client.query('BEGIN');
       try {
-        await client.query(m.sql);
+        await client.exec(m.sql);
         await client.query(
           `INSERT INTO public.schema_migrations (version, checksum, duration_ms, applied_by)
            VALUES ($1, $2, $3, $4)`,
@@ -196,7 +220,7 @@ async function down(client) {
   }
   await client.query('BEGIN');
   try {
-    await client.query(sql);
+    await client.exec(sql);
     await client.query(`DELETE FROM public.schema_migrations WHERE version = $1`, [last]);
     await client.query('COMMIT');
     console.log(`↩ ${downFile} 적용`);
@@ -223,8 +247,10 @@ if (!commands[command]) {
   process.exit(1);
 }
 
-const client = await connect();
+// connect() 도 실패할 수 있다(pglite 잠금 충돌 등) — 스택 대신 이유가 보이도록 같은 핸들러 안에 둔다.
+let client = null;
 try {
+  client = await connect();
   await client.query(LOCK_KEY_SQL);
   await bootstrap(client);
   await commands[command](client);
@@ -232,5 +258,5 @@ try {
   console.error(`[migrate:${command}] ${err.message}`);
   process.exitCode = 1;
 } finally {
-  await client.end();
+  if (client) await client.end();
 }

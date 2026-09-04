@@ -9,6 +9,26 @@ psql로 직접 볼 때(Windows 콘솔은 `chcp 65001` 먼저):
 psql "postgresql://$PGUSER@$PGHOST:$PGPORT/$PGDATABASE"
 ```
 
+## PostgreSQL 없이 돌리기 — `DB_DRIVER=pglite`
+
+PGlite 는 PostgreSQL 자체의 WASM 빌드다. SQL 도 마이그레이션도 그대로 쓰고, 설치와 `PG*` 접속 정보가
+필요 없다. `.env` 에:
+
+```
+DB_DRIVER=pglite
+PGLITE_DATA_DIR=.pglite/dev     # 비우면 메모리 — 프로세스가 끝나면 사라진다
+```
+
+그다음은 아래 명령이 전부 같다(`db:migrate` · `db:seed` · `db:rollback` · `db:reset`).
+
+**한 번에 한 프로세스만 열 수 있다.** PGlite 는 프로세스마다 독립된 인스턴스라, 같은 데이터 디렉터리를
+둘이 열면 서로의 쓰기를 보지 못하고 나중에 flush 한 쪽이 이긴다(실측: API 서버가 다른 프로세스의
+`UPDATE` 를 끝내 보지 못했다). 그래서 `api/lib/pglite-lock.js` 가 PID 잠금을 걸고 두 번째 프로세스를
+거부한다 — **마이그레이션·시드는 API 서버를 멈춘 뒤에 실행**한다. 강제 종료로 남은 잠금은 다음 실행이
+자동 회수한다. 여러 프로세스가 동시에 붙어야 하면 `DB_DRIVER=pg` 를 쓴다.
+
+`npm test` 는 이 설정과 무관하게 항상 메모리 DB 를 쓴다(`tests/setup.mjs`) — 개발 데이터를 건드리지 않는다.
+
 ## 명령
 
 ```bash

@@ -6,7 +6,7 @@
 // 카드 타임스탬프는 now() 기준 상대 시각 — 고정값이면 며칠 뒤 전부 due로 몰려
 // "In 3 days" 상태를 재현할 수 없다. 배분: due 3 / learned 3 / new 2.
 import 'dotenv/config';
-import pg from 'pg';
+import { pool } from '../../api/lib/db.js';
 import { hashPassword } from '../../api/services/password.js';
 
 const DEV_EMAIL = process.env.DEV_USER_EMAIL || 'jina@dev.local';
@@ -30,14 +30,15 @@ const CARDS = [
   { word: 'scrutinize',  interval: 1, ef: 2.5, reviews: 0, fails: 0, offsetDays: null, last: null },
 ];
 
-const client = new pg.Client({
-  host: process.env.PGHOST,
-  port: Number(process.env.PGPORT || 5432),
-  database: process.env.PGDATABASE,
-  user: process.env.PGUSER,
-  password: process.env.PGPASSWORD,
-});
-await client.connect();
+// 커넥션 1개를 빌린다 — 아래에 BEGIN/COMMIT 구간이 있어 풀에 흩어지면 안 된다.
+// 연결 자체가 실패할 수 있다(pglite 잠금 충돌 등) — 스택 대신 이유를 보여준다.
+let client;
+try {
+  client = await pool.connect();
+} catch (err) {
+  console.error(`[seed] ${err.message}`);
+  process.exit(1);
+}
 try {
   const passwordHash = await hashPassword(DEV_PASSWORD);
   const { rows: [user] } = await client.query(
@@ -269,5 +270,6 @@ try {
   );
   console.log(`시드 완료 — user #${user.id} (${DEV_EMAIL}), 카드: due ${counts.due} / learned ${counts.learned} / new ${counts.new}`);
 } finally {
-  await client.end();
+  client.release();
+  await pool.end();
 }

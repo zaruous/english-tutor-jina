@@ -14,8 +14,10 @@
 //
 // 흡수하지 못하는 한계는 docs/RISKS.md R12 — 커넥션 경합(advisory lock 은 동작하지만 경합이 없다)과
 // statement_timeout(WASM 단일 스레드라 적용되어도 질의를 중단시키지 못한다)은 DB_DRIVER=pg 로만 검증된다.
+// 파일 DB 를 두 프로세스가 여는 것도 막아야 한다 — 이유와 방법은 pglite-lock.js.
 import pg from 'pg';
 import { config } from '../config.js';
+import { lockDataDir } from './pglite-lock.js';
 
 const { driver, schema, pgliteDataDir } = config.db;
 const timeoutMs = config.pg.statementTimeoutMs;
@@ -58,12 +60,15 @@ function createPgliteAdapter() {
 
   async function instance() {
     if (!ready) {
+      // 초기화가 실패하면 캐시를 비운다 — 실패한 promise 가 남으면 원인이 사라져도 계속 같은 에러를 낸다.
       ready = (async () => {
         const { PGlite } = await import('@electric-sql/pglite');
+        // 파일 DB 는 한 프로세스만 열 수 있다(pglite-lock.js). 메모리 DB 는 공유되지 않으니 잠금이 없다.
+        if (pgliteDataDir) lockDataDir(pgliteDataDir);
         const db = await PGlite.create(pgliteDataDir || undefined);
         await db.exec(`SET search_path TO ${schema}; SET statement_timeout = ${timeoutMs};`);
         return db;
-      })();
+      })().catch((err) => { ready = null; throw err; });
     }
     return ready;
   }
@@ -82,6 +87,7 @@ function createPgliteAdapter() {
     query,
     exec: async (sql) => { await (await instance()).exec(sql); },
     async connect() {
+      await instance();          // 연결 실패(잠금 충돌 등)는 여기서 드러나야 한다 — 첫 query 가 아니라
       let release;
       const held = new Promise((resolve) => { release = resolve; });
       const previous = tail;

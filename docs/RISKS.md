@@ -42,7 +42,7 @@ review: "플랜을 새로 쓸 때, Phase 를 done 으로 넘길 때 이 표를 �
 | **R4** | `db:reset` 이 **수기 목록**(`RESET_TABLES` 22개, FK 역순)에 의존한다. 같은 `public` 스키마에 다른 앱 테이블 11개가 산다 | `db/migrate.mjs` — `RESET_TABLES` 22 / `FOREIGN_TABLES` 11 self-assert | 높음 | 중간 | 전용 스키마 → `DROP SCHEMA … CASCADE`. 목록·self-assert 소멸 | 10.7 P2 |
 | **R5** | 마이그레이션 16개가 층으로 겹친다(0015 가 0005 의 CHECK 를 교체). 신규 환경 구축이 16단계 순차 재생 | `db/migrations/` 16개 up + 16개 down | 낮음 | 중간 | baseline 1개로 압축 | 10.7 P2 |
 | **R11** | **10.7 Phase 2 는 되돌릴 수 없다.** 0001~0016 을 삭제하고 baseline 으로 대체하며 데이터 이동 마이그레이션을 쓰지 않는다. "기존 DB 를 드롭해도 된다"는 전제가 깨지면 Phase 전체 재작성 | `docs/plan/10.7` 머리말 전제 + Phase 2 표 | 높음 | 중간 | (a) Phase 1 을 먼저 완료해 안전망 확보 (b) 착수 직전 전제를 재확인 (c) 한 PR 로 격리 | 10.7 P2 |
-| **R12** | PGlite 의존의 세 한계 — **pre-1.0**(0.5.8), **단일 커넥션**(동시성 버그 미검출), **PG 18 버전 스큐**. 실측 추가: `SET statement_timeout` 은 **적용되지만 실제로 중단시키지 못한다**(WASM 단일 스레드, `pg_sleep(1)` 이 timeout 50ms 를 통과) | `@electric-sql/pglite@0.5.8` 직접 실행, 이 저장소 마이그레이션 16개 전부 통과(180ms) | 중간 | 높음 | 버전 고정 · 동시성·타임아웃 단정은 `DB_DRIVER=pg` 전용으로 분리 · CI 는 pglite, 릴리스 전 1회 pg | 10.7 |
+| **R12** | PGlite 의존의 세 한계 — **pre-1.0**(0.5.8), **단일 커넥션**(동시성 버그 미검출), **PG 18 버전 스큐**. 실측 추가 2건: (a) `SET statement_timeout` 은 **적용되지만 실제로 중단시키지 못한다**(WASM 단일 스레드, `pg_sleep(1)` 이 timeout 50ms 를 통과) (b) **같은 데이터 디렉터리를 두 프로세스가 열면 서로의 쓰기를 보지 못한다** — API 서버 가동 중 다른 프로세스가 `UPDATE` 한 값을 API 가 끝내 보지 못했고 에러도 없다. 조용한 데이터 손실 경로 | `@electric-sql/pglite@0.5.8` 직접 실행, 이 저장소 마이그레이션 16개 전부 통과(180ms) | 중간 | 높음 | 버전 고정 · 동시성·타임아웃 단정은 `DB_DRIVER=pg` 전용으로 분리 · CI 는 pglite, 릴리스 전 1회 pg · **다중 프로세스는 PID 잠금으로 차단**(`api/lib/pglite-lock.js`, 2026-09-03) | 10.7 |
 
 ### 보안
 
