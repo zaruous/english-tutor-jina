@@ -21,24 +21,29 @@ export async function listSpeakingSentences(user, { limit = 20 } = {}) {
   const cap = Math.min(Math.max(Number(limit) || 20, 1), MAX_SENTENCES);
   const [lc, scenarios, vocab] = await Promise.all([
     pool.query(
-      `SELECT l.title, jsonb_array_elements_text(l.passage -> 'body') AS line
-         FROM public.lessons l
-        WHERE l.kind = 'toeic_lc' AND l.published
-          AND (l.visibility = 'public' OR l.created_by = $1)
-          AND jsonb_typeof(l.passage -> 'body') = 'array'`,
+      `SELECT c.title, jsonb_array_elements(d.passage -> 'body') ->> 'text' AS line
+         FROM content_items c
+         JOIN lesson_details d ON d.content_id = c.id
+        WHERE d.kind = 'toeic_lc' AND c.type = 'lesson' AND c.status = 'published'
+          AND (c.visibility = 'public' OR c.created_by = $1)
+          AND jsonb_typeof(d.passage -> 'body') = 'array'`,
       [user.id],
     ),
     pool.query(
-      `SELECT title, opening_message
-         FROM public.conversation_scenarios
-        WHERE visibility = 'public' OR created_by = $1`,
+      `SELECT c.title, sd.opening_message
+         FROM content_items c
+         JOIN scenario_details sd ON sd.content_id = c.id
+        WHERE c.type = 'scenario' AND c.status = 'published'
+          AND (c.visibility = 'public' OR c.created_by = $1)`,
       [user.id],
     ),
     pool.query(
-      `SELECT l.title, jsonb_array_elements(l.vocab) ->> 'ex' AS ex
-         FROM public.lessons l
-        WHERE l.published AND (l.visibility = 'public' OR l.created_by = $1)
-          AND jsonb_typeof(l.vocab) = 'array'`,
+      `SELECT c.title, jsonb_array_elements(d.vocab) ->> 'ex' AS ex
+         FROM content_items c
+         JOIN lesson_details d ON d.content_id = c.id
+        WHERE c.type = 'lesson' AND c.status = 'published'
+          AND (c.visibility = 'public' OR c.created_by = $1)
+          AND jsonb_typeof(d.vocab) = 'array'`,
       [user.id],
     ),
   ]);
@@ -54,7 +59,8 @@ export async function listSpeakingSentences(user, { limit = 20 } = {}) {
     out.push({ text, source, tag });
   };
 
-  // 화자 라벨("M: ")은 떼고 대사만 읽는다.
+  // LC 스크립트는 [{speaker,text}] 구조라 text 만 온다 (플랜 10.7 §3.2).
+  // 정규식은 구 포맷("M: …")이 섞여 들어와도 안전하도록 남겨 둔 방어선이다.
   for (const r of lc.rows) push(String(r.line || '').replace(/^[MW]:\s*/, ''), 'listening', r.title);
   for (const r of scenarios.rows) push(r.opening_message, 'scenario', r.title);
   for (const r of vocab.rows) push(r.ex, 'lesson', r.title);

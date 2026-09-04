@@ -7,7 +7,7 @@ const H = { 'Content-Type': 'application/json', 'X-Requested-With': 'jina', Orig
 const post = async (p, body) => (await fetch(API + p, { method: 'POST', headers: H, body: JSON.stringify(body) })).json();
 const db = new pg.Client({ host: process.env.PGHOST, port: +process.env.PGPORT, database: process.env.PGDATABASE, user: process.env.PGUSER, password: process.env.PGPASSWORD });
 await db.connect();
-const ref = async (id) => (await db.query('select provider_ref, provider_ref_provider from public.conversation_sessions where id=$1', [id])).rows[0];
+const ref = async (id) => (await db.query('select provider_ref, provider_ref_provider from conversation_sessions where id=$1', [id])).rows[0];
 const t = (label, ok, detail = '') => console.log(`${ok ? '✔' : '✖'} ${label}${detail ? ' — ' + detail : ''}`);
 const provider = process.argv[2] || 'claude';
 
@@ -31,7 +31,7 @@ const ref2 = await ref(sid);
 t('턴2 후 핸들 유지(같은 세션)', ref2.provider_ref === ref1.provider_ref);
 
 // 폴백: 핸들을 존재하지 않는 세션 id 로 훼손
-await db.query('update public.conversation_sessions set provider_ref=$2 where id=$1', [sid, '00000000-0000-4000-8000-000000000000']);
+await db.query('update conversation_sessions set provider_ref=$2 where id=$1', [sid, '00000000-0000-4000-8000-000000000000']);
 let r3 = await post(`/api/conversations/${sid}/messages`, { text: 'Remind me: which day do I play? One short sentence.', provider });
 t('턴3(핸들 훼손) 응답 ok', r3.ok === true, r3.error || `${r3.meta?.durationMs}ms`);
 t('턴3 resume_fallback=true (히스토리 재전송으로 처리)', r3.meta?.resume_fallback === true && r3.meta?.resumed === false);

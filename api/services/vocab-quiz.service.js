@@ -48,8 +48,8 @@ export function quizDto(row) {
 export async function existingWords(user, limit = 300) {
   const { rows } = await pool.query(
     `SELECT w.word
-       FROM public.user_vocab_cards c
-       JOIN public.vocab_words w ON w.id = c.word_id
+       FROM user_vocab_cards c
+       JOIN vocab_words w ON w.id = c.word_id
       WHERE c.user_id = $1
       ORDER BY c.added_at DESC
       LIMIT $2`,
@@ -64,7 +64,7 @@ export async function createQuiz(user, { kind, keyword, data, provider, model })
       `모델이 단어 ${QUIZ_SIZE}개를 만들지 못했습니다 (${data.words?.length ?? 0}개).`, { provider });
   }
   const { rows: [row] } = await pool.query(
-    `INSERT INTO public.vocab_quizzes
+    `INSERT INTO vocab_quizzes
        (user_id, kind, keyword, topic_title, topic_ko, words, provider, model)
      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
      RETURNING *`,
@@ -76,7 +76,7 @@ export async function createQuiz(user, { kind, keyword, data, provider, model })
 
 export async function getQuizRow(user, quizId, client = pool) {
   const { rows: [row] } = await client.query(
-    `SELECT * FROM public.vocab_quizzes WHERE id = $1 AND user_id = $2`,
+    `SELECT * FROM vocab_quizzes WHERE id = $1 AND user_id = $2`,
     [quizId, user.id],
   );
   if (!row) throw new HttpError(404, 'NOT_FOUND', '퀴즈를 찾을 수 없습니다.');
@@ -86,7 +86,7 @@ export async function getQuizRow(user, quizId, client = pool) {
 // 오늘(APP_TZ 기준) 만든 가장 최근 퀴즈 — 없으면 null (프론트는 주제 선택 화면)
 export async function todayQuiz(user) {
   const { rows: [row] } = await pool.query(
-    `SELECT * FROM public.vocab_quizzes
+    `SELECT * FROM vocab_quizzes
       WHERE user_id = $1
         AND (created_at AT TIME ZONE $2)::date = (now() AT TIME ZONE $2)::date
       ORDER BY created_at DESC
@@ -116,7 +116,7 @@ export async function answerQuiz(user, quizId, answers) {
   }
   const score = graded.filter((g) => g.correct).length;
   const { rows: [updated] } = await pool.query(
-    `UPDATE public.vocab_quizzes
+    `UPDATE vocab_quizzes
         SET answers = $3::jsonb, score = $4, completed_at = now()
       WHERE id = $1 AND user_id = $2
       RETURNING *`,

@@ -19,12 +19,12 @@ let tablesCache = { at: 0, val: null };
 async function presentTables() {
   if (tablesCache.val && Date.now() - tablesCache.at < 60_000) return tablesCache.val;
   const { rows: [r] } = await pool.query(`SELECT
-    to_regclass('public.lessons')               IS NOT NULL AS lessons,
-    to_regclass('public.user_lesson_attempts')  IS NOT NULL AS attempts,
-    to_regclass('public.conversation_sessions') IS NOT NULL AS conv_sessions,
-    to_regclass('public.conversation_messages') IS NOT NULL AS conv_messages,
-    to_regclass('public.corrections')           IS NOT NULL AS corrections,
-    to_regclass('public.user_goals')            IS NOT NULL AS goals`);
+    to_regclass('content_items')         IS NOT NULL AS lessons,
+    to_regclass('user_lesson_attempts')  IS NOT NULL AS attempts,
+    to_regclass('conversation_sessions') IS NOT NULL AS conv_sessions,
+    to_regclass('conversation_messages') IS NOT NULL AS conv_messages,
+    to_regclass('corrections')           IS NOT NULL AS corrections,
+    to_regclass('user_goals')            IS NOT NULL AS goals`);
   r.conversation = r.conv_sessions && r.conv_messages; // 둘 다 있어야 조인 가능
   r.lesson = r.lessons && r.attempts;
   tablesCache = { at: Date.now(), val: r };
@@ -37,17 +37,17 @@ async function presentTables() {
 const ACT_VOCAB = `
     SELECT (reviewed_at AT TIME ZONE $2)::date AS day,
            LEAST(COALESCE(elapsed_ms, 10000), 120000) / 60000.0 AS minutes
-      FROM public.vocab_reviews WHERE user_id = $1`;
+      FROM vocab_reviews WHERE user_id = $1`;
 const ACT_LESSON = `
     SELECT (ua.created_at AT TIME ZONE $2)::date AS day,
            LEAST(COALESCE(ua.elapsed_ms, l.est_minutes * 60000), 1800000) / 60000.0 AS minutes
-      FROM public.user_lesson_attempts ua
-      JOIN public.lessons l ON l.id = ua.lesson_id
+      FROM user_lesson_attempts ua
+      JOIN lesson_details l ON l.content_id = ua.content_id
      WHERE ua.user_id = $1`;
 const ACT_CONV = `
     SELECT (m.created_at AT TIME ZONE $2)::date AS day, 0.5 AS minutes
-      FROM public.conversation_messages m
-      JOIN public.conversation_sessions s ON s.id = m.session_id
+      FROM conversation_messages m
+      JOIN conversation_sessions s ON s.id = m.session_id
      WHERE s.user_id = $1 AND m.role = 'user'`;
 
 function activitySql(t) {
@@ -124,7 +124,7 @@ async function fetchReviewAccuracy(params) {
                                                                                                   AS total_prev,
        count(*) FILTER (WHERE result <> 'again')::int AS pass_all,
        count(*)::int                                 AS total_all
-       FROM public.vocab_reviews WHERE user_id = $1`,
+       FROM vocab_reviews WHERE user_id = $1`,
     [params[0]],
   );
   return r;
@@ -163,8 +163,9 @@ async function fetchLessonAccuracy(t, params) {
                                        AND ua.created_at > now() - interval '30 days'), 0)::int AS total_30_lc,
        COALESCE(sum(correct_count) FILTER (WHERE l.kind = 'toeic_lc'), 0)::int AS pass_all_lc,
        COALESCE(sum(total_count)   FILTER (WHERE l.kind = 'toeic_lc'), 0)::int AS total_all_lc
-       FROM public.user_lesson_attempts ua
-       JOIN public.lessons l ON l.id = ua.lesson_id AND l.source = 'seed'
+       FROM user_lesson_attempts ua
+       JOIN content_items c ON c.id = ua.content_id AND c.source = 'seed'
+       JOIN lesson_details l ON l.content_id = c.id
       WHERE ua.user_id = $1`,
     [params[0]],
   );
@@ -178,7 +179,7 @@ async function fetchGoal(t, params) {
     `SELECT target_score,
             to_char(exam_date, 'YYYY-MM-DD') AS exam_date,
             (exam_date - (now() AT TIME ZONE $2)::date)::int AS d_day
-       FROM public.user_goals WHERE user_id = $1`,
+       FROM user_goals WHERE user_id = $1`,
     params,
   );
   if (!r) return { target_score: 900, exam_date: null, d_day: null };
@@ -190,7 +191,7 @@ async function fetchLastLessonScores(t, params) {
   if (!t.lesson) return { score: null, delta: null };
   const { rows } = await pool.query(
     `SELECT round(correct_count::numeric / total_count * 100)::int AS score
-       FROM public.user_lesson_attempts WHERE user_id = $1
+       FROM user_lesson_attempts WHERE user_id = $1
       ORDER BY created_at DESC, id DESC LIMIT 2`,
     [params[0]],
   );
@@ -214,18 +215,18 @@ async function fetchRecommendedLesson(t, user) {
 // 오늘(유저 TZ) 활동 플래그 — today_plan의 done 판정.
 async function fetchTodayFlags(t, params) {
   const parts = [
-    `(SELECT count(*)::int FROM public.vocab_reviews
+    `(SELECT count(*)::int FROM vocab_reviews
        WHERE user_id = $1 AND (reviewed_at AT TIME ZONE $2)::date = (now() AT TIME ZONE $2)::date)
        AS vocab_reviews`,
   ];
   parts.push(t.lesson
-    ? `EXISTS (SELECT 1 FROM public.user_lesson_attempts
+    ? `EXISTS (SELECT 1 FROM user_lesson_attempts
                 WHERE user_id = $1 AND (created_at AT TIME ZONE $2)::date = (now() AT TIME ZONE $2)::date)
        AS lesson_done`
     : `false AS lesson_done`);
   parts.push(t.conversation
-    ? `EXISTS (SELECT 1 FROM public.conversation_messages m
-                JOIN public.conversation_sessions s ON s.id = m.session_id
+    ? `EXISTS (SELECT 1 FROM conversation_messages m
+                JOIN conversation_sessions s ON s.id = m.session_id
                WHERE s.user_id = $1 AND m.role = 'user'
                  AND (m.created_at AT TIME ZONE $2)::date = (now() AT TIME ZONE $2)::date)
        AS conversation_done`
@@ -241,8 +242,8 @@ async function fetchRecentCorrection(t, params) {
   if (!t.corrections) return null;
   const { rows: [r] } = await pool.query(
     `SELECT original, corrected, reason, created_at,
-            (SELECT count(*)::int FROM public.corrections c2 WHERE c2.user_id = $1) AS total_count
-       FROM public.corrections WHERE user_id = $1
+            (SELECT count(*)::int FROM corrections c2 WHERE c2.user_id = $1) AS total_count
+       FROM corrections WHERE user_id = $1
       ORDER BY created_at DESC, id DESC LIMIT 1`,
     [params[0]],
   );

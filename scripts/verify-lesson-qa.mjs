@@ -16,7 +16,10 @@ const t = (name, ok, detail = '') => { results.push(ok); console.log(`${ok ? '�
 const norm = (s) => s.replace(/\*\*/g, '').replace(/\s+/g, ' ').trim();
 // 서버 renderPassage(lesson.service.js)와 같은 기준 — 헤더 값(type/from/to/cc/date) + subject + body 가 인용 검증 대상
 const PASSAGE_HEADER_KEYS = ['type', 'from', 'to', 'cc', 'date'];
-const passageText = (passage) => norm([...PASSAGE_HEADER_KEYS.map((k) => passage?.[k]), passage?.subject, ...(passage?.body || [])]
+// LC 지문의 body 는 [{speaker,text}] 객체 배열이다 — 서버와 같이 text 만 본다(플랜 10.7 §3.2).
+const bodyLines = (body) => (Array.isArray(body) ? body : [])
+  .map((line) => (line && typeof line === 'object' ? line.text : line));
+const passageText = (passage) => norm([...PASSAGE_HEADER_KEYS.map((k) => passage?.[k]), passage?.subject, ...bodyLines(passage?.body)]
   .filter((s) => typeof s === 'string' && s.trim()).join(' '));
 
 async function main() {

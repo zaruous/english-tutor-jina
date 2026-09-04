@@ -2,58 +2,28 @@
 //
 // 규칙 (docs/PLAN-vocab-backend.md Phase 1):
 //  - 파일명 NNNN_snake_case.sql (4자리 0패딩, 사전순 = 적용순, 번호 재사용 금지)
-//  - 이력: public.schema_migrations (러너가 부트스트랩)
+//  - 이력: <DB_SCHEMA>.schema_migrations (러너가 스키마와 함께 부트스트랩)
 //  - 체크섬 강제: 적용된 파일을 수정하면 즉시 실패
 //  - pg_advisory_lock 으로 동시 실행 차단
 //  - SQL 문 분할 금지: client.query(파일 전체) — $$ … $$ 본문 보호
 //  - 파일당 1 트랜잭션 (1행 "-- migrate:no-transaction" 이면 예외)
-//  - reset 은 명시적 목록만 DROP + --yes 필수 (DROP SCHEMA 절대 금지)
+//  - reset 은 DROP SCHEMA <DB_SCHEMA> CASCADE + --yes 필수 (전용 스키마라 목록이 필요 없다)
+//  - DB_DRIVER=pglite 면 PGLITE_DATA_DIR 의 파일 DB 에 같은 절차를 적용 (플랜 10.7 Phase 1)
 import 'dotenv/config';
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'migrations');
 const LOCK_KEY_SQL = `SELECT pg_advisory_lock(hashtext('jina_migrations'))`;
 
-// reset 이 지울 수 있는 테이블의 전체 목록 — FK 역순. 여기 없는 테이블은 절대 건드리지 않는다.
-const RESET_TABLES = [
-  'topic_contents',
-  'lesson_reports',
-  'lesson_drafts',
-  'ai_jobs',
-  'vocab_quizzes',
-  'correction_reviews',
-  'lesson_qa_sessions',
-  'user_lesson_attempts',
-  'lesson_items',
-  'lessons',
-  'vocab_sets',
-  'conversation_scenarios',
-  'topics',
-  'corrections',
-  'conversation_messages',
-  'conversation_sessions',
-  'vocab_reviews',
-  'user_vocab_cards',
-  'vocab_words',
-  'auth_sessions',
-  'user_goals',
-  'users',
-  'schema_migrations',
-];
-// 같은 스키마에 사는 기존 앱 테이블 — reset 목록에 섞이면 코드 버그이므로 self-assert.
-const FOREIGN_TABLES = [
-  'study_sessions', 'session_messages', 'session_corrections', 'vocabulary',
-  'vocab_quiz_details', 'diary_details', 'freetalk_details', 'grammar_details',
-  'pronunciation_details', 'roleplay_details', 'shadowing_details',
-];
-for (const t of RESET_TABLES) {
-  if (FOREIGN_TABLES.includes(t)) {
-    throw new Error(`reset 목록에 기존 앱 테이블이 섞였습니다: ${t}`);
-  }
+// 전용 스키마. 마이그레이션 SQL 은 접두 없이 쓰고, 러너가 search_path 를 이 하나로 고정한다.
+// 식별자는 바인딩할 수 없으므로 형태를 강제한다.
+const SCHEMA = (process.env.DB_SCHEMA || 'jina').trim();
+if (!/^[a-z_][a-z0-9_]*$/.test(SCHEMA)) {
+  throw new Error(`DB_SCHEMA=${SCHEMA} 는 소문자 식별자여야 합니다.`);
 }
 
 function sha256(text) {
@@ -82,7 +52,30 @@ function readMigration(file) {
   return { file, version: file.replace(/\.sql$/, ''), sql, checksum: sha256(sql), noTransaction };
 }
 
+// 러너는 커넥션 1개를 붙잡고 있어야 한다 — pg_advisory_lock 이 세션 단위이기 때문이다.
+// 그래서 풀(api/lib/db.js)이 아니라 여기서 직접 연결한다. exec 는 문장이 여럿 든 마이그레이션 파일용.
+const DRIVER = (process.env.DB_DRIVER || 'pg').trim();
+
 async function connect() {
+  if (DRIVER === 'pglite') {
+    // 메모리 DB 는 프로세스와 함께 사라진다 — 마이그레이션이 남지 않으니 실수를 미리 막는다.
+    if (!process.env.PGLITE_DATA_DIR) {
+      throw new Error(
+        'DB_DRIVER=pglite 로 마이그레이션하려면 PGLITE_DATA_DIR 이 필요합니다 ' +
+        '(빈 값 = 메모리 DB 라 종료와 함께 사라집니다).',
+      );
+    }
+    const { PGlite } = await import('@electric-sql/pglite');
+    const { lockDataDir } = await import('../api/lib/pglite-lock.js');
+    lockDataDir(process.env.PGLITE_DATA_DIR);   // API 서버가 같은 디렉터리를 열고 있으면 여기서 멈춘다
+    const db = await PGlite.create(process.env.PGLITE_DATA_DIR);
+    await db.exec(`SET search_path TO ${SCHEMA}`);
+    return {
+      query: (sql, params) => db.query(sql, params ?? [], { parsers: { 20: Number, 1700: Number } }),
+      exec: (sql) => db.exec(sql),
+      end: () => db.close(),
+    };
+  }
   const client = new pg.Client({
     host: process.env.PGHOST,
     port: Number(process.env.PGPORT || 5432),
@@ -92,12 +85,16 @@ async function connect() {
   });
   await client.connect();
   await client.query(`SET client_encoding = 'UTF8'`);
+  await client.query(`SET search_path TO ${SCHEMA}`);   // 스키마가 아직 없어도 SET 자체는 통과한다
+  client.exec = (sql) => client.query(sql);   // pg 는 파라미터 없는 query 가 곧 simple protocol 이다
   return client;
 }
 
 async function bootstrap(client) {
+  await client.query(`CREATE SCHEMA IF NOT EXISTS ${SCHEMA}`);
+  await client.query(`SET search_path TO ${SCHEMA}`);
   await client.query(`
-    CREATE TABLE IF NOT EXISTS public.schema_migrations (
+    CREATE TABLE IF NOT EXISTS schema_migrations (
       version     TEXT        PRIMARY KEY,
       checksum    TEXT        NOT NULL,
       applied_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -108,7 +105,7 @@ async function bootstrap(client) {
 
 async function appliedMap(client) {
   const { rows } = await client.query(
-    `SELECT version, checksum FROM public.schema_migrations ORDER BY version`,
+    `SELECT version, checksum FROM schema_migrations ORDER BY version`,
   );
   return new Map(rows.map((r) => [r.version, r.checksum]));
 }
@@ -137,13 +134,13 @@ async function up(client) {
   for (const m of pending) {
     const started = Date.now();
     if (m.noTransaction) {
-      await client.query(m.sql);
+      await client.exec(m.sql);
     } else {
       await client.query('BEGIN');
       try {
-        await client.query(m.sql);
+        await client.exec(m.sql);
         await client.query(
-          `INSERT INTO public.schema_migrations (version, checksum, duration_ms, applied_by)
+          `INSERT INTO schema_migrations (version, checksum, duration_ms, applied_by)
            VALUES ($1, $2, $3, $4)`,
           [m.version, m.checksum, Date.now() - started, process.env.USER || 'unknown'],
         );
@@ -155,7 +152,7 @@ async function up(client) {
     }
     if (m.noTransaction) {
       await client.query(
-        `INSERT INTO public.schema_migrations (version, checksum, duration_ms, applied_by)
+        `INSERT INTO schema_migrations (version, checksum, duration_ms, applied_by)
          VALUES ($1, $2, $3, $4)`,
         [m.version, m.checksum, Date.now() - started, process.env.USER || 'unknown'],
       );
@@ -196,8 +193,8 @@ async function down(client) {
   }
   await client.query('BEGIN');
   try {
-    await client.query(sql);
-    await client.query(`DELETE FROM public.schema_migrations WHERE version = $1`, [last]);
+    await client.exec(sql);
+    await client.query(`DELETE FROM schema_migrations WHERE version = $1`, [last]);
     await client.query('COMMIT');
     console.log(`↩ ${downFile} 적용`);
   } catch (err) {
@@ -206,14 +203,15 @@ async function down(client) {
   }
 }
 
+// 전용 스키마이므로 이 앱의 것만 통째로 지운다 — 수기 테이블 목록도, 타 앱 테이블 self-assert 도 필요 없다.
 async function reset(client) {
   if (!process.argv.includes('--yes')) {
     throw new Error('reset 은 파괴적입니다. 확실하면 --yes 를 붙이세요.');
   }
-  for (const t of RESET_TABLES) {
-    await client.query(`DROP TABLE IF EXISTS public.${t} CASCADE`);
-    console.log(`✖ DROP TABLE IF EXISTS public.${t}`);
-  }
+  await client.query(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
+  console.log(`✖ DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
+  await client.query(`CREATE SCHEMA ${SCHEMA}`);
+  await client.query(`SET search_path TO ${SCHEMA}`);
 }
 
 const command = process.argv[2];
@@ -223,8 +221,10 @@ if (!commands[command]) {
   process.exit(1);
 }
 
-const client = await connect();
+// connect() 도 실패할 수 있다(pglite 잠금 충돌 등) — 스택 대신 이유가 보이도록 같은 핸들러 안에 둔다.
+let client = null;
 try {
+  client = await connect();
   await client.query(LOCK_KEY_SQL);
   await bootstrap(client);
   await commands[command](client);
@@ -232,5 +232,5 @@ try {
   console.error(`[migrate:${command}] ${err.message}`);
   process.exitCode = 1;
 } finally {
-  await client.end();
+  if (client) await client.end();
 }

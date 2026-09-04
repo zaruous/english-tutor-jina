@@ -23,8 +23,8 @@ const CARD_SELECT = `
          c.last_result, c.last_reviewed_at,
          GREATEST(0, (c.next_review AT TIME ZONE $2)::date - (now() AT TIME ZONE $2)::date)::int
            AS next_review_in_days
-    FROM public.user_vocab_cards c
-    JOIN public.vocab_words w ON w.id = c.word_id
+    FROM user_vocab_cards c
+    JOIN vocab_words w ON w.id = c.word_id
    WHERE c.user_id = $1`;
 
 function toDto(row) {
@@ -62,7 +62,7 @@ export async function fetchStats(userId, client = pool) {
             count(*) FILTER (WHERE NOT suspended AND review_count > 0 AND next_review <= now()) ::int AS due,
             count(*) FILTER (WHERE NOT suspended AND review_count > 0 AND next_review >  now()) ::int AS learned,
             count(*) FILTER (WHERE NOT suspended)                                               ::int AS total
-       FROM public.user_vocab_cards WHERE user_id = $1`,
+       FROM user_vocab_cards WHERE user_id = $1`,
     [userId],
   );
   return stats;
@@ -103,7 +103,7 @@ export async function review(user, cardId, { result, clientRequestId, elapsedMs 
     // 멱등: 같은 client_request_id가 이미 처리됐으면 현재 상태를 replay로 응답
     if (clientRequestId) {
       const { rows: [existing] } = await client.query(
-        `SELECT card_id FROM public.vocab_reviews WHERE client_request_id = $1`,
+        `SELECT card_id FROM vocab_reviews WHERE client_request_id = $1`,
         [clientRequestId],
       );
       if (existing) {
@@ -113,14 +113,14 @@ export async function review(user, cardId, { result, clientRequestId, elapsedMs 
     }
 
     const { rows: [card] } = await client.query(
-      `SELECT * FROM public.user_vocab_cards WHERE id = $1 AND user_id = $2 FOR UPDATE`,
+      `SELECT * FROM user_vocab_cards WHERE id = $1 AND user_id = $2 FOR UPDATE`,
       [cardId, user.id],
     );
     if (!card) throw new HttpError(404, 'NOT_FOUND', '카드를 찾을 수 없습니다.');
 
     const next = applyReview(card, result);
     const { rows: [updated] } = await client.query(
-      `UPDATE public.user_vocab_cards
+      `UPDATE user_vocab_cards
           SET next_review = CASE WHEN $3::int IS NOT NULL
                                  THEN now() + make_interval(mins => $3::int)
                                  ELSE (date_trunc('day', now() AT TIME ZONE $4) + make_interval(days => $5::int)) AT TIME ZONE $4
@@ -135,7 +135,7 @@ export async function review(user, cardId, { result, clientRequestId, elapsedMs 
     );
 
     await client.query(
-      `INSERT INTO public.vocab_reviews
+      `INSERT INTO vocab_reviews
          (card_id, user_id, word_id, result, prev_interval_days, prev_ease_factor,
           next_interval_days, next_ease_factor, next_review, elapsed_ms, client_request_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
@@ -164,7 +164,7 @@ export async function getCard(user, cardId, client = pool) {
 export async function upsertWordEntry(client, { word, entry, source, createdBy }) {
   if (entry) {
     const { rows } = await client.query(
-      `INSERT INTO public.vocab_words (word, pos, ipa, meaning_ko, examples, difficulty, source, created_by)
+      `INSERT INTO vocab_words (word, pos, ipa, meaning_ko, examples, difficulty, source, created_by)
        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
        ON CONFLICT (word_key, lang) DO NOTHING
        RETURNING id`,
@@ -174,7 +174,7 @@ export async function upsertWordEntry(client, { word, entry, source, createdBy }
     if (rows.length > 0) return { wordId: rows[0].id, created: true };
   }
   const { rows: [existing] } = await client.query(
-    `SELECT id FROM public.vocab_words WHERE word_key = lower(btrim($1)) AND lang = 'en'`,
+    `SELECT id FROM vocab_words WHERE word_key = lower(btrim($1)) AND lang = 'en'`,
     [word],
   );
   if (!existing) throw new HttpError(404, 'NOT_FOUND', '사전 항목 생성에 실패했습니다.');
@@ -208,7 +208,7 @@ export async function addCardFromEntry(user, { word, entry, source }) {
     const { wordId, created } = await upsertWordEntry(client, { word, entry, source, createdBy: user.id });
 
     const { rows: cardRows } = await client.query(
-      `INSERT INTO public.user_vocab_cards (user_id, word_id)
+      `INSERT INTO user_vocab_cards (user_id, word_id)
        VALUES ($1, $2)
        ON CONFLICT (user_id, word_id) DO NOTHING
        RETURNING id`,
@@ -216,7 +216,7 @@ export async function addCardFromEntry(user, { word, entry, source }) {
     );
     if (cardRows.length === 0) {
       const { rows: [dup] } = await client.query(
-        `SELECT id FROM public.user_vocab_cards WHERE user_id = $1 AND word_id = $2`,
+        `SELECT id FROM user_vocab_cards WHERE user_id = $1 AND word_id = $2`,
         [user.id, wordId],
       );
       const card = await getCard(user, dup.id, client);
@@ -248,8 +248,8 @@ export async function listPool(user, { q, source, page = 1 } = {}) {
     `SELECT w.id, w.word, w.pos, w.ipa, w.meaning_ko, w.examples, w.difficulty, w.source,
             (c.id IS NOT NULL) AS in_my_vocab,
             count(*) OVER ()::int AS filtered_total
-       FROM public.vocab_words w
-       LEFT JOIN public.user_vocab_cards c ON c.word_id = w.id AND c.user_id = $1
+       FROM vocab_words w
+       LEFT JOIN user_vocab_cards c ON c.word_id = w.id AND c.user_id = $1
       WHERE ${where}
       ORDER BY w.word_key
       LIMIT ${POOL_PAGE_SIZE} OFFSET ${offset}`,
@@ -259,8 +259,8 @@ export async function listPool(user, { q, source, page = 1 } = {}) {
     `SELECT count(*)::int AS total,
             ${POOL_SOURCES.map((s) => `count(*) FILTER (WHERE w.source = '${s}')::int AS ${s}`).join(', ')},
             count(c.id)::int AS mine
-       FROM public.vocab_words w
-       LEFT JOIN public.user_vocab_cards c ON c.word_id = w.id AND c.user_id = $1
+       FROM vocab_words w
+       LEFT JOIN user_vocab_cards c ON c.word_id = w.id AND c.user_id = $1
       WHERE w.lang = 'en'`,
     [user.id],
   );
@@ -277,7 +277,7 @@ export async function listPool(user, { q, source, page = 1 } = {}) {
 
 export async function findWordEntry(word) {
   const { rows: [row] } = await pool.query(
-    `SELECT id FROM public.vocab_words WHERE word_key = lower(btrim($1)) AND lang = 'en'`,
+    `SELECT id FROM vocab_words WHERE word_key = lower(btrim($1)) AND lang = 'en'`,
     [word],
   );
   return row || null;
@@ -285,7 +285,7 @@ export async function findWordEntry(word) {
 
 export async function deleteCard(user, cardId) {
   const { rowCount } = await pool.query(
-    `DELETE FROM public.user_vocab_cards WHERE id = $1 AND user_id = $2`,
+    `DELETE FROM user_vocab_cards WHERE id = $1 AND user_id = $2`,
     [cardId, user.id],
   );
   if (rowCount === 0) throw new HttpError(404, 'NOT_FOUND', '카드를 찾을 수 없습니다.');
@@ -294,35 +294,35 @@ export async function deleteCard(user, cardId) {
 export async function patchCard(user, cardId, { meaning_ko, examples, suspended, reset }) {
   return withTx(async (client) => {
     const { rows: [card] } = await client.query(
-      `SELECT id FROM public.user_vocab_cards WHERE id = $1 AND user_id = $2 FOR UPDATE`,
+      `SELECT id FROM user_vocab_cards WHERE id = $1 AND user_id = $2 FOR UPDATE`,
       [cardId, user.id],
     );
     if (!card) throw new HttpError(404, 'NOT_FOUND', '카드를 찾을 수 없습니다.');
 
     if (meaning_ko !== undefined) {
       await client.query(
-        `UPDATE public.user_vocab_cards SET meaning_ko_override = $3, updated_at = now()
+        `UPDATE user_vocab_cards SET meaning_ko_override = $3, updated_at = now()
           WHERE id = $1 AND user_id = $2`,
         [cardId, user.id, meaning_ko],
       );
     }
     if (examples !== undefined) {
       await client.query(
-        `UPDATE public.user_vocab_cards SET examples_override = $3::jsonb, updated_at = now()
+        `UPDATE user_vocab_cards SET examples_override = $3::jsonb, updated_at = now()
           WHERE id = $1 AND user_id = $2`,
         [cardId, user.id, examples === null ? null : JSON.stringify(examples)],
       );
     }
     if (suspended !== undefined) {
       await client.query(
-        `UPDATE public.user_vocab_cards SET suspended = $3, updated_at = now()
+        `UPDATE user_vocab_cards SET suspended = $3, updated_at = now()
           WHERE id = $1 AND user_id = $2`,
         [cardId, user.id, Boolean(suspended)],
       );
     }
     if (reset) {
       await client.query(
-        `UPDATE public.user_vocab_cards
+        `UPDATE user_vocab_cards
             SET next_review = now(), interval_days = 1, ease_factor = 2.50,
                 review_count = 0, fail_count = 0, last_result = NULL,
                 last_reviewed_at = NULL, updated_at = now()
@@ -340,7 +340,7 @@ export async function stats(user) {
     `SELECT (reviewed_at AT TIME ZONE $2)::date AS day,
             count(*)::int AS reviews,
             count(*) FILTER (WHERE result <> 'again')::int AS passed
-       FROM public.vocab_reviews
+       FROM vocab_reviews
       WHERE user_id = $1 AND reviewed_at > now() - interval '7 days'
       GROUP BY 1 ORDER BY 1`,
     [user.id, user.tz],

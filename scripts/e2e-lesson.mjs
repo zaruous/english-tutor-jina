@@ -17,18 +17,20 @@ const check = (name, ok, detail = '') => {
 // 재실행 가능하게 하려고 dev 시드 attempt(고정 client_request_id) 외의 시도를 지운다.
 const SEED_REQ_ID = '11111111-1111-4111-8111-111111111111';
 const wiped = await pool.query(
-  `DELETE FROM public.user_lesson_attempts WHERE client_request_id IS DISTINCT FROM $1::uuid`,
+  `DELETE FROM user_lesson_attempts WHERE client_request_id IS DISTINCT FROM $1::uuid`,
   [SEED_REQ_ID],
 );
 // 진도 분모는 시드에 따라 변한다(0014 가 공개 레슨 3개 추가, AI 생성 개인 레슨 가변) — 고정값 대신 DB 로 계산.
 const { rows: [devU] } = await pool.query(
-  `SELECT id FROM public.users WHERE email = $1`, [process.env.DEV_USER_EMAIL || 'jina@dev.local']);
+  `SELECT id FROM users WHERE email = $1`, [process.env.DEV_USER_EMAIL || 'jina@dev.local']);
 const { rows: [prog0] } = await pool.query(
-  `SELECT (SELECT count(*)::int FROM public.lessons
-            WHERE published AND (visibility = 'public' OR created_by = $1)) AS total,
-          (SELECT count(DISTINCT ua.lesson_id)::int
-             FROM public.user_lesson_attempts ua
-             JOIN public.lessons l2 ON l2.id = ua.lesson_id AND l2.published
+  `SELECT (SELECT count(*)::int FROM content_items l
+            WHERE l.type = 'lesson' AND l.status = 'published'
+              AND (l.visibility = 'public' OR l.created_by = $1)) AS total,
+          (SELECT count(DISTINCT ua.content_id)::int
+             FROM user_lesson_attempts ua
+             JOIN content_items l2 ON l2.id = ua.content_id
+              AND l2.type = 'lesson' AND l2.status = 'published'
               AND (l2.visibility = 'public' OR l2.created_by = $1)
             WHERE ua.user_id = $1) AS done`,
   [devU.id],

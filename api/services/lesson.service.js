@@ -6,12 +6,19 @@ import { HttpError } from '../lib/errors.js';
 import { pool } from '../lib/pool.js';
 import { withTx } from '../lib/tx.js';
 
+// 레슨 = content_items(type='lesson') + lesson_details 1:1 (플랜 10.7 Phase 2).
+// 가시성 판정이 content_items 한 곳에만 있으므로 아래 두 조각을 모든 읽기 쿼리가 공유한다.
+// $1 은 항상 user_id 다 — 소유자는 비공개 콘텐츠도 본다.
+const LESSON_SOURCE = `content_items l JOIN lesson_details d ON d.content_id = l.id`;
+const LESSON_VISIBLE = `l.type = 'lesson' AND l.status = 'published'
+     AND (l.visibility = 'public' OR l.created_by = $1)`;
+
 // 목록: LEFT JOIN LATERAL로 사용자별 attempt 집계 (저장 금지, 매 요청 계산)
 // LessonSummary 컬럼 — GET /api/lessons 행과 GET /api/lessons/recommended 행이 같은 모양이 되도록 한 곳에서 정의.
 const SUMMARY_COLS = `
-         l.id, l.slug, l.kind, l.title, l.subtitle, l.difficulty, l.est_minutes, l.position,
+         l.id, l.slug, d.kind, l.title, d.subtitle, l.difficulty, d.est_minutes, d.position,
          l.source, l.visibility,
-         (SELECT count(*)::int FROM public.lesson_items i WHERE i.lesson_id = l.id) AS question_count,
+         (SELECT count(*)::int FROM lesson_items i WHERE i.content_id = l.id) AS question_count,
          COALESCE(a.attempt_count, 0) AS attempt_count, a.best_correct, a.last_attempted_at`;
 // last_correct/last_total = 가장 최근 시도의 채점 결과 (추천 reason 'retry_low_score' 판정용)
 const ATTEMPT_AGG = `
@@ -20,34 +27,32 @@ const ATTEMPT_AGG = `
              max(created_at) AS last_attempted_at,
              (array_agg(correct_count ORDER BY created_at DESC, id DESC))[1]::int AS last_correct,
              (array_agg(total_count   ORDER BY created_at DESC, id DESC))[1]::int AS last_total
-        FROM public.user_lesson_attempts ua
-       WHERE ua.user_id = $1 AND ua.lesson_id = l.id
+        FROM user_lesson_attempts ua
+       WHERE ua.user_id = $1 AND ua.content_id = l.id
     ) a ON true`;
 const LIST_BODY = `
   SELECT ${SUMMARY_COLS}
-    FROM public.lessons l ${ATTEMPT_AGG}
-   WHERE l.published AND (l.visibility = 'public' OR l.created_by = $1)`;
+    FROM ${LESSON_SOURCE} ${ATTEMPT_AGG}
+   WHERE ${LESSON_VISIBLE}`;
 const LIST_SELECT = `${LIST_BODY}
-   ORDER BY l.position, l.id`;
+   ORDER BY d.position, l.id`;
 
 export const LESSON_STATUS_FILTERS = ['new', 'attempted']; // status 필터 허용값 — 라우트 400 판정과 공유
 
 // progress.done/total — 항상 이 쿼리로 집계 (저장 금지)
 async function fetchProgress(userId, client = pool) {
   const { rows: [p] } = await client.query(
-    `SELECT (SELECT count(*)::int FROM public.lessons
-              WHERE published AND (visibility = 'public' OR created_by = $1)) AS total,
-            (SELECT count(DISTINCT ua.lesson_id)::int
-               FROM public.user_lesson_attempts ua
-               JOIN public.lessons l2 ON l2.id = ua.lesson_id AND l2.published
-                AND (l2.visibility = 'public' OR l2.created_by = $1)
+    `SELECT (SELECT count(*)::int FROM content_items l WHERE ${LESSON_VISIBLE}) AS total,
+            (SELECT count(DISTINCT ua.content_id)::int
+               FROM user_lesson_attempts ua
+               JOIN content_items l ON l.id = ua.content_id AND ${LESSON_VISIBLE}
               WHERE ua.user_id = $1) AS done`,
     [userId],
   );
   return p;
 }
 
-// kind: lessons.kind 문자열(없는 kind 는 빈 목록), status: 'new'(attempt_count=0) | 'attempted'(≥1).
+// kind: lesson_details.kind 문자열(없는 kind 는 빈 목록), status: 'new'(attempt_count=0) | 'attempted'(≥1).
 // status 는 attempt_count 파생값 기준이라 집계 결과를 서브쿼리로 감싸 WHERE 에 쓴다. progress 는 필터와 무관한 전체 진도.
 export async function listLessons(user, { kind, status } = {}) {
   const params = [user.id];
@@ -88,9 +93,8 @@ export async function recommendLessons(user, { limit = 3 } = {}) {
   const [{ rows }, { rows: [last] }] = await Promise.all([
     pool.query(LIST_SELECT, [user.id]),
     pool.query(
-      `SELECT ua.lesson_id FROM public.user_lesson_attempts ua
-         JOIN public.lessons l ON l.id = ua.lesson_id AND l.published
-          AND (l.visibility = 'public' OR l.created_by = $1)
+      `SELECT ua.content_id AS lesson_id FROM user_lesson_attempts ua
+         JOIN content_items l ON l.id = ua.content_id AND ${LESSON_VISIBLE}
         WHERE ua.user_id = $1 ORDER BY ua.created_at DESC, ua.id DESC LIMIT 1`,
       [user.id],
     ),
@@ -119,34 +123,34 @@ export async function recommendLessons(user, { limit = 3 } = {}) {
 export async function getLesson(user, lessonId) {
   // ★ answer/explanation은 컬럼 나열에 존재하지 않는다 — DTO 유출 불가
   const { rows: [l] } = await pool.query(
-    `SELECT id, slug, kind, title, subtitle, difficulty, est_minutes, position,
-            passage, vocab, faq, source, visibility
-       FROM public.lessons
-      WHERE id = $2 AND published AND (visibility = 'public' OR created_by = $1)`,
+    `SELECT l.id, l.slug, d.kind, l.title, d.subtitle, l.difficulty, d.est_minutes, d.position,
+            d.passage, d.vocab, d.faq, l.source, l.visibility
+       FROM ${LESSON_SOURCE}
+      WHERE l.id = $2 AND ${LESSON_VISIBLE}`,
     [user.id, lessonId],
   );
   if (!l) throw new HttpError(404, 'NOT_FOUND', '레슨을 찾을 수 없습니다.');
 
   const { rows: items } = await pool.query(
-    `SELECT position, stem, options FROM public.lesson_items
-      WHERE lesson_id = $1 ORDER BY position`,
+    `SELECT position, stem, options FROM lesson_items
+      WHERE content_id = $1 ORDER BY position`,
     [lessonId],
   );
 
   // '다음 지문': position, id 순서상 다음 published 레슨, 마지막이면 첫 레슨(순환)
   const { rows: [next] } = await pool.query(
-    `SELECT id FROM public.lessons
-      WHERE published AND (visibility = 'public' OR created_by = $1)
-        AND (position, id) > ($3::int, $2::bigint)
-      ORDER BY position, id LIMIT 1`,
+    `SELECT l.id FROM ${LESSON_SOURCE}
+      WHERE ${LESSON_VISIBLE}
+        AND (d.position, l.id) > ($3::int, $2::bigint)
+      ORDER BY d.position, l.id LIMIT 1`,
     [user.id, lessonId, l.position],
   );
   let nextLessonId = next?.id ?? null;
   if (nextLessonId === null) {
     const { rows: [first] } = await pool.query(
-      `SELECT id FROM public.lessons
-        WHERE published AND (visibility = 'public' OR created_by = $1)
-        ORDER BY position, id LIMIT 1`,
+      `SELECT l.id FROM ${LESSON_SOURCE}
+        WHERE ${LESSON_VISIBLE}
+        ORDER BY d.position, l.id LIMIT 1`,
       [user.id],
     );
     nextLessonId = first?.id ?? null;
@@ -155,7 +159,7 @@ export async function getLesson(user, lessonId) {
   const { rows: [agg] } = await pool.query(
     `SELECT count(*)::int AS attempt_count, max(correct_count)::int AS best_correct,
             (array_agg(id ORDER BY created_at DESC, id DESC))[1]::bigint AS last_attempt_id
-       FROM public.user_lesson_attempts WHERE user_id = $1 AND lesson_id = $2`,
+       FROM user_lesson_attempts WHERE user_id = $1 AND content_id = $2`,
     [user.id, lessonId],
   );
 
@@ -200,10 +204,9 @@ export async function submitAttempt(user, lessonId, { answers, clientRequestId, 
     // 문항 로드 (published 레슨만) — 채점 재료. 트랜잭션 안은 SELECT/INSERT만.
     const { rows: items } = await client.query(
       `SELECT i.position, i.options, i.answer, i.explanation, i.skill_code
-         FROM public.lesson_items i
-         JOIN public.lessons l ON l.id = i.lesson_id AND l.published
-          AND (l.visibility = 'public' OR l.created_by = $1)
-        WHERE i.lesson_id = $2 ORDER BY i.position`,
+         FROM lesson_items i
+         JOIN content_items l ON l.id = i.content_id AND ${LESSON_VISIBLE}
+        WHERE i.content_id = $2 ORDER BY i.position`,
       [user.id, lessonId],
     );
     if (items.length === 0) throw new HttpError(404, 'NOT_FOUND', '레슨을 찾을 수 없습니다.');
@@ -211,8 +214,8 @@ export async function submitAttempt(user, lessonId, { answers, clientRequestId, 
     // 멱등: 같은 client_request_id면 저장된 answers로 results 재구성 → replay
     if (clientRequestId) {
       const { rows: [existing] } = await client.query(
-        `SELECT id, lesson_id, answers, correct_count, total_count, skill_code, created_at
-           FROM public.user_lesson_attempts WHERE client_request_id = $1 AND user_id = $2`,
+        `SELECT id, content_id AS lesson_id, answers, correct_count, total_count, skill_code, created_at
+           FROM user_lesson_attempts WHERE client_request_id = $1 AND user_id = $2`,
         [clientRequestId, user.id],
       );
       if (existing) {
@@ -257,10 +260,10 @@ export async function submitAttempt(user, lessonId, { answers, clientRequestId, 
         wrongSkills.filter((x) => x === b).length - wrongSkills.filter((x) => x === a).length)[0]
       : null;
     const { rows: [attempt] } = await client.query(
-      `INSERT INTO public.user_lesson_attempts
-         (user_id, lesson_id, answers, correct_count, total_count, elapsed_ms, client_request_id, skill_code)
+      `INSERT INTO user_lesson_attempts
+         (user_id, content_id, answers, correct_count, total_count, elapsed_ms, client_request_id, skill_code)
        VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8)
-       RETURNING id, lesson_id, correct_count, total_count, skill_code, created_at`,
+       RETURNING id, content_id AS lesson_id, correct_count, total_count, skill_code, created_at`,
       [user.id, lessonId, JSON.stringify(answers), correctCount, items.length,
        elapsedMs ?? null, clientRequestId ?? null, skillCode],
     );
@@ -297,7 +300,10 @@ function renderPassage(passage) {
     .filter(([key]) => typeof p[key] === 'string' && p[key].trim())
     .map(([key, label]) => [label, stripEmphasis(p[key]).trim()]);
   const subject = typeof p.subject === 'string' ? stripEmphasis(p.subject).trim() : '';
+  // LC 스크립트는 [{speaker,text}] 객체 배열이다(플랜 10.7 §3.2). 인용 검증 대상은 대사 자체이므로
+  // 화자 라벨은 붙이지 않는다 — 프롬프트가 본 문자열과 text 가 어긋나면 정당한 인용이 버려진다.
   const body = (Array.isArray(p.body) ? p.body : [])
+    .map((para) => (para && typeof para === 'object' ? para.text : para))
     .filter((para) => typeof para === 'string' && para.trim())
     .map((para) => stripEmphasis(para).trim());
 
@@ -326,15 +332,15 @@ function renderItems(items, answers) {
 //  - attemptId 있음 → 소유권(user)·레슨 일치 검증 후 'post_submit': 지문 + 문항(itemId 면 그 문항만) + 학습자의 답.
 export async function prepareQa(user, lessonId, { attemptId, itemId } = {}) {
   const { rows: [lesson] } = await pool.query(
-    `SELECT id, passage FROM public.lessons
-      WHERE id = $2 AND published AND (visibility = 'public' OR created_by = $1)`,
+    `SELECT l.id, d.passage FROM ${LESSON_SOURCE}
+      WHERE l.id = $2 AND ${LESSON_VISIBLE}`,
     [user.id, lessonId],
   );
   if (!lesson) throw new HttpError(404, 'NOT_FOUND', '레슨을 찾을 수 없습니다.');
 
   // ★ answer/explanation 없음
   const { rows: items } = await pool.query(
-    `SELECT position, stem, options FROM public.lesson_items WHERE lesson_id = $1 ORDER BY position`,
+    `SELECT position, stem, options FROM lesson_items WHERE content_id = $1 ORDER BY position`,
     [lessonId],
   );
   if (itemId !== undefined && !items.some((i) => i.position === itemId)) {
@@ -347,7 +353,7 @@ export async function prepareQa(user, lessonId, { attemptId, itemId } = {}) {
   }
 
   const { rows: [attempt] } = await pool.query(
-    `SELECT id, user_id, lesson_id, answers FROM public.user_lesson_attempts WHERE id = $1`,
+    `SELECT id, user_id, content_id AS lesson_id, answers FROM user_lesson_attempts WHERE id = $1`,
     [attemptId],
   );
   if (!attempt) throw new HttpError(404, 'NOT_FOUND', '채점 기록을 찾을 수 없습니다.');
@@ -383,8 +389,8 @@ export function verifyCitations(citations, passageText) {
 // CLI resume 핸들 — 키 user+lesson+attempt+provider (회화의 provider_ref 패턴, 0011_lesson_qa.sql)
 export async function findQaSessionRef(user, lessonId, attemptId, provider) {
   const { rows: [row] } = await pool.query(
-    `SELECT provider_ref FROM public.lesson_qa_sessions
-      WHERE user_id = $1 AND lesson_id = $2 AND attempt_id = $3 AND provider = $4`,
+    `SELECT provider_ref FROM lesson_qa_sessions
+      WHERE user_id = $1 AND content_id = $2 AND attempt_id = $3 AND provider = $4`,
     [user.id, lessonId, attemptId, provider],
   );
   return row?.provider_ref ?? null;
@@ -393,9 +399,9 @@ export async function findQaSessionRef(user, lessonId, attemptId, provider) {
 export async function saveQaSessionRef(user, lessonId, attemptId, provider, providerRef) {
   if (!providerRef) return; // stateless provider(ollama) — 핸들 없음
   await pool.query(
-    `INSERT INTO public.lesson_qa_sessions (user_id, lesson_id, attempt_id, provider, provider_ref)
+    `INSERT INTO lesson_qa_sessions (user_id, content_id, attempt_id, provider, provider_ref)
      VALUES ($1, $2, $3, $4, $5)
-     ON CONFLICT (user_id, lesson_id, attempt_id, provider)
+     ON CONFLICT (user_id, content_id, attempt_id, provider)
      DO UPDATE SET provider_ref = EXCLUDED.provider_ref, updated_at = now()`,
     [user.id, lessonId, attemptId, provider, providerRef],
   );
@@ -403,17 +409,16 @@ export async function saveQaSessionRef(user, lessonId, attemptId, provider, prov
 
 export async function reportLesson(user, lessonId, { reason, details }) {
   const { rowCount } = await pool.query(
-    `SELECT 1 FROM public.lessons
-      WHERE id = $2 AND published AND (visibility = 'public' OR created_by = $1)`,
+    `SELECT 1 FROM content_items l WHERE l.id = $2 AND ${LESSON_VISIBLE}`,
     [user.id, lessonId],
   );
   if (rowCount === 0) throw new HttpError(404, 'NOT_FOUND', '레슨을 찾을 수 없습니다.');
   const { rows: [row] } = await pool.query(
-    `INSERT INTO public.lesson_reports (user_id, lesson_id, reason, details)
+    `INSERT INTO lesson_reports (user_id, content_id, reason, details)
      VALUES ($1, $2, $3, $4)
-     ON CONFLICT (user_id, lesson_id) DO UPDATE
+     ON CONFLICT (user_id, content_id) DO UPDATE
        SET reason = EXCLUDED.reason, details = EXCLUDED.details, created_at = now()
-     RETURNING id, lesson_id, reason, details, created_at`,
+     RETURNING id, content_id AS lesson_id, reason, details, created_at`,
     [user.id, lessonId, reason, details ?? null],
   );
   return row;
@@ -426,28 +431,29 @@ export async function reportLesson(user, lessonId, { reason, details }) {
 // 본인이 제출한 문항만 반환하므로 정답·해설 포함이 허용된다(플랜 07 '제출 후 공개' 규범).
 const MISTAKES_SQL = `
   WITH latest AS (
-    SELECT DISTINCT ON (a.lesson_id) a.id, a.lesson_id, a.answers, a.created_at
-      FROM public.user_lesson_attempts a
+    SELECT DISTINCT ON (a.content_id) a.id, a.content_id AS lesson_id, a.answers, a.created_at
+      FROM user_lesson_attempts a
      WHERE a.user_id = $1
-     ORDER BY a.lesson_id, a.created_at DESC, a.id DESC
+     ORDER BY a.content_id, a.created_at DESC, a.id DESC
   ),
   wrong AS (
     SELECT l.lesson_id, l.id AS attempt_id, l.created_at AS last_wrong_at,
            i.id AS item_id, i.position, i.stem, i.options, i.answer, i.explanation, i.skill_code,
            l.answers ->> i.position::text AS my_answer
       FROM latest l
-      JOIN public.lesson_items i ON i.lesson_id = l.lesson_id
+      JOIN lesson_items i ON i.content_id = l.lesson_id
      WHERE l.answers ? i.position::text
        AND l.answers ->> i.position::text IS DISTINCT FROM i.answer
   )
-  SELECT w.*, ls.title AS lesson_title, ls.subtitle AS lesson_subtitle, ls.kind, ls.difficulty,
+  SELECT w.*, ls.title AS lesson_title, ld.subtitle AS lesson_subtitle, ld.kind, ls.difficulty,
          (SELECT count(*)::int
-            FROM public.user_lesson_attempts a2
-           WHERE a2.user_id = $1 AND a2.lesson_id = w.lesson_id
+            FROM user_lesson_attempts a2
+           WHERE a2.user_id = $1 AND a2.content_id = w.lesson_id
              AND a2.answers ? w.position::text
              AND a2.answers ->> w.position::text IS DISTINCT FROM w.answer) AS times_wrong
     FROM wrong w
-    JOIN public.lessons ls ON ls.id = w.lesson_id`;
+    JOIN content_items ls ON ls.id = w.lesson_id
+    JOIN lesson_details ld ON ld.content_id = ls.id`;
 
 const optionText = (options, id) => (options || []).find((o) => o.id === id)?.text ?? null;
 
@@ -501,9 +507,9 @@ export async function listMistakes(user, { skill, lessonId } = {}) {
   // 극복 = 과거에 틀렸으나 최신 attempt 에서는 오답이 아닌 문항
   const { rows: [overcome] } = await pool.query(
     `SELECT count(*)::int AS n FROM (
-       SELECT DISTINCT a.lesson_id, i.position
-         FROM public.user_lesson_attempts a
-         JOIN public.lesson_items i ON i.lesson_id = a.lesson_id
+       SELECT DISTINCT a.content_id AS lesson_id, i.position
+         FROM user_lesson_attempts a
+         JOIN lesson_items i ON i.content_id = a.content_id
         WHERE a.user_id = $1 AND a.answers ? i.position::text
           AND a.answers ->> i.position::text IS DISTINCT FROM i.answer
        EXCEPT

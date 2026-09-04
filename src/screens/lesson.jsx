@@ -857,9 +857,13 @@ function LessonMobile({ theme, aiConfig, onNavigate }) {
                 {currentLesson.passage.subject}
               </div>
             </div>
-            {currentLesson.passage.body.map((para, i) => (
+            {currentLesson.passage.body.map((line) => (
+              // LC 스크립트는 [{speaker,text}] 객체다(플랜 10.7 §3.2) — 읽기 지문(문자열 문단)과
+              // 같은 자리에 오므로 여기서 한 줄 텍스트로 되돌린다.
+              typeof line === 'object' && line !== null ? `${line.speaker}: ${line.text}` : line
+            )).map((para, i) => (
               <p key={i} style={{ margin: '0 0 12px', fontSize: 14, lineHeight: 1.7, color: theme.text }}>
-                {para.split(/(\*\*[^*]+\*\*)/g).map((part, j) =>
+                {String(para).split(/(\*\*[^*]+\*\*)/g).map((part, j) =>
                   part.startsWith('**')
                     ? <b key={j} style={{ background: theme.accent + '22', padding: '0 3px', borderRadius: 3 }}>{part.slice(2, -2)}</b>
                     : part

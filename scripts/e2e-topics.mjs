@@ -24,9 +24,12 @@ check('비즈니스 면접 토픽 — 임계치 충족(레슨≥3·회화≥1·�
   T && `${T.lesson_count}/${T.scenario_count}/${T.vocab_count}`);
 
 // 임계치 미만 토픽은 기본 목록에서 숨김 — 빈 임시 토픽을 넣어 검증
-await pool.query(`DELETE FROM public.topics WHERE slug = 'e2e-temp-topic'`);
+await pool.query(`DELETE FROM topics WHERE slug = 'e2e-temp-topic'`);
+// status 축 도입 후(플랜 10.7 Phase 2)에는 공개 상태를 명시해야 목록에 뜬다 —
+// 이 픽스처가 검증하려는 것은 "draft 라서 숨김"이 아니라 "임계치 미만이라 숨김"이다.
 await pool.query(
-  `INSERT INTO public.topics (slug, label_ko, description) VALUES ('e2e-temp-topic', '임시 검증 토픽', 'e2e')`);
+  `INSERT INTO topics (slug, label_ko, description, status, visibility)
+   VALUES ('e2e-temp-topic', '임시 검증 토픽', 'e2e', 'published', 'public')`);
 try {
   const hidden = await getJson('/api/topics');
   check('임계치 미만 토픽 — 기본 목록에서 숨김',
@@ -35,14 +38,19 @@ try {
   const temp = all.topics?.find((t) => t.slug === 'e2e-temp-topic');
   check('?all=1 — 임계치 미만 토픽 노출 · eligible=false', Boolean(temp) && temp.eligible === false);
 } finally {
-  await pool.query(`DELETE FROM public.topics WHERE slug = 'e2e-temp-topic'`);
+  await pool.query(`DELETE FROM topics WHERE slug = 'e2e-temp-topic'`);
 }
 
-// 배타 FK — topic_contents 전 행이 대상 정확히 1개 (CHECK 가 보장하지만 데이터로도 단정)
+// 단일 FK — 배타 FK 3종과 부분 UNIQUE 3개가 (topic_id, content_id) 하나로 줄었다(플랜 10.7 Phase 2).
+// 그래서 단정도 바뀐다: 고아 행 0건 + 같은 (토픽, 콘텐츠) 중복 0건.
 const { rows: [fk] } = await pool.query(
-  `SELECT count(*)::int AS bad FROM public.topic_contents
-    WHERE num_nonnulls(lesson_id, scenario_id, vocab_set_id) <> 1`);
-check('topic_contents — 배타 FK 위반 0건', fk.bad === 0);
+  `SELECT (SELECT count(*)::int FROM topic_contents tc
+             LEFT JOIN content_items ci ON ci.id = tc.content_id
+            WHERE ci.id IS NULL) AS orphans,
+          (SELECT count(*)::int FROM (
+             SELECT topic_id, content_id FROM topic_contents
+              GROUP BY 1, 2 HAVING count(*) > 1) d) AS dups`);
+check('topic_contents — 고아 0건 · 중복 0건', fk.orphans === 0 && fk.dups === 0);
 
 // 토픽 상세 + 진행률 — done ≤ total, percent = 합산 공식, 콘텐츠 카운트가 요약과 일치
 const detail = await getJson(`/api/topics/${T.id}`);
@@ -60,10 +68,10 @@ check('토픽 진행률 — done ≤ total · percent 공식 일치',
 
 // 진행률(독해) = user_lesson_attempts 집계와 일치 (파생값 저장 금지 규범)
 const { rows: [lp] } = await pool.query(
-  `SELECT count(DISTINCT a.lesson_id)::int AS done
-     FROM public.user_lesson_attempts a
-     JOIN public.topic_contents tc ON tc.lesson_id = a.lesson_id AND tc.topic_id = $2
-     JOIN public.users u ON u.id = a.user_id AND u.email = $1`,
+  `SELECT count(DISTINCT a.content_id)::int AS done
+     FROM user_lesson_attempts a
+     JOIN topic_contents tc ON tc.content_id = a.content_id AND tc.topic_id = $2
+     JOIN users u ON u.id = a.user_id AND u.email = $1`,
   [process.env.DEV_USER_EMAIL || 'jina@dev.local', T.id]);
 check('토픽 독해 진행률 = attempts 집계', P.lesson.done === lp.done, `${P.lesson.done} = ${lp.done}`);
 
@@ -90,7 +98,7 @@ check('비소유자 진행률 분모 = 보이는 목록 수 (private 생성물 �
 const guestWords = new Set((guestDetail.vocab_sets || []).flatMap((s) => (s.words || []).map((w) => String(w.word).toLowerCase())));
 check('비소유자 단어 분모 = 보이는 세트의 중복 제거 단어 수',
   gp.vocabulary?.total === guestWords.size, `${gp.vocabulary?.total} = ${guestWords.size}`);
-await pool.query(`DELETE FROM public.users WHERE email = $1`, [guestEmail]);
+await pool.query(`DELETE FROM users WHERE email = $1`, [guestEmail]);
 
 // 단어 세트 담기 — 멱등(두 번째 호출은 전부 duplicates)
 const setId = detail.vocab_sets[0].id;

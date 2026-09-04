@@ -35,7 +35,7 @@ const goodItem = (n) => ({
 
 async function main() {
   const { rows: [devUser] } = await pool.query(
-    `SELECT id FROM public.users WHERE email = $1`,
+    `SELECT id FROM users WHERE email = $1`,
     [process.env.DEV_USER_EMAIL || 'jina@dev.local'],
   );
   if (!devUser) { t('dev 사용자 존재', false); return; }
@@ -73,7 +73,7 @@ async function main() {
 
   // ── C. 스키마 실패 저장 0 — 검증 실패 payload 는 draft 만 남고 lessons 미게시 ──
   const { rows: [failJob] } = await pool.query(
-    `INSERT INTO public.ai_jobs (user_id, task, input, request_hash, client_request_id, provider, status)
+    `INSERT INTO ai_jobs (user_id, task, input, request_hash, client_request_id, provider, status)
      VALUES ($1, 'lesson_gen', '{"part":5,"count":3,"difficulty":3,"topic":"검증"}'::jsonb, $2, $3, 'claude', 'failed')
      RETURNING *`,
     [uid, FAKE_HASH, crypto.randomUUID()],
@@ -82,17 +82,17 @@ async function main() {
   t('검증 실패 → draft 저장 + lesson_id null',
     badSave.validation_errors.length > 0 && badSave.lesson_id === null, `draft #${badSave.draft_id}`);
   const { rows: [draftRow] } = await pool.query(
-    `SELECT review_status, published_lesson_id, jsonb_array_length(validation_errors) AS n
-       FROM public.lesson_drafts WHERE id = $1`, [badSave.draft_id]);
+    `SELECT review_status, published_content_id AS published_lesson_id, jsonb_array_length(validation_errors) AS n
+       FROM lesson_drafts WHERE id = $1`, [badSave.draft_id]);
   t('실패 draft — validation_errors 기록 · 미게시', draftRow.n > 0 && draftRow.published_lesson_id === null);
   const { rows: [orphan] } = await pool.query(
-    `SELECT count(*)::int AS n FROM public.lessons WHERE slug = $1`, [`ai-toeic-part5-${uid}-${failJob.id}`]);
+    `SELECT count(*)::int AS n FROM content_items WHERE slug = $1`, [`ai-toeic-part5-${uid}-${failJob.id}`]);
   t('검증 실패 lessons 저장 0건', orphan.n === 0);
 
   // ── D. 사용자 대기 한도 — queued 3건 초과 시 429, 워커 kick 이전에 거절 ──
   for (let i = 0; i < 3; i += 1) {
     await pool.query(
-      `INSERT INTO public.ai_jobs (user_id, task, input, request_hash, client_request_id, provider, status)
+      `INSERT INTO ai_jobs (user_id, task, input, request_hash, client_request_id, provider, status)
        VALUES ($1, 'lesson_gen', '{"part":5,"count":3,"difficulty":3,"topic":"대기"}'::jsonb, $2, $3, 'claude', 'queued')`,
       [uid, `${FAKE_HASH}-q${i}`, crypto.randomUUID()],
     );
@@ -103,25 +103,25 @@ async function main() {
   });
   t('대기 3건 상태에서 4번째 → 429 RATE_LIMITED', overflow.status === 429 && overflow.data.code === 'RATE_LIMITED');
   const { rows: [notSaved] } = await pool.query(
-    `SELECT count(*)::int AS n FROM public.ai_jobs WHERE user_id = $1 AND client_request_id = $2`,
+    `SELECT count(*)::int AS n FROM ai_jobs WHERE user_id = $1 AND client_request_id = $2`,
     [uid, overflowReqId],
   );
   t('429 요청은 job 미생성', notSaved.n === 0);
-  await pool.query(`DELETE FROM public.ai_jobs WHERE request_hash LIKE $1`, [`${FAKE_HASH}-q%`]);
+  await pool.query(`DELETE FROM ai_jobs WHERE request_hash LIKE $1`, [`${FAKE_HASH}-q%`]);
 
   // ── E. 재시작 복구 — running → queued (서버 부팅 시 startAiJobWorker 가 호출하는 함수) ──
   const { rows: [stuck] } = await pool.query(
-    `INSERT INTO public.ai_jobs (user_id, task, input, request_hash, client_request_id, provider, status, started_at)
+    `INSERT INTO ai_jobs (user_id, task, input, request_hash, client_request_id, provider, status, started_at)
      VALUES ($1, 'lesson_gen', '{"part":5,"count":3,"difficulty":3,"topic":"복구"}'::jsonb, $2, $3, 'claude', 'running', now())
      RETURNING id`,
     [uid, `${FAKE_HASH}-r`, crypto.randomUUID()],
   );
   const recovered = await recoverRunningJobs();
   const { rows: [afterRecover] } = await pool.query(
-    `SELECT status, started_at FROM public.ai_jobs WHERE id = $1`, [stuck.id]);
+    `SELECT status, started_at FROM ai_jobs WHERE id = $1`, [stuck.id]);
   t('recoverRunningJobs — running → queued · started_at 초기화',
     recovered >= 1 && afterRecover.status === 'queued' && afterRecover.started_at === null);
-  await pool.query(`DELETE FROM public.ai_jobs WHERE request_hash = $1`, [`${FAKE_HASH}-r`]);
+  await pool.query(`DELETE FROM ai_jobs WHERE request_hash = $1`, [`${FAKE_HASH}-r`]);
 
   // ── F. 실제 생성 → 게시 → 멱등 (SKIP_AI=1 이면 건너뜀) ──
   if (process.env.SKIP_AI === '1') { console.log('(SKIP_AI) §F/§G 건너뜀'); return; }
@@ -158,7 +158,7 @@ async function main() {
     const list = await get('/api/lessons');
     t('내 목록에 생성 레슨 노출', list.ok && list.lessons.some((l) => l.id === lessonId));
     const { rows: [draft] } = await pool.query(
-      `SELECT review_status, published_lesson_id FROM public.lesson_drafts WHERE job_id = $1`, [job.id]);
+      `SELECT review_status, published_content_id AS published_lesson_id FROM lesson_drafts WHERE job_id = $1`, [job.id]);
     t('draft — published_lesson_id 연결 · review_status=draft',
       draft?.published_lesson_id === lessonId && draft?.review_status === 'draft');
 
@@ -185,14 +185,14 @@ async function main() {
     t('reason=spam → 400', badReason.status === 400);
     const { rows: [afterReport] } = await pool.query(
       `SELECT l.visibility, d.review_status
-         FROM public.lessons l JOIN public.lesson_drafts d ON d.published_lesson_id = l.id
+         FROM content_items l JOIN lesson_drafts d ON d.published_content_id = l.id
         WHERE l.id = $1`, [lessonId]);
     t('신고 후에도 private · draft (신고만으로 승격 불가)',
       afterReport?.visibility === 'private' && afterReport?.review_status === 'draft');
   } finally {
-    // 생성 흔적 정리 — lessons 삭제로 items/reports/topic_contents cascade, job 삭제로 draft cascade
-    await pool.query(`DELETE FROM public.lessons WHERE id = $1 AND source = 'ai' AND created_by = $2`, [lessonId, uid]);
-    await pool.query(`DELETE FROM public.ai_jobs WHERE id = $1`, [job.id]);
+    // 생성 흔적 정리 — content_items 삭제로 details/items/reports/topic_contents cascade, job 삭제로 draft cascade
+    await pool.query(`DELETE FROM content_items WHERE id = $1 AND source = 'ai' AND created_by = $2`, [lessonId, uid]);
+    await pool.query(`DELETE FROM ai_jobs WHERE id = $1`, [job.id]);
     console.log(`· 정리: 생성 레슨 #${lessonId} · job #${job.id} 삭제`);
   }
 }
@@ -200,7 +200,7 @@ async function main() {
 try {
   await main();
 } finally {
-  await pool.query(`DELETE FROM public.ai_jobs WHERE request_hash LIKE $1`, [`${FAKE_HASH}%`]).catch(() => {});
+  await pool.query(`DELETE FROM ai_jobs WHERE request_hash LIKE $1`, [`${FAKE_HASH}%`]).catch(() => {});
   await pool.end();
 }
 const failed = results.filter((r) => !r).length;
