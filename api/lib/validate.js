@@ -27,6 +27,13 @@ export function oneOf(value, name, allowed, { optional = false } = {}) {
   return value;
 }
 
+export function bool(value, name) {
+  if (typeof value !== 'boolean') {
+    throw new HttpError(400, 'BAD_REQUEST', `${name} 은 true/false 여야 합니다.`);
+  }
+  return value;
+}
+
 export function posInt(value, name, { optional = false, max = Number.MAX_SAFE_INTEGER } = {}) {
   if (value === undefined || value === null || value === '') {
     if (optional) return undefined;

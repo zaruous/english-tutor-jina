@@ -42,5 +42,11 @@ __pycache__/
 # 사내 프록시(SSL 검사) 환경 전용 — Dockerfile 이 있으면 신뢰 저장소에 넣는다. 커밋 금지.
 lib/pronounce/corp-ca.crt
 
+# Claude Code 로컬 워크트리 (세션별 임시)
+.claude/worktrees/
+
+# e2e 스크린샷 등 실행마다 덮어써지는 산출물 (라운드 폴더에는 골라 복사)
+docs/reviews/_artifacts/
+
 # PGlite 파일 영속 디렉터리 (PGLITE_DATA_DIR)
 .pglite/

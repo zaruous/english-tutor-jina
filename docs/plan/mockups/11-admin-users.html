@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<!-- 플랜 11 Phase 3 — 사용자 · 역할 관리.
+     역할은 users.role 서열 4단계(결정 6). 강등은 세션을 끊지 않아도 다음 요청부터 적용된다 —
+     resolveSession 이 매 요청 users 를 JOIN 하기 때문(auth.service.js:80).
+     두 가드는 409: 자기 자신 강등 · 마지막 admin 강등. 변경은 user_audit_log 에 1행. -->
+<html lang="ko"><head><meta charset="utf-8"><link rel="stylesheet" href="shared.css">
+<style>
+  body { display: flex; flex-direction: column; }   /* 1440×900 을 채운다 */
+  .adminbar { height: 52px; display: flex; align-items: center; gap: 12px; padding: 0 26px;
+              border-bottom: 1px solid var(--border-strong); background: var(--bg-soft); }
+  .adminbar .avatar { width: 26px; height: 26px; border-radius: 50%; color: #fff;
+              background: linear-gradient(135deg, #9F7AEA, #ED64A6);
+              display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+  .adminbar .t { font-size: 16.5px; font-weight: 700; }
+  .role-chip { font-size: 10px; font-weight: 800; letter-spacing: .07em; padding: 3px 9px; border-radius: 999px;
+          background: rgba(246,173,85,.15); color: var(--warning); border: 1px solid rgba(246,173,85,.32); }
+  .adminbar .who { margin-left: auto; font-size: 12.5px; color: var(--text-dim); }
+
+  .tabs { display: flex; gap: 7px; padding: 16px 26px 0; }
+  .head { padding: 18px 26px 0; display: flex; align-items: flex-end; justify-content: space-between; }
+  .counts { display: flex; gap: 7px; padding-bottom: 4px; }
+  .cnt { padding: 6px 13px; border-radius: 9px; background: var(--surface); border: 1px solid var(--border);
+         font-size: 12px; color: var(--text-muted); }
+  .cnt b { font-weight: 700; }
+
+  .filters { display: flex; gap: 8px; align-items: center; padding: 15px 26px 13px; }
+  .sbox { display: flex; align-items: center; gap: 9px; background: var(--card);
+          border: 1px solid var(--border-strong); border-radius: 10px; padding: 8px 13px; width: 262px; }
+  .sbox .ph { font-size: 12.5px; color: var(--text-dim); }
+
+  .tbl { margin: 0 26px; border: 1px solid var(--border); border-radius: 15px;
+         background: var(--surface); position: relative; }
+  .r { display: grid; grid-template-columns: 1fr 176px 88px 108px 92px 40px;
+       align-items: center; gap: 14px; padding: 0 18px; height: 62px; border-top: 1px solid var(--border); }
+  .r:first-child { border-top: none; }
+  .r:last-child { border-radius: 0 0 14px 14px; }
+  .r.h { height: 40px; background: var(--bg-soft); border-radius: 14px 14px 0 0;
+         font-size: 10.5px; color: var(--text-dim); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .r.sel { background: rgba(183,148,244,.055); }
+
+  .u { display: flex; align-items: center; gap: 11px; min-width: 0; }
+  .u .av { width: 30px; height: 30px; border-radius: 50%; flex: none; display: grid; place-items: center;
+           font-size: 12px; font-weight: 700; color: #fff; background: rgba(255,255,255,.09); }
+  .u .av.me { background: linear-gradient(135deg, #9F7AEA, #ED64A6); }
+  .u .nm { font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 7px; }
+  .u .em { font-size: 11.5px; color: var(--text-dim); font-family: ui-monospace, Consolas, monospace; }
+  .tag { font-size: 9px; font-weight: 800; letter-spacing: .05em; padding: 2px 6px; border-radius: 999px;
+         background: var(--chip); color: var(--text-dim); }
+  .tag.me { background: rgba(183,148,244,.16); color: var(--accent); }
+
+  /* 역할 셀 — 드롭다운. 잠긴 행은 가드 때문에 열리지 않는다 */
+  .sel-role { display: inline-flex; align-items: center; gap: 8px; padding: 7px 11px; border-radius: 10px;
+              border: 1px solid var(--border-strong); font-size: 12.5px; font-weight: 700; width: 100%; }
+  .sel-role .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .sel-role .car { margin-left: auto; font-size: 10px; color: var(--text-dim); }
+  .sel-role.admin    { color: var(--warning); }  .sel-role.admin .dot    { background: var(--warning); }
+  .sel-role.reviewer { color: var(--success); }  .sel-role.reviewer .dot { background: var(--success); }
+  .sel-role.author   { color: var(--accent); }   .sel-role.author .dot   { background: var(--accent); }
+  .sel-role.learner  { color: var(--text-muted); } .sel-role.learner .dot { background: rgba(255,255,255,.28); }
+  .sel-role.lock { border-style: dashed; opacity: .72; }
+  .sel-role.lock .car { font-size: 11px; }
+  .sel-role.open { border-color: rgba(183,148,244,.6); background: rgba(183,148,244,.09); }
+
+  .cell { font-size: 12.5px; color: var(--text-muted); }
+  .cell.dim { color: var(--text-dim); }
+  .sess { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-muted); }
+  .sess i { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+  .sess.none { color: var(--text-dim); } .sess.none i { background: rgba(255,255,255,.18); }
+  .kebab { width: 30px; height: 30px; border-radius: 9px; border: 1px solid var(--border-strong);
+           display: grid; place-items: center; color: var(--text-muted); font-size: 13px; }
+
+  /* 열린 역할 드롭다운 — 4행(문하영) 아래로 편다. 헤더 40 + 3행 186 = 226, 행 높이 62 → 292 */
+  .menu { position: absolute; left: 792px; top: 292px; width: 306px; z-index: 5;
+          background: var(--surface-elev); border: 1px solid var(--border-strong); border-radius: 12px;
+          box-shadow: var(--shadow); padding: 6px; }
+  .opt { padding: 9px 11px; border-radius: 9px; display: flex; gap: 10px; align-items: flex-start; }
+  .opt .dot { width: 7px; height: 7px; border-radius: 50%; margin-top: 5px; flex: none; }
+  .opt .tx { min-width: 0; }
+  .opt .k { display: block; font-size: 12.5px; font-weight: 700; color: var(--text); }
+  .opt .d { display: block; font-size: 11px; color: var(--text-dim); line-height: 1.5; margin-top: 2px; }
+  .opt.on { background: rgba(183,148,244,.13); }
+  .opt.on .k { color: var(--accent); }
+  .opt.cur { background: rgba(255,255,255,.045); }
+  .opt.cur .k::after { content: ' — 현재'; font-weight: 600; color: var(--text-dim); font-size: 11px; }
+
+  .foot { margin-top: auto; padding: 15px 26px 26px; display: flex; gap: 22px; align-items: flex-end; }
+  .note { font-size: 11.5px; color: var(--text-dim); line-height: 1.7; }
+  .note b { color: var(--text-muted); font-weight: 700; }
+  .note .w { color: var(--warning); }
+  .audit { margin-left: auto; min-width: 452px; border: 1px dashed var(--border-strong); border-radius: 12px;
+           padding: 11px 15px; background: var(--card); }
+  .audit .cap { font-size: 10px; font-weight: 800; letter-spacing: .06em; color: var(--text-dim);
+                text-transform: uppercase; margin-bottom: 7px; }
+  .audit .line { font-size: 11.5px; color: var(--text-muted); font-family: ui-monospace, Consolas, monospace; line-height: 1.85; }
+  .audit .line span { color: var(--text-dim); }
+</style></head>
+<body>
+  <nav class="adminbar">
+    <span class="avatar">J</span>
+    <span class="t">Jina 콘텐츠 관리</span>
+    <span class="role-chip">ADMIN</span>
+    <span class="who">admin@jina.local · role=admin</span>
+  </nav>
+
+  <div class="tabs">
+    <span class="chip">콘텐츠</span>
+    <span class="chip">검수 <span class="n">3</span></span>
+    <span class="chip on">사용자 <span class="n">6</span></span>
+  </div>
+
+  <header class="head">
+    <div>
+      <div class="eyebrow" style="margin-bottom:5px">플랜 11 Phase 3 · users.role 서열 4단계</div>
+      <div class="h1">사용자</div>
+    </div>
+    <div class="counts">
+      <span class="cnt">admin <b style="color:var(--warning)">2</b></span>
+      <span class="cnt">reviewer <b style="color:var(--success)">1</b></span>
+      <span class="cnt">author <b style="color:var(--accent)">1</b></span>
+      <span class="cnt">learner <b>2</b></span>
+    </div>
+  </header>
+
+  <div class="filters">
+    <span class="sbox"><span style="color:var(--text-dim)">⌕</span><span class="ph">이메일 · 이름으로 검색</span></span>
+    <span class="chip on">전체 <span class="n">6</span></span>
+    <span class="chip">admin</span>
+    <span class="chip">reviewer</span>
+    <span class="chip">author</span>
+    <span class="chip">learner</span>
+    <span style="margin-left:auto;font-size:11.5px;color:var(--text-dim)">
+      역할 변경은 <b style="color:var(--text-muted)">다음 요청부터</b> 적용된다 — 재로그인 불필요
+    </span>
+  </div>
+
+  <section class="tbl">
+    <div class="r h">
+      <span>사용자</span><span>역할</span><span>가입</span><span>마지막 로그인</span><span>활성 세션</span><span></span>
+    </div>
+
+    <div class="r">
+      <span class="u">
+        <span class="av me">A</span>
+        <span>
+          <span class="nm">관리자 <span class="tag me">본인</span> <span class="tag">마지막 admin</span></span>
+          <span class="em">admin@jina.local</span>
+        </span>
+      </span>
+      <span class="sel-role admin lock"><span class="dot"></span>admin<span class="car">🔒</span></span>
+      <span class="cell dim">08-31</span><span class="cell dim">방금</span>
+      <span class="sess"><i></i>2</span>
+      <span class="kebab">⋯</span>
+    </div>
+
+    <div class="r">
+      <span class="u">
+        <span class="av">J</span>
+        <span>
+          <span class="nm">지나 (개발) <span class="tag">is_dev</span></span>
+          <span class="em">jina@dev.local</span>
+        </span>
+      </span>
+      <span class="sel-role admin"><span class="dot"></span>admin<span class="car">▾</span></span>
+      <span class="cell dim">08-12</span><span class="cell dim">09-03</span>
+      <span class="sess"><i></i>1</span>
+      <span class="kebab">⋯</span>
+    </div>
+
+    <div class="r">
+      <span class="u">
+        <span class="av">S</span>
+        <span>
+          <span class="nm">서지훈</span>
+          <span class="em">jihoon@example.com</span>
+        </span>
+      </span>
+      <span class="sel-role reviewer"><span class="dot"></span>reviewer<span class="car">▾</span></span>
+      <span class="cell dim">08-20</span><span class="cell dim">09-02</span>
+      <span class="sess"><i></i>1</span>
+      <span class="kebab">⋯</span>
+    </div>
+
+    <div class="r sel">
+      <span class="u">
+        <span class="av">M</span>
+        <span>
+          <span class="nm">문하영</span>
+          <span class="em">hayoung@example.com</span>
+        </span>
+      </span>
+      <span class="sel-role learner open"><span class="dot"></span>learner<span class="car">▴</span></span>
+      <span class="cell dim">09-01</span><span class="cell dim">09-03</span>
+      <span class="sess"><i></i>1</span>
+      <span class="kebab">⋯</span>
+    </div>
+
+    <div class="r">
+      <span class="u">
+        <span class="av">P</span>
+        <span>
+          <span class="nm">박수민</span>
+          <span class="em">sumin@example.com</span>
+        </span>
+      </span>
+      <span class="sel-role author"><span class="dot"></span>author<span class="car">▾</span></span>
+      <span class="cell dim">08-28</span><span class="cell dim">09-03</span>
+      <span class="sess"><i></i>3</span>
+      <span class="kebab">⋯</span>
+    </div>
+
+    <div class="r">
+      <span class="u">
+        <span class="av">L</span>
+        <span>
+          <span class="nm">이준서</span>
+          <span class="em">junseo@example.com</span>
+        </span>
+      </span>
+      <span class="sel-role learner"><span class="dot"></span>learner<span class="car">▾</span></span>
+      <span class="cell dim">08-25</span><span class="cell dim">08-29</span>
+      <span class="sess none"><i></i>0</span>
+      <span class="kebab">⋯</span>
+    </div>
+
+    <div class="menu">
+      <div class="opt cur">
+        <span class="dot" style="background:rgba(255,255,255,.28)"></span>
+        <span class="tx"><span class="k">learner</span><span class="d">학습만. 관리 API 는 전부 403</span></span>
+      </div>
+      <div class="opt on">
+        <span class="dot" style="background:var(--accent)"></span>
+        <span class="tx"><span class="k">author</span><span class="d">콘텐츠 생성·수정, 검수 요청(draft → review)</span></span>
+      </div>
+      <div class="opt">
+        <span class="dot" style="background:var(--success)"></span>
+        <span class="tx"><span class="k">reviewer</span><span class="d">+ 승인·반려·공개·내림</span></span>
+      </div>
+      <div class="opt">
+        <span class="dot" style="background:var(--warning)"></span>
+        <span class="tx"><span class="k">admin</span><span class="d">+ 사이드카·health force, 역할 부여</span></span>
+      </div>
+    </div>
+  </section>
+
+  <div class="foot">
+    <div class="note">
+      <b>세션 종료</b>(<span style="font-family:ui-monospace,Consolas,monospace">⋯</span>)는 강등용이 아니라 <b>탈취 대응</b>이다 —
+      강등은 세션을 끊지 않아도 다음 요청부터 걸린다.<br>
+      <span class="w">🔒 잠긴 행</span> — 자기 자신 강등과 마지막 admin 강등은 <b>409</b>(권한이 아니라 상태 문제라 403 이 아니다).<br>
+      계정 생성·비밀번호 재설정·삭제는 v1 밖 — 임시 비밀번호 전달 수단이 없고, 삭제는 학습 이력까지 지운다(열린 질문 8).
+    </div>
+    <div class="audit">
+      <div class="cap">user_audit_log — 변경마다 1행</div>
+      <div class="line">
+        09-03 15:04 <span>admin</span> sumin@…  learner → author<br>
+        09-02 11:20 <span>admin</span> jihoon@… author → reviewer<br>
+        08-31 09:02 <span>system</span> admin@…  (ADMIN_* 부팅 동기화) → admin
+      </div>
+    </div>
+  </div>
+</body></html>

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<!-- 플랜 12 Phase 2 — AI 초안 검수 화면.
+     승인 = status:'review' → 'published' 만. visibility 는 private 유지(결정 2) —
+     공개는 11 Phase 2 전이에서 한 번 더. "승인과 함께 공개" 체크박스 기본 off.
+     검수 화면은 편집하지 않는다(결정 4) — 수정은 플랜 13 에디터 링크. -->
+<html lang="ko"><head><meta charset="utf-8"><link rel="stylesheet" href="shared.css">
+<style>
+  .adminbar { height: 52px; display: flex; align-items: center; gap: 12px; padding: 0 26px;
+              border-bottom: 1px solid var(--border-strong); background: var(--bg-soft); }
+  .adminbar .avatar { width: 26px; height: 26px; border-radius: 50%; color: #fff;
+              background: linear-gradient(135deg, #9F7AEA, #ED64A6);
+              display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+  .adminbar .t { font-size: 16.5px; font-weight: 700; }
+  .role { font-size: 10px; font-weight: 800; letter-spacing: .07em; padding: 3px 9px; border-radius: 999px;
+          background: rgba(246,173,85,.15); color: var(--warning); border: 1px solid rgba(246,173,85,.32); }
+  .adminbar .who { margin-left: auto; font-size: 12.5px; color: var(--text-dim); }
+
+  .head { padding: 17px 26px 15px; display: flex; align-items: center; justify-content: space-between;
+          border-bottom: 1px solid var(--border); }
+  .counts { display: flex; gap: 8px; }
+  .cnt { padding: 7px 15px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border);
+         font-size: 12.5px; color: var(--text-muted); }
+  .cnt b { font-weight: 700; }
+
+  body { display: flex; flex-direction: column; }   /* 1440×900 을 채운다 — 승인/반려 바를 바닥에 붙인다 */
+  main { display: grid; grid-template-columns: 336px 1fr; gap: 18px; padding: 18px 26px;
+         flex: 1; min-height: 0; }
+
+  .qcap { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; color: var(--text-dim);
+          text-transform: uppercase; margin-bottom: 10px; }
+  .q { background: var(--surface); border: 1px solid var(--border); border-radius: 13px;
+       padding: 13px 15px; margin-bottom: 9px; }
+  .q.on { border-color: rgba(183,148,244,.5); background: rgba(183,148,244,.07); }
+  .q .top { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+  .q .ty { font-size: 9.5px; font-weight: 800; letter-spacing: .05em; padding: 2px 7px; border-radius: 999px;
+           background: rgba(183,148,244,.16); color: var(--accent); }
+  .q .ago { margin-left: auto; font-size: 11px; color: var(--text-dim); }
+  .q .nm { font-size: 13.5px; font-weight: 600; line-height: 1.4; margin-bottom: 6px; }
+  .q .sub { font-size: 11.5px; color: var(--text-dim); font-family: ui-monospace, Consolas, monospace; }
+  .q .ok { color: var(--success); } .q .wr { color: var(--warning); }
+  .srcnote { margin-top: 12px; font-size: 11px; color: var(--text-dim); line-height: 1.7; }
+  .srcnote b { color: var(--text-muted); }
+
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 15px;
+           display: flex; flex-direction: column; overflow: hidden; }
+  .ph { padding: 15px 20px; border-bottom: 1px solid var(--border); background: var(--bg-soft);
+        display: flex; align-items: center; gap: 11px; }
+  .ph .nm { font-size: 15.5px; font-weight: 700; }
+  .ph .meta { margin-left: auto; font-size: 11px; color: var(--text-dim);
+              font-family: ui-monospace, Consolas, monospace; }
+  .body { padding: 16px 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .sec { min-width: 0; }
+  .sc { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; color: var(--text-dim);
+        text-transform: uppercase; margin-bottom: 9px; }
+
+  .line { display: flex; gap: 9px; padding: 7px 0; font-size: 13px; line-height: 1.5; }
+  .line .sp { flex: none; width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center;
+              font-size: 10.5px; font-weight: 800; }
+  .line .sp.m { background: rgba(79,209,197,.15); color: var(--success); }
+  .line .sp.w { background: rgba(246,135,179,.15); color: var(--accent2); }
+
+  .qa { border: 1px solid var(--border); border-radius: 11px; padding: 11px 13px; margin-bottom: 9px; background: var(--card); }
+  .qa .st { font-size: 12.5px; font-weight: 600; line-height: 1.5; margin-bottom: 8px; }
+  .qa .op { display: flex; flex-wrap: wrap; gap: 6px; }
+  .qa .o { font-size: 11.5px; padding: 4px 9px; border-radius: 7px; background: var(--chip); color: var(--text-muted); }
+  .qa .o.c { background: rgba(79,209,197,.12); color: var(--success); border: 1px solid rgba(79,209,197,.3); font-weight: 700; }
+  .qa .sk { margin-top: 8px; font-size: 10px; font-family: ui-monospace, Consolas, monospace;
+            color: var(--text-dim); }
+
+  .val { margin: 0 20px 14px; border-radius: 12px; padding: 12px 15px;
+         background: rgba(246,173,85,.07); border: 1px solid rgba(246,173,85,.26); }
+  .val .h { font-size: 12px; font-weight: 700; color: var(--warning); margin-bottom: 7px;
+            display: flex; align-items: center; gap: 8px; }
+  .val .h .pass { font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 999px;
+                  background: rgba(79,209,197,.15); color: var(--success); }
+  .val ul { list-style: none; font-size: 12px; color: var(--text-muted); line-height: 1.8; }
+  .val code { font-family: ui-monospace, Consolas, monospace; color: var(--text); font-size: 11.5px; }
+
+  .cross { margin: 0 20px 14px; border-radius: 12px; padding: 11px 15px; background: var(--card);
+           border: 1px dashed var(--border-strong); display: flex; align-items: center; gap: 10px; }
+  .cross .k { font-size: 11.5px; font-family: ui-monospace, Consolas, monospace; color: var(--text-dim); }
+  .cross .v { font-size: 11.5px; color: var(--text-dim); margin-left: auto; }
+
+  .acts { margin-top: auto; padding: 14px 20px; border-top: 1px solid var(--border); background: var(--bg-soft);
+          display: flex; align-items: center; gap: 12px; }
+  .cb { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--text-muted); }
+  .cb .box { width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid var(--border-strong); }
+  .cb small { color: var(--text-dim); font-size: 11px; }
+  .btn-reject { display: inline-flex; align-items: center; gap: 6px; padding: 11px 17px; border-radius: 12px;
+                background: transparent; border: 1px solid rgba(252,129,129,.4); color: var(--error);
+                font-size: 13.5px; font-weight: 700; }
+  .btn-edit { font-size: 12.5px; color: var(--text-dim); border: 1px solid var(--border);
+              padding: 10px 14px; border-radius: 11px; }
+</style></head>
+<body>
+  <nav class="adminbar">
+    <span class="avatar">J</span>
+    <span class="t">Jina 콘텐츠 관리</span>
+    <span class="role">ADMIN</span>
+    <span class="who">admin@jina.local · role=admin</span>
+  </nav>
+
+  <header class="head">
+    <div>
+      <div class="eyebrow" style="margin-bottom:4px">플랜 12 Phase 2 · publish_target = catalog</div>
+      <div class="h1">AI 초안 검수</div>
+    </div>
+    <div class="counts">
+      <span class="cnt">대기 <b style="color:var(--warning)">3</b></span>
+      <span class="cnt">승인 <b style="color:var(--success)">12</b></span>
+      <span class="cnt">반려 <b style="color:var(--error)">2</b></span>
+    </div>
+  </header>
+
+  <main>
+    <div>
+      <div class="qcap">검수 큐 · status = review</div>
+
+      <div class="q on">
+        <div class="top"><span class="ty">lesson_gen · lc</span><span class="ago">12분 전</span></div>
+        <div class="nm">TOEIC LC — 회의실 예약</div>
+        <div class="sub">문항 3 · <span class="wr">경고 1</span></div>
+      </div>
+
+      <div class="q">
+        <div class="top"><span class="ty">vocab_set</span><span class="ago">1시간 전</span></div>
+        <div class="nm">면접 표현 20</div>
+        <div class="sub">단어 20 · <span class="ok">경고 0</span></div>
+      </div>
+
+      <div class="q">
+        <div class="top"><span class="ty">scenario_gen</span><span class="ago">어제</span></div>
+        <div class="nm">공항 체크인 카운터</div>
+        <div class="sub">목표 3 · <span class="ok">경고 0</span></div>
+      </div>
+
+      <div class="srcnote">
+        레슨은 <b>lesson_drafts</b> 행, 시나리오·단어 세트는 <b>status='review'</b> 행 자체가 큐다.
+        UNION 이 아니라 세 쿼리를 서비스에서 합친다(DTO 모양이 다르다).
+      </div>
+    </div>
+
+    <section class="panel">
+      <div class="ph">
+        <span class="nm">TOEIC LC — 회의실 예약</span>
+        <span class="badge" style="background:rgba(246,173,85,.15);color:var(--warning)">◐ 검토</span>
+        <span class="meta">draft#87 · claude · review_status='draft'</span>
+      </div>
+
+      <div class="body">
+        <div class="sec">
+          <div class="sc">생성 결과 — 스크립트 4줄</div>
+          <div class="line"><span class="sp m">M</span><span>Hi, I'd like to reserve the large conference room for Thursday afternoon.</span></div>
+          <div class="line"><span class="sp w">W</span><span>Let me check the schedule. It's booked from two to four, but it's free after that.</span></div>
+          <div class="line"><span class="sp m">M</span><span>Four thirty works. Could you also arrange for a projector?</span></div>
+          <div class="line"><span class="sp w">W</span><span>Certainly. I'll note that and send you a confirmation email.</span></div>
+        </div>
+
+        <div class="sec">
+          <div class="sc">문항 3 — 정답·해설</div>
+          <div class="qa">
+            <div class="st">1. What does the man want to do?</div>
+            <div class="op"><span class="o">(A) Cancel a meeting</span><span class="o c">(B) Reserve a room ✓</span><span class="o">(C) Buy equipment</span></div>
+            <div class="sk">skill_code: detail</div>
+          </div>
+          <div class="qa">
+            <div class="st">2. What will the woman do next?</div>
+            <div class="op"><span class="o">(A) Call a client</span><span class="o">(B) Cancel the booking</span><span class="o c">(C) Send a confirmation ✓</span></div>
+            <div class="sk">skill_code: inference</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="val">
+        <div class="h">자동 검증 — validateLcScript <span class="pass">규칙 통과</span></div>
+        <ul>
+          <li>⚠ 3번 대사가 <code>12자</code> 기준에 근접합니다(38자 → 권장 40자 이상)</li>
+          <li>✓ 4~8줄 · <code>M:</code>/<code>W:</code> 라벨 · 괄호 지시문 없음</li>
+        </ul>
+      </div>
+
+      <div class="cross">
+        <span class="k">cross_check: null</span>
+        <span class="v">교차 채점(생성 provider ≠ 검증 provider) — v1 미적용, DTO 슬롯만 확보</span>
+      </div>
+
+      <div class="acts">
+        <span class="btn-edit">✎ 승인 전 수정 — 플랜 13 에디터</span>
+        <label class="cb">
+          <span class="box"></span>
+          승인과 함께 공개 <small>visibility → public · 기본 off</small>
+        </label>
+        <span style="margin-left:auto"></span>
+        <button class="btn-reject">반려(사유)</button>
+        <button class="btn-primary">승인 → status = published</button>
+      </div>
+    </section>
+  </main>
+</body></html>

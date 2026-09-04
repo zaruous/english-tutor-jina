@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<!-- 플랜 13 Phase A — LC 에디터 최소형.
+     스크립트는 10.7 §3.2 의 구조화 포맷 [{speaker:'M'|'W', text}] 기준으로 그렸다 —
+     화자는 토글, 본문만 입력한다(13 Phase A 표의 "M:/W: 접두는 텍스트로 그대로" 와 어긋남 · 확인 필요).
+     검증 규칙의 단일 소스는 서버(validateLcScript) — 화면은 돌려받은 validation_errors 만 렌더한다(결정 2). -->
+<html lang="ko"><head><meta charset="utf-8"><link rel="stylesheet" href="shared.css">
+<style>
+  .adminbar { height: 52px; display: flex; align-items: center; gap: 12px; padding: 0 26px;
+              border-bottom: 1px solid var(--border-strong); background: var(--bg-soft); }
+  .adminbar .avatar { width: 26px; height: 26px; border-radius: 50%; color: #fff;
+              background: linear-gradient(135deg, #9F7AEA, #ED64A6);
+              display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+  .adminbar .t { font-size: 16.5px; font-weight: 700; }
+  .adminbar .crumb { font-size: 12.5px; color: var(--text-dim); }
+  .role { font-size: 10px; font-weight: 800; letter-spacing: .07em; padding: 3px 9px; border-radius: 999px;
+          background: rgba(246,173,85,.15); color: var(--warning); border: 1px solid rgba(246,173,85,.32); }
+  .adminbar .who { margin-left: auto; font-size: 12.5px; color: var(--text-dim); }
+
+  .metabar { padding: 15px 26px; border-bottom: 1px solid var(--border);
+             display: flex; align-items: center; gap: 12px; }
+  .fld { display: flex; flex-direction: column; gap: 5px; }
+  .fld .lb { font-size: 10px; font-weight: 800; letter-spacing: .06em; color: var(--text-dim); text-transform: uppercase; }
+  .inp { background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px;
+         padding: 9px 13px; font-size: 13.5px; color: var(--text); }
+  .inp.wide { width: 460px; font-weight: 600; }
+  .inp.sm { width: 108px; }
+  .inp.xs { width: 78px; }
+  .ro { background: var(--card); color: var(--text-dim); border-style: dashed; }
+
+  body { display: flex; flex-direction: column; }   /* 1440×900 을 채운다 — 검증·저장 바를 바닥에 붙인다 */
+  main { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; padding: 18px 26px 0;
+         flex: 1; min-height: 0; }
+  .sec { background: var(--surface); border: 1px solid var(--border); border-radius: 15px; padding: 16px 18px; }
+  .sh { display: flex; align-items: center; gap: 9px; margin-bottom: 13px; }
+  .sh .tt { font-size: 13.5px; font-weight: 700; }
+  .sh .ct { font-size: 11px; color: var(--text-dim); }
+  .sh .add { margin-left: auto; font-size: 11.5px; color: var(--text-muted);
+             border: 1px solid var(--border-strong); padding: 6px 11px; border-radius: 9px; }
+
+  .ln { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
+  .ln .no { width: 15px; font-size: 11px; color: var(--text-dim); text-align: right; }
+  .tog { display: flex; border: 1px solid var(--border-strong); border-radius: 9px; overflow: hidden; flex: none; }
+  .tog span { padding: 7px 11px; font-size: 11.5px; font-weight: 800; color: var(--text-dim); }
+  .tog span.on.m { background: rgba(79,209,197,.16); color: var(--success); }
+  .tog span.on.w { background: rgba(246,135,179,.16); color: var(--accent2); }
+  .tog.err { border-color: rgba(252,129,129,.6); }
+  .ln .txt { flex: 1; background: var(--card); border: 1px solid var(--border); border-radius: 9px;
+             padding: 9px 12px; font-size: 12.5px; line-height: 1.45; color: var(--text); }
+  .ln .txt.err { border-color: rgba(252,129,129,.5); background: rgba(252,129,129,.05); }
+  .ln .gr { color: var(--text-dim); font-size: 13px; flex: none; }
+
+  .qa { border: 1px solid var(--border); border-radius: 12px; padding: 13px 14px; margin-bottom: 10px; background: var(--card); }
+  .qa.open { border-color: rgba(183,148,244,.42); background: rgba(183,148,244,.055); }
+  .qa .qh { display: flex; align-items: center; gap: 9px; }
+  .qa .qn { font-size: 11px; font-weight: 800; color: var(--text-dim); }
+  .qa .qs { font-size: 12.5px; font-weight: 600; flex: 1; }
+  .qa .col { margin-left: auto; color: var(--text-dim); font-size: 12px; }
+  .opt { display: flex; align-items: center; gap: 9px; margin-top: 8px; }
+  .opt .rd { width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--border-strong); flex: none; }
+  .opt .rd.on { border-color: var(--success); background: radial-gradient(circle, var(--success) 45%, transparent 47%); }
+  .opt .ov { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+             padding: 7px 11px; font-size: 12px; color: var(--text-muted); }
+  .opt .ov.c { color: var(--success); border-color: rgba(79,209,197,.3); }
+  .sub { display: flex; gap: 10px; margin-top: 11px; }
+  .sub .ex { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 9px;
+             padding: 8px 11px; font-size: 11.5px; color: var(--text-muted); line-height: 1.5; }
+  .sub .sk { width: 132px; background: var(--surface); border: 1px solid var(--border); border-radius: 9px;
+             padding: 8px 11px; font-size: 11.5px; color: var(--text-muted);
+             font-family: ui-monospace, Consolas, monospace; }
+
+  .foot { padding: 16px 26px; display: flex; align-items: center; gap: 14px; }
+  .verr { flex: 1; border-radius: 12px; padding: 11px 15px;
+          background: rgba(252,129,129,.07); border: 1px solid rgba(252,129,129,.3); }
+  .verr .h { font-size: 12px; font-weight: 700; color: var(--error); margin-bottom: 5px; }
+  .verr .m { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
+  .verr code { font-family: ui-monospace, Consolas, monospace; color: var(--text); font-size: 11.5px; }
+  .btn-tts { display: inline-flex; align-items: center; gap: 7px; padding: 11px 16px; border-radius: 12px;
+             background: transparent; border: 1px solid var(--border-strong); color: var(--text);
+             font-size: 13.5px; font-weight: 600; }
+</style></head>
+<body>
+  <nav class="adminbar">
+    <span class="avatar">J</span>
+    <span class="t">Jina 콘텐츠 관리</span>
+    <span class="crumb">/ 리스닝 / 수정</span>
+    <span class="role">ADMIN</span>
+    <span class="who">admin@jina.local · role=admin</span>
+  </nav>
+
+  <div class="metabar">
+    <div class="fld">
+      <span class="lb">제목</span>
+      <span class="inp wide">TOEIC LC — 회의실 예약</span>
+    </div>
+    <div class="fld">
+      <span class="lb">kind</span>
+      <span class="inp sm ro">toeic_lc</span>
+    </div>
+    <div class="fld">
+      <span class="lb">난이도</span>
+      <span class="inp xs">3</span>
+    </div>
+    <div class="fld">
+      <span class="lb">예상 분</span>
+      <span class="inp xs">6</span>
+    </div>
+    <div class="fld">
+      <span class="lb">상태</span>
+      <span class="inp sm" style="color:var(--warning)">◐ 검토</span>
+    </div>
+    <div style="margin-left:auto;text-align:right">
+      <div class="eyebrow" style="margin-bottom:4px">플랜 13 Phase A · 최소형</div>
+      <div style="font-size:12px;color:var(--text-dim)">AI 초안을 <b style="color:var(--text-muted)">고치는</b> 화면 — 빈 화면에서 만들지 않는다</div>
+    </div>
+  </div>
+
+  <main>
+    <section class="sec">
+      <div class="sh">
+        <span class="tt">스크립트</span>
+        <span class="ct">4줄 · 규칙 4~8줄</span>
+        <span class="add">+ 줄 추가</span>
+      </div>
+
+      <div class="ln">
+        <span class="no">1</span>
+        <span class="tog"><span class="on m">M</span><span>W</span></span>
+        <span class="txt">Hi, I'd like to reserve the large conference room for Thursday afternoon.</span>
+        <span class="gr">⋮⋮</span>
+      </div>
+      <div class="ln">
+        <span class="no">2</span>
+        <span class="tog"><span>M</span><span class="on w">W</span></span>
+        <span class="txt">Let me check the schedule. It's booked from two to four, but it's free after that.</span>
+        <span class="gr">⋮⋮</span>
+      </div>
+      <div class="ln">
+        <span class="no">3</span>
+        <span class="tog err"><span>M</span><span>W</span></span>
+        <span class="txt err">Four thirty works. Could you also arrange for a projector?</span>
+        <span class="gr">⋮⋮</span>
+      </div>
+      <div class="ln">
+        <span class="no">4</span>
+        <span class="tog"><span>M</span><span class="on w">W</span></span>
+        <span class="txt">Certainly. I'll note that and send you a confirmation email.</span>
+        <span class="gr">⋮⋮</span>
+      </div>
+
+      <div style="margin-top:14px;padding-top:13px;border-top:1px solid var(--border);
+                  font-size:11.5px;color:var(--text-dim);line-height:1.65">
+        재생은 <b style="color:var(--text-muted)">jinaSpeak</b> 브라우저 TTS — 화자 라벨은 읽지 않는다(기존 규범).<br>
+        오디오 파일 업로드는 v1 범위 밖(결정 3) — 파일 저장소가 없다.
+      </div>
+    </section>
+
+    <section class="sec">
+      <div class="sh">
+        <span class="tt">문항</span>
+        <span class="ct">3개 · 4지선다</span>
+        <span class="add">+ 문항 추가</span>
+      </div>
+
+      <div class="qa open">
+        <div class="qh">
+          <span class="qn">Q1</span>
+          <span class="qs">What does the man want to do?</span>
+          <span class="col">▴</span>
+        </div>
+        <div class="opt"><span class="rd"></span><span class="ov">(A) Cancel a meeting</span></div>
+        <div class="opt"><span class="rd on"></span><span class="ov c">(B) Reserve a conference room</span></div>
+        <div class="opt"><span class="rd"></span><span class="ov">(C) Buy new equipment</span></div>
+        <div class="opt"><span class="rd"></span><span class="ov">(D) Change a deadline</span></div>
+        <div class="sub">
+          <span class="ex">해설 — 첫 대사 <b>reserve the large conference room</b> 이 그대로 근거입니다.</span>
+          <span class="sk">detail ▾</span>
+        </div>
+      </div>
+
+      <div class="qa">
+        <div class="qh"><span class="qn">Q2</span><span class="qs">When is the room available?</span><span class="col">▾</span></div>
+      </div>
+      <div class="qa">
+        <div class="qh"><span class="qn">Q3</span><span class="qs">What will the woman do next?</span><span class="col">▾</span></div>
+      </div>
+
+      <div style="margin-top:4px;font-size:11.5px;color:var(--text-dim);line-height:1.65">
+        Part 7(RC)도 <b style="color:var(--text-muted)">같은 폼</b>을 쓴다 — 지문 필드가 줄 배열 대신 본문 하나(별도 에디터 없음).
+      </div>
+    </section>
+  </main>
+
+  <div class="foot">
+    <div class="verr">
+      <div class="h">✕ 저장하지 않았습니다 — 서버 검증 1건 (422 · validation_errors)</div>
+      <div class="m"><code>script[2].speaker</code> — 3번 줄에 화자가 지정되지 않았습니다. M 또는 W 를 선택하세요.</div>
+    </div>
+    <button class="btn-tts">▶ 스크립트 미리듣기</button>
+    <button class="btn-primary">저장</button>
+  </div>
+</body></html>

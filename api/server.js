@@ -18,6 +18,7 @@ import { registerProgressRoutes } from './routes/progress.routes.js';
 import { registerAiJobRoutes } from './routes/ai-job.routes.js';
 import { registerTopicRoutes } from './routes/topic.routes.js';
 import { registerSpeakingRoutes } from './routes/speaking.routes.js';
+import { registerAdminRoutes } from './routes/admin.routes.js';
 import { warmProviderHealth } from './ai/registry.js';
 import { startAiJobWorker } from './services/ai-job-worker.js';
 import { ensureAdminAccount } from './services/auth.service.js';
@@ -34,6 +35,7 @@ registerProgressRoutes(router);
 registerAiJobRoutes(router);
 registerTopicRoutes(router);
 registerSpeakingRoutes(router);
+registerAdminRoutes(router);
 
 const server = http.createServer(async (req, res) => {
   requestLogger(req, res);
