@@ -14,6 +14,7 @@
     "db:status": "node db/migrate.mjs status",
     "db:rollback": "node db/migrate.mjs down",
     "db:seed": "node db/seeds/dev.mjs",
+    "db:seed:content": "node db/seeds/content.mjs",
     "db:reset": "node db/migrate.mjs reset",
     "test": "node --import ./tests/setup.mjs --test 'tests/*.test.mjs'",
     "test:pg": "DB_DRIVER=pg node --import ./tests/setup.mjs --test 'tests/*.test.mjs'",

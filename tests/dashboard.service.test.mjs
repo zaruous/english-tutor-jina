@@ -48,20 +48,20 @@ describe('getDashboard — 신규 계정', () => {
 describe('getDashboard — 스트릭 산식', () => {
   it('어제와 오늘 복습하면 streak 가 2 가 된다 (저장된 카운터 없음)', async () => {
     const { rows: [card] } = await pool.query(
-      `INSERT INTO public.user_vocab_cards (user_id, word_id)
-       SELECT $1, id FROM public.vocab_words ORDER BY id LIMIT 1
+      `INSERT INTO user_vocab_cards (user_id, word_id)
+       SELECT $1, id FROM vocab_words ORDER BY id LIMIT 1
        RETURNING id, word_id`,
       [user.id],
     );
-    assert.ok(card, '시드 단어가 없다 — 마이그레이션 0003 확인');
+    assert.ok(card, '시드 단어가 없다 — db/content/vocab-words.json 확인');
     for (const offset of ['1 day', '0 day']) {
       await pool.query(
-        `INSERT INTO public.vocab_reviews
+        `INSERT INTO vocab_reviews
            (user_id, card_id, word_id, result, reviewed_at,
             prev_interval_days, prev_ease_factor, next_interval_days, next_ease_factor, next_review)
          SELECT $1, c.id, c.word_id, 'good', now() - $3::interval,
                 1, 2.50, 2, 2.50, now() + interval '2 days'
-           FROM public.user_vocab_cards c WHERE c.id = $2`,
+           FROM user_vocab_cards c WHERE c.id = $2`,
         [user.id, card.id, offset],
       );
     }

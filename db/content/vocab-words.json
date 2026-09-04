@@ -1,0 +1,98 @@
+[
+  {
+    "word": "accommodate",
+    "lang": "en",
+    "pos": "v.",
+    "ipa": "/əˈkɒmədeɪt/",
+    "meaning_ko": "수용하다, 맞추다",
+    "examples": [
+      "The schedule was changed to accommodate the regional conference.",
+      "We can accommodate up to 200 guests in the main hall."
+    ],
+    "difficulty": 3
+  },
+  {
+    "word": "facilitate",
+    "lang": "en",
+    "pos": "v.",
+    "ipa": "/fəˈsɪlɪteɪt/",
+    "meaning_ko": "촉진하다, 용이하게 하다",
+    "examples": [
+      "The new system will facilitate communication between departments.",
+      "Our goal is to facilitate a smooth transition."
+    ],
+    "difficulty": 3
+  },
+  {
+    "word": "procurement",
+    "lang": "en",
+    "pos": "n.",
+    "ipa": "/prəˈkjʊərmənt/",
+    "meaning_ko": "조달, 구매",
+    "examples": [
+      "The procurement department handles all supplier contracts.",
+      "Procurement costs increased by 8% this quarter."
+    ],
+    "difficulty": 4
+  },
+  {
+    "word": "discrepancy",
+    "lang": "en",
+    "pos": "n.",
+    "ipa": "/dɪˈskrepənsi/",
+    "meaning_ko": "불일치, 차이",
+    "examples": [
+      "There is a discrepancy between the invoice and the purchase order.",
+      "Please investigate the discrepancy in the report figures."
+    ],
+    "difficulty": 4
+  },
+  {
+    "word": "reimburse",
+    "lang": "en",
+    "pos": "v.",
+    "ipa": "/ˌriːɪmˈbɜːrs/",
+    "meaning_ko": "환급하다, 변제하다",
+    "examples": [
+      "The company will reimburse all travel expenses within 30 days.",
+      "Please submit your receipts to be reimbursed."
+    ],
+    "difficulty": 3
+  },
+  {
+    "word": "compliance",
+    "lang": "en",
+    "pos": "n.",
+    "ipa": "/kəmˈplaɪəns/",
+    "meaning_ko": "준수, 규정 이행",
+    "examples": [
+      "All employees must complete the annual compliance training.",
+      "The audit confirmed full compliance with safety regulations."
+    ],
+    "difficulty": 3
+  },
+  {
+    "word": "scrutinize",
+    "lang": "en",
+    "pos": "v.",
+    "ipa": "/ˈskruːtɪnaɪz/",
+    "meaning_ko": "면밀히 검토하다, 조사하다",
+    "examples": [
+      "The committee will scrutinize the proposed budget carefully.",
+      "Analysts scrutinized the quarterly earnings report."
+    ],
+    "difficulty": 4
+  },
+  {
+    "word": "allocate",
+    "lang": "en",
+    "pos": "v.",
+    "ipa": "/ˈæləkeɪt/",
+    "meaning_ko": "배분하다, 할당하다",
+    "examples": [
+      "The manager allocated resources evenly across all projects.",
+      "$50,000 was allocated to the marketing budget."
+    ],
+    "difficulty": 2
+  }
+]

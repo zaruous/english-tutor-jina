@@ -6,14 +6,19 @@
 //
 // DB_DRIVER=pg 로 같은 테스트를 돌릴 때는 이미 마이그레이션된 실 DB 를 쓴다 — 하네스가
 // 마이그레이션을 적용하지 않는다. 대신 테스트가 만든 사용자를 지우면 FK CASCADE 로 흔적이 사라진다.
+//
+// 콘텐츠(레슨·단어)는 마이그레이션이 아니라 db/content/*.json 이 단일 소스다(플랜 10.7 Phase 2) —
+// 스키마를 만든 뒤 seedContent 로 같은 데이터를 넣는다.
 import { randomUUID } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from '../../api/config.js';
 import { pool } from '../../api/lib/db.js';
+import { seedContent } from '../../db/seeds/content.mjs';
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'db', 'migrations');
+const SCHEMA = (process.env.DB_SCHEMA || 'jina').trim();
 
 let migrated = null;
 
@@ -22,6 +27,7 @@ export function setupDb() {
   if (!migrated) {
     migrated = (async () => {
       if (config.db.driver === 'pglite') {
+        await pool.exec(`CREATE SCHEMA IF NOT EXISTS ${SCHEMA}; SET search_path TO ${SCHEMA};`);
         const files = readdirSync(MIGRATIONS_DIR)
           .filter((f) => /^\d{4}_[a-z0-9_]+\.sql$/.test(f))
           .sort();
@@ -29,6 +35,8 @@ export function setupDb() {
           // 파일 하나에 여러 문장이 들어 있으므로 query(확장 프로토콜)가 아니라 exec 를 쓴다.
           await pool.exec(readFileSync(join(MIGRATIONS_DIR, file), 'utf8'));
         }
+        const client = await pool.connect();
+        try { await seedContent(client); } finally { client.release(); }
       }
       return pool;
     })();
@@ -42,7 +50,7 @@ export async function createUser({ tz = 'Asia/Seoul' } = {}) {
   await setupDb();
   const email = `test-${randomUUID()}@jina.test`;
   const { rows: [user] } = await pool.query(
-    `INSERT INTO public.users (email, display_name, password_hash, tz)
+    `INSERT INTO users (email, display_name, password_hash, tz)
      VALUES ($1, 'test', 'scrypt$test$test$test', $2)
      RETURNING id, email, tz, display_name`,
     [email, tz],
@@ -52,7 +60,7 @@ export async function createUser({ tz = 'Asia/Seoul' } = {}) {
 
 // users 를 지우면 학습·회화·단어 기록이 FK CASCADE 로 함께 사라진다(0001~0012 전부 ON DELETE CASCADE).
 export async function dropUser(userId) {
-  await pool.query(`DELETE FROM public.users WHERE id = $1`, [userId]);
+  await pool.query(`DELETE FROM users WHERE id = $1`, [userId]);
 }
 
 export async function closeDb() {

@@ -22,7 +22,8 @@ const dbDriver = (process.env.DB_DRIVER || 'pg').trim();
 if (dbDriver !== 'pg' && dbDriver !== 'pglite') {
   throw new Error(`.env DB_DRIVER=${dbDriver} 는 pg | pglite 중 하나여야 합니다.`);
 }
-const dbSchema = (process.env.DB_SCHEMA || 'public').trim();
+// 전용 스키마 (플랜 10.7 Phase 2). 쿼리는 접두를 쓰지 않고 어댑터가 search_path 를 고정한다.
+const dbSchema = (process.env.DB_SCHEMA || 'jina').trim();
 if (!/^[a-z_][a-z0-9_]*$/.test(dbSchema)) {
   throw new Error(`.env DB_SCHEMA=${dbSchema} 는 소문자 식별자여야 합니다.`);
 }

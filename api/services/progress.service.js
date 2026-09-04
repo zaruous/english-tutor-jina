@@ -21,13 +21,13 @@ let tablesCache = { at: 0, val: null };
 async function presentTables() {
   if (tablesCache.val && Date.now() - tablesCache.at < 60_000) return tablesCache.val;
   const { rows: [r] } = await pool.query(`SELECT
-    to_regclass('public.conversation_sessions') IS NOT NULL AS conv_sessions,
-    to_regclass('public.conversation_messages') IS NOT NULL AS conv_messages,
-    to_regclass('public.corrections')           IS NOT NULL AS corrections,
-    to_regclass('public.correction_reviews')    IS NOT NULL AS correction_reviews,
-    to_regclass('public.lessons')               IS NOT NULL AS lessons,
-    to_regclass('public.user_lesson_attempts')  IS NOT NULL AS attempts,
-    to_regclass('public.user_goals')            IS NOT NULL AS goals`);
+    to_regclass('conversation_sessions') IS NOT NULL AS conv_sessions,
+    to_regclass('conversation_messages') IS NOT NULL AS conv_messages,
+    to_regclass('corrections')           IS NOT NULL AS corrections,
+    to_regclass('correction_reviews')    IS NOT NULL AS correction_reviews,
+    to_regclass('content_items')         IS NOT NULL AS lessons,
+    to_regclass('user_lesson_attempts')  IS NOT NULL AS attempts,
+    to_regclass('user_goals')            IS NOT NULL AS goals`);
   r.conversation = r.conv_sessions && r.conv_messages; // 둘 다 있어야 조인 가능
   r.lesson = r.lessons && r.attempts;
   tablesCache = { at: Date.now(), val: r };
@@ -43,23 +43,23 @@ const ACT_CONV = `
     SELECT (s.started_at AT TIME ZONE $2)::date AS day,
            GREATEST(1, CEIL(EXTRACT(EPOCH FROM (s.last_message_at - s.started_at)) / 60))::int AS minutes,
            1 AS sessions
-      FROM public.conversation_sessions s
+      FROM conversation_sessions s
      WHERE s.user_id = $1 AND s.last_message_at IS NOT NULL`;
 const ACT_LESSON = `
     SELECT (ua.created_at AT TIME ZONE $2)::date AS day,
            GREATEST(1, CEIL(COALESCE(ua.elapsed_ms, 0) / 60000.0))::int AS minutes,
            1 AS sessions
-      FROM public.user_lesson_attempts ua WHERE ua.user_id = $1`;
+      FROM user_lesson_attempts ua WHERE ua.user_id = $1`;
 const ACT_VOCAB = `
     SELECT (r.reviewed_at AT TIME ZONE $2)::date AS day,
            CEIL(COALESCE(r.elapsed_ms, 0) / 60000.0)::int AS minutes,
            0 AS sessions
-      FROM public.vocab_reviews r WHERE r.user_id = $1`;
+      FROM vocab_reviews r WHERE r.user_id = $1`;
 const ACT_CORR = `
     SELECT (cr.reviewed_at AT TIME ZONE $2)::date AS day,
            CEIL(COALESCE(cr.elapsed_ms, 0) / 60000.0)::int AS minutes,
            0 AS sessions
-      FROM public.correction_reviews cr WHERE cr.user_id = $1`;
+      FROM correction_reviews cr WHERE cr.user_id = $1`;
 
 function activitySql(t) {
   const blocks = [ACT_VOCAB]; // vocab_reviews는 0002 — 항상 존재
@@ -99,14 +99,14 @@ async function fetchDailyAccuracy(t, params) {
   if (t.conversation) {
     blocks.push(`
       SELECT (m.created_at AT TIME ZONE $2)::date AS day, avg(v.value::numeric) AS pct
-        FROM public.conversation_messages m, LATERAL jsonb_each_text(m.scores) v
+        FROM conversation_messages m, LATERAL jsonb_each_text(m.scores) v
        WHERE m.user_id = $1 AND m.scores IS NOT NULL GROUP BY 1`);
   }
   if (t.lesson) {
     blocks.push(`
       SELECT (ua.created_at AT TIME ZONE $2)::date AS day,
              avg(ua.correct_count::numeric / ua.total_count * 100) AS pct
-        FROM public.user_lesson_attempts ua WHERE ua.user_id = $1 GROUP BY 1`);
+        FROM user_lesson_attempts ua WHERE ua.user_id = $1 GROUP BY 1`);
   }
   if (blocks.length === 0) return [];
   const { rows } = await pool.query(
@@ -134,7 +134,7 @@ async function fetchConversationSkills(t, params) {
             round(avg(v.value::numeric) FILTER (WHERE m.created_at <= now() - interval '7 days'
                                             AND m.created_at >  now() - interval '14 days'))::int      AS prev,
             round(avg(v.value::numeric))::int                                                          AS alltime
-       FROM public.conversation_messages m, LATERAL jsonb_each_text(m.scores) v
+       FROM conversation_messages m, LATERAL jsonb_each_text(m.scores) v
       WHERE m.user_id = $1 AND m.scores IS NOT NULL
       GROUP BY v.key`,
     [params[0]],
@@ -152,8 +152,8 @@ async function fetchLessonSkill(t, params, kinds) {
                                AND created_at >  now() - interval '14 days'))::int      AS prev,
             round(avg(pct))::int                                                        AS alltime
        FROM (SELECT ua.created_at, ua.correct_count::numeric / ua.total_count * 100 AS pct
-               FROM public.user_lesson_attempts ua
-               JOIN public.lessons l ON l.id = ua.lesson_id AND l.kind = ANY($2::text[])
+               FROM user_lesson_attempts ua
+               JOIN lesson_details l ON l.content_id = ua.content_id AND l.kind = ANY($2::text[])
               WHERE ua.user_id = $1) r`,
     [params[0], kinds],
   );
@@ -192,7 +192,7 @@ async function fetchScoreInputs(t, params) {
     const { rows: [r] } = await pool.query(
       `SELECT avg(v.value::numeric) FILTER (WHERE m.created_at > now() - interval '30 days') AS d30,
               avg(v.value::numeric)                                                          AS dall
-         FROM public.conversation_messages m, LATERAL jsonb_each_text(m.scores) v
+         FROM conversation_messages m, LATERAL jsonb_each_text(m.scores) v
         WHERE m.user_id = $1 AND m.scores IS NOT NULL`,
       [params[0]],
     );
@@ -203,8 +203,8 @@ async function fetchScoreInputs(t, params) {
       `SELECT avg(pct) FILTER (WHERE created_at > now() - interval '30 days') AS d30,
               avg(pct)                                                        AS dall
          FROM (SELECT ua.created_at, ua.correct_count::numeric / ua.total_count * 100 AS pct
-                 FROM public.user_lesson_attempts ua
-                 JOIN public.lessons l ON l.id = ua.lesson_id AND l.source = 'seed'
+                 FROM user_lesson_attempts ua
+                 JOIN content_items l ON l.id = ua.content_id AND l.source = 'seed'
                 WHERE ua.user_id = $1) r`,
       [params[0]],
     );
@@ -221,7 +221,7 @@ async function fetchGoal(t, params) {
   if (!t.goals) return fallback;
   const { rows: [r] } = await pool.query(
     `SELECT COALESCE(target_test, 'TOEIC') AS target_test, target_score
-       FROM public.user_goals WHERE user_id = $1`,
+       FROM user_goals WHERE user_id = $1`,
     [params[0]],
   );
   return r || fallback;
@@ -229,7 +229,7 @@ async function fetchGoal(t, params) {
 
 async function fetchWordsLearned(params) {
   const { rows: [r] } = await pool.query(
-    `SELECT count(*)::int AS n FROM public.user_vocab_cards
+    `SELECT count(*)::int AS n FROM user_vocab_cards
       WHERE user_id = $1 AND NOT suspended AND review_count > 0`,
     [params[0]],
   );
@@ -246,10 +246,10 @@ async function fetchRecentSessions(t, params) {
            COALESCE(s.last_message_at, s.started_at) AS at,
            GREATEST(1, CEIL(EXTRACT(EPOCH FROM (s.last_message_at - s.started_at)) / 60))::int AS duration,
            (SELECT round(avg(v.value::numeric))::int
-              FROM public.conversation_messages m, LATERAL jsonb_each_text(m.scores) v
+              FROM conversation_messages m, LATERAL jsonb_each_text(m.scores) v
              WHERE m.session_id = s.id AND m.scores IS NOT NULL) AS score,
-           (SELECT count(*)::int FROM public.corrections c WHERE c.session_id = s.id) AS corrections
-      FROM public.conversation_sessions s
+           (SELECT count(*)::int FROM corrections c WHERE c.session_id = s.id) AS corrections
+      FROM conversation_sessions s
      WHERE s.user_id = $1 AND s.last_message_at IS NOT NULL`);
   }
   if (t.lesson) {
@@ -259,8 +259,8 @@ async function fetchRecentSessions(t, params) {
            GREATEST(1, CEIL(COALESCE(ua.elapsed_ms, 0) / 60000.0))::int AS duration,
            round(ua.correct_count::numeric / ua.total_count * 100)::int AS score,
            0 AS corrections
-      FROM public.user_lesson_attempts ua
-      JOIN public.lessons l ON l.id = ua.lesson_id
+      FROM user_lesson_attempts ua
+      JOIN lesson_details l ON l.content_id = ua.content_id
      WHERE ua.user_id = $1`);
   }
   if (blocks.length === 0) return [];

@@ -1,0 +1,18 @@
+[
+  {
+    "slug": "business-interview-star",
+    "title": "STAR 방식 영문 면접",
+    "tag": "BUSINESS INTERVIEW",
+    "level": 3,
+    "description": "행동 면접 질문에 상황·과제·행동·결과 순서로 답하는 연습입니다.",
+    "system_prompt": "You are a supportive English interviewer. Ask one behavioral interview question at a time and coach the learner to answer with the STAR framework.",
+    "opening_message": "Tell me about a time you solved a difficult problem at work.",
+    "objectives": [
+      "STAR 구조로 60초 답변하기",
+      "성과를 수치로 설명하기",
+      "후속 질문에 자연스럽게 답하기"
+    ],
+    "source": "seed",
+    "visibility": "public"
+  }
+]

@@ -1,4 +1,4 @@
-// 학습 서비스 — 채점·멱등·정답 비노출. 서버·AI 없이 마이그레이션 시드(0006) 레슨으로 돈다.
+// 학습 서비스 — 채점·멱등·정답 비노출. 서버·AI 없이 db/content/lessons.json 시드로 돈다.
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { randomUUID } from 'node:crypto';
@@ -14,12 +14,14 @@ before(async () => {
   await setupDb();
   user = await createUser();
   const { rows: [lesson] } = await pool.query(
-    `SELECT id FROM public.lessons WHERE published AND kind = 'toeic_part7' ORDER BY position, id LIMIT 1`,
+    `SELECT c.id FROM content_items c JOIN lesson_details d ON d.content_id = c.id
+      WHERE c.type = 'lesson' AND c.status = 'published' AND d.kind = 'toeic_part7'
+      ORDER BY d.position, c.id LIMIT 1`,
   );
-  assert.ok(lesson, '시드 레슨이 없다 — 마이그레이션 0006 확인');
+  assert.ok(lesson, '시드 레슨이 없다 — db/content/lessons.json 확인');
   lessonId = lesson.id;
   const { rows: items } = await pool.query(
-    `SELECT position, answer, options FROM public.lesson_items WHERE lesson_id = $1 ORDER BY position`,
+    `SELECT position, answer, options FROM lesson_items WHERE content_id = $1 ORDER BY position`,
     [lessonId],
   );
   answerKey = Object.fromEntries(items.map((i) => [String(i.position), i.answer]));
@@ -68,7 +70,7 @@ describe('submitAttempt', () => {
 
   it('같은 client_request_id 는 replay 로 되돌려주고 attempt 를 늘리지 않는다', async () => {
     const before = await pool.query(
-      `SELECT count(*)::int AS n FROM public.user_lesson_attempts WHERE user_id = $1`, [user.id],
+      `SELECT count(*)::int AS n FROM user_lesson_attempts WHERE user_id = $1`, [user.id],
     );
     const rid = randomUUID();
     const first = await submitAttempt(user, lessonId, { answers: answerKey, clientRequestId: rid });
@@ -78,7 +80,7 @@ describe('submitAttempt', () => {
     assert.equal(second.attempt.id, first.attempt.id);
     assert.equal(second.attempt.correct_count, first.attempt.correct_count, '재전송 본문이 채점을 덮어썼다');
     const after_ = await pool.query(
-      `SELECT count(*)::int AS n FROM public.user_lesson_attempts WHERE user_id = $1`, [user.id],
+      `SELECT count(*)::int AS n FROM user_lesson_attempts WHERE user_id = $1`, [user.id],
     );
     assert.equal(after_.rows[0].n, before.rows[0].n + 1, 'attempt 가 두 번 쌓였다');
   });

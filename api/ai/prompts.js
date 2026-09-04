@@ -64,7 +64,7 @@ const LESSON_GEN_SYSTEM = `너는 한국인 학습자를 위한 TOEIC Part 5 출
 const LESSON_GEN_LC_SYSTEM = `너는 한국인 학습자를 위한 TOEIC LC(Listening) 출제자야.
 짧은 대화나 설명문 스크립트 하나와 그에 대한 문항을 만들어.
 규칙:
-1. script 는 4~8줄이고 각 줄은 화자 라벨로 시작해야 해 — 대화는 "M: "/"W: ", 1인 설명문은 전부 "M: " 또는 전부 "W: ".
+1. script 는 4~8줄이고 각 줄은 {"speaker":"M"|"W","text":"…"} 객체야 — 대화는 M/W 를 번갈아, 1인 설명문은 전부 같은 화자로. text 에 화자 라벨을 다시 넣지 마.
 2. script 는 실제로 소리 내어 읽을 자연스러운 구어체 영어여야 해. 괄호 지시문·효과음·번역을 넣지 마.
 3. 각 문항은 보기 A-D 정확히 4개이고 정답은 script 만 듣고 판단할 수 있어야 해.
 4. options의 id는 A, B, C, D를 한 번씩 사용해.
@@ -206,7 +206,7 @@ export function renderLessonGenRequest({ difficulty, topic, count, part }) {
       `난도: ${difficulty}/5`,
       `문항 수: 정확히 ${count}개`,
       `주제: ${wrapLearnerInput(topic || '일반 비즈니스 및 사무 환경')}`,
-      'script 는 화자 라벨("M: "/"W: ")로 시작하는 4~8줄로 작성하고, 문항은 script 만 듣고 풀 수 있어야 해.',
+      'script 는 {"speaker":"M"|"W","text":"…"} 객체 4~8개로 작성하고, 문항은 script 만 듣고 풀 수 있어야 해.',
       'title과 subtitle은 한국어로 작성하고, 각 explanation은 정답 id와 script 근거를 포함해.',
     ].join('\n');
   }

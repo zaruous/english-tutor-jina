@@ -10,10 +10,14 @@
 const LC_RATES = [0.8, 1.0, 1.2];
 
 // LC 스크립트의 출처 — 서버가 script(연습 모드 재생용)를 주면 그것, 아니면 passage.body.
-// passage.body 는 화자 라벨이 붙은 줄 배열(["W: …", "M: …"]) 이라 줄바꿈으로 잇는다.
+// passage.body 는 [{speaker,text}] 객체 배열이다(플랜 10.7 §3.2). 화면에는 "W: …" 로 라벨을 붙여
+// 이전과 같은 모양으로 보여주고, 재생할 때만 라벨을 뗀다. 문자열 배열(구 포맷)도 그대로 받는다.
 const lcScript = (lesson) => {
   const raw = lesson?.script ?? lesson?.passage?.body ?? '';
-  return Array.isArray(raw) ? raw.join('\n') : String(raw);
+  if (!Array.isArray(raw)) return String(raw);
+  return raw
+    .map((line) => (line && typeof line === 'object' ? `${line.speaker}: ${line.text}` : String(line)))
+    .join('\n');
 };
 
 function useListening() {

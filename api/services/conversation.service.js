@@ -11,16 +11,16 @@ import { getScenarioForSession } from './topic.service.js';
 
 const SESSION_SELECT = `
   SELECT s.id, s.title, s.scenario_id, s.scenario, s.status, s.started_at, s.ended_at, s.last_message_at,
-         (SELECT count(*)::int FROM public.conversation_messages m
+         (SELECT count(*)::int FROM conversation_messages m
            WHERE m.session_id = s.id)                                          AS message_count,
          (SELECT round(avg(v.value::numeric))::int
-            FROM public.conversation_messages m2,
+            FROM conversation_messages m2,
                  LATERAL jsonb_each_text(m2.scores) v
            WHERE m2.session_id = s.id AND m2.scores IS NOT NULL)               AS avg_score,
-         (SELECT m3.content FROM public.conversation_messages m3
+         (SELECT m3.content FROM conversation_messages m3
            WHERE m3.session_id = s.id AND m3.role = 'user'
            ORDER BY m3.id DESC LIMIT 1)                                        AS last_user_text
-    FROM public.conversation_sessions s
+    FROM conversation_sessions s
    WHERE s.user_id = $1`;
 
 // status는 CASE 별칭이라 같은 레벨 WHERE 불가 — 서브쿼리로 감싼다 (vocab과 동일).
@@ -37,7 +37,7 @@ export const CORRECTION_SELECT = `
          c.review_count, c.fail_count, c.last_result, c.last_reviewed_at,
          GREATEST(0, (c.next_review AT TIME ZONE $2)::date - (now() AT TIME ZONE $2)::date)::int
            AS next_review_in_days
-    FROM public.corrections c
+    FROM corrections c
    WHERE c.user_id = $1`;
 
 function sessionDto(row) {
@@ -132,14 +132,14 @@ export async function createSession(user, { title, scenario, scenarioId } = {}) 
   }
   return withTx(async (client) => {
     const { rows: [row] } = await client.query(
-      `INSERT INTO public.conversation_sessions (user_id, title, scenario, scenario_id, last_message_at)
+      `INSERT INTO conversation_sessions (user_id, title, scenario, scenario_id, last_message_at)
        VALUES ($1, COALESCE($2, '새 회화'), $3::jsonb, $4, CASE WHEN $5::text IS NULL THEN NULL ELSE now() END)
        RETURNING id`,
       [user.id, resolvedTitle, snapshot ? JSON.stringify(snapshot) : null, scenarioId ?? null, openingMessage],
     );
     if (openingMessage) {
       await client.query(
-        `INSERT INTO public.conversation_messages (session_id, user_id, role, content)
+        `INSERT INTO conversation_messages (session_id, user_id, role, content)
          VALUES ($1, $2, 'assistant', $3)`,
         [row.id, user.id, openingMessage],
       );
@@ -151,7 +151,7 @@ export async function createSession(user, { title, scenario, scenarioId } = {}) 
 export async function getSessionWithMessages(user, sessionId) {
   const session = await getSessionDto(user, sessionId);
   const { rows } = await pool.query(
-    `SELECT * FROM public.conversation_messages
+    `SELECT * FROM conversation_messages
       WHERE session_id = $1 AND user_id = $2
       ORDER BY id ASC LIMIT 500`,
     [sessionId, user.id],
@@ -161,7 +161,7 @@ export async function getSessionWithMessages(user, sessionId) {
 
 export async function patchSession(user, sessionId, { title, ended }) {
   const { rowCount } = await pool.query(
-    `UPDATE public.conversation_sessions
+    `UPDATE conversation_sessions
         SET title  = COALESCE($3, title),
             status = CASE WHEN $4 THEN 'ended' ELSE status END,
             ended_at = CASE WHEN $4 AND ended_at IS NULL THEN now() ELSE ended_at END,
@@ -175,7 +175,7 @@ export async function patchSession(user, sessionId, { title, ended }) {
 
 export async function deleteSession(user, sessionId) {
   const { rowCount } = await pool.query(
-    `DELETE FROM public.conversation_sessions WHERE id = $1 AND user_id = $2`,
+    `DELETE FROM conversation_sessions WHERE id = $1 AND user_id = $2`,
     [sessionId, user.id],
   );
   if (rowCount === 0) throw new HttpError(404, 'NOT_FOUND', '세션을 찾을 수 없습니다.');
@@ -186,13 +186,13 @@ export async function deleteSession(user, sessionId) {
 export async function findReplay(user, sessionId, clientRequestId, client = pool) {
   if (!clientRequestId) return null;
   const { rows: [userRow] } = await client.query(
-    `SELECT * FROM public.conversation_messages
+    `SELECT * FROM conversation_messages
       WHERE client_request_id = $1 AND user_id = $2`,
     [clientRequestId, user.id],
   );
   if (!userRow) return null;
   const { rows: [assistantRow] } = await client.query(
-    `SELECT * FROM public.conversation_messages
+    `SELECT * FROM conversation_messages
       WHERE session_id = $1 AND id > $2 AND role = 'assistant'
       ORDER BY id ASC LIMIT 1`,
     [userRow.session_id, userRow.id],
@@ -212,8 +212,8 @@ export async function loadSessionForSend(user, sessionId) {
     `SELECT s.id, s.title, s.status, s.provider_ref, s.provider_ref_provider,
             s.scenario_id, cs.system_prompt AS scenario_system_prompt,
             cs.opening_message AS scenario_opening_message
-       FROM public.conversation_sessions s
-       LEFT JOIN public.conversation_scenarios cs ON cs.id = s.scenario_id
+       FROM conversation_sessions s
+       LEFT JOIN scenario_details cs ON cs.content_id = s.scenario_id
       WHERE s.id = $1 AND s.user_id = $2`,
     [sessionId, user.id],
   );
@@ -229,7 +229,7 @@ export async function loadSessionForSend(user, sessionId) {
 // 첫 턴과 resume 폴백에서만 프롬프트에 들어간다(CLI 세션 resume 시엔 생략). askAI가 LIMITS(8턴/6000자)로 다시 절단하므로 넉넉히 16개.
 export async function loadHistory(sessionId) {
   const { rows } = await pool.query(
-    `SELECT role, content FROM public.conversation_messages
+    `SELECT role, content FROM conversation_messages
       WHERE session_id = $1 ORDER BY id DESC LIMIT 16`,
     [sessionId],
   );
@@ -242,7 +242,7 @@ export async function saveExchange(user, sessionId, { text, clientRequestId, ai 
   try {
     return await withTx(async (client) => {
       const { rows: [userRow] } = await client.query(
-        `INSERT INTO public.conversation_messages
+        `INSERT INTO conversation_messages
            (session_id, user_id, role, content, client_request_id)
          VALUES ($1, $2, 'user', $3, $4)
          RETURNING *`,
@@ -252,7 +252,7 @@ export async function saveExchange(user, sessionId, { text, clientRequestId, ai 
       const d = ai.data;
       const degraded = Boolean(ai.degraded);
       const { rows: [assistantRow] } = await client.query(
-        `INSERT INTO public.conversation_messages
+        `INSERT INTO conversation_messages
            (session_id, user_id, role, content, content_ko, corrections, scores,
             suggestion, degraded, provider, model, latency_ms)
          VALUES ($1, $2, 'assistant', $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10, $11)
@@ -274,14 +274,14 @@ export async function saveExchange(user, sessionId, { text, clientRequestId, ai 
           const corrected = String(c.corrected || '').slice(0, 500);
           if (!original || !corrected) continue;
           await client.query(
-            `INSERT INTO public.corrections
+            `INSERT INTO corrections
                (user_id, session_id, message_id, original, corrected, reason, type)
              VALUES ($1, $2, $3, $4, $5, $6, $7)
              ON CONFLICT (user_id, dedup_key) DO UPDATE
-               SET seen_count  = public.corrections.seen_count + 1,
-                   next_review = LEAST(public.corrections.next_review, now()),
+               SET seen_count  = corrections.seen_count + 1,
+                   next_review = LEAST(corrections.next_review, now()),
                    message_id  = EXCLUDED.message_id, session_id = EXCLUDED.session_id,
-                   reason      = COALESCE(EXCLUDED.reason, public.corrections.reason),
+                   reason      = COALESCE(EXCLUDED.reason, corrections.reason),
                    updated_at  = now()`,
             [user.id, sessionId, userRow.id, original, corrected,
              c.reason ? String(c.reason).slice(0, 500) : null,
@@ -292,7 +292,7 @@ export async function saveExchange(user, sessionId, { text, clientRequestId, ai 
       }
 
       await client.query(
-        `UPDATE public.conversation_sessions
+        `UPDATE conversation_sessions
             SET last_message_at = now(), updated_at = now(),
                 title = CASE WHEN title = '새 회화' THEN left($3, 40) ELSE title END,
                 -- CLI resume 핸들: 다음 턴이 같은 provider 면 히스토리 없이 이어간다. stateless provider(ollama) 는 NULL 로 비운다
@@ -325,7 +325,7 @@ export async function fetchCorrectionStats(userId, client = pool) {
   const { rows: [stats] } = await client.query(
     `SELECT count(*) FILTER (WHERE NOT suspended AND next_review <= now())::int AS due,
             count(*) FILTER (WHERE NOT suspended)                          ::int AS total
-       FROM public.corrections WHERE user_id = $1`,
+       FROM corrections WHERE user_id = $1`,
     [userId],
   );
   return stats;

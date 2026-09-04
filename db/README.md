@@ -1,5 +1,11 @@
 # db/ — 스키마 관리
 
+이 앱은 **전용 스키마**(`DB_SCHEMA`, 기본 `jina`)에 산다. 마이그레이션 SQL 은 스키마 접두를 쓰지 않고,
+러너와 런타임 어댑터가 `search_path` 를 그 스키마 하나로 고정한다 — 스키마 이름이 코드에 박히지 않는다.
+
+콘텐츠(레슨·시나리오·단어 세트·토픽·단어)는 마이그레이션이 아니라 `db/content/*.json` 이 단일 소스다.
+`db/seeds/content.mjs` 가 slug 기준 upsert 로 넣는다(재실행 안전).
+
 ## 접속
 
 접속 정보는 git에 추적되지 않는 `.env`의 `PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD`.
@@ -35,8 +41,9 @@ PGLITE_DATA_DIR=.pglite/dev     # 비우면 메모리 — 프로세스가 끝나
 npm run db:migrate    # 미적용 마이그레이션 적용
 npm run db:status     # applied / pending / MODIFIED! 표시
 npm run db:rollback   # 마지막 1개를 .down.sql로 되돌림
-npm run db:seed       # 개발 계정 + 카드 8장 (재실행 안전)
-npm run db:reset -- --yes   # 이 앱의 테이블만 명시 목록으로 DROP
+npm run db:seed       # 콘텐츠(db/content) + 개발 계정 + 카드 8장 (재실행 안전)
+npm run db:seed:content     # 콘텐츠만
+npm run db:reset -- --yes   # DROP SCHEMA <DB_SCHEMA> CASCADE 후 빈 스키마 재생성
 ```
 
 ## 규칙
@@ -46,7 +53,8 @@ npm run db:reset -- --yes   # 이 앱의 테이블만 명시 목록으로 DROP
 - 모든 DDL 멱등(`IF NOT EXISTS`), 모든 식별자에 `public.` 명시
 - `.sql`은 BOM 없는 UTF-8. **`psql -f`로 밀지 말 것** — Windows 콘솔 코드페이지에서 한글/IPA가 깨진다. 반드시 `npm run db:migrate`
 - 파일당 1 트랜잭션. 트랜잭션 밖에서 실행해야 하는 문(예: `CREATE INDEX CONCURRENTLY`)은 1행에 `-- migrate:no-transaction`
-- `DROP SCHEMA public CASCADE` **절대 금지** — 같은 스키마에 다른 앱의 테이블 11개가 산다. reset은 `migrate.mjs`의 명시적 목록만 지운다
+- 전용 스키마이므로 `reset` 은 `DROP SCHEMA <DB_SCHEMA> CASCADE` 한 줄이다. `public` 은 건드리지 않는다 — 거기에 다른 앱의 테이블이 산다
+- 콘텐츠를 마이그레이션에 넣지 말 것 — 체크섬 불변 파일 안에 있으면 관리자가 편집한 순간 `db:reset` 이 그것을 되돌린다. `db/content/*.json` 에 둔다
 
 ## 후속 과제 — 최소권한 롤
 

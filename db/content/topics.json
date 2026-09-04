@@ -1,0 +1,30 @@
+[
+  {
+    "slug": "business-interview",
+    "label_ko": "비즈니스 면접",
+    "description": "영문 면접의 핵심 어휘와 문법, 답변 연습을 한 흐름으로 학습합니다.",
+    "visibility": "public",
+    "contents": [
+      {
+        "position": 1,
+        "content_slug": "business-interview-part5-grammar"
+      },
+      {
+        "position": 2,
+        "content_slug": "business-interview-part5-vocabulary"
+      },
+      {
+        "position": 3,
+        "content_slug": "business-interview-part5-situations"
+      },
+      {
+        "position": 10,
+        "content_slug": "business-interview-star"
+      },
+      {
+        "position": 20,
+        "content_slug": "business-interview-core-20"
+      }
+    ]
+  }
+]
