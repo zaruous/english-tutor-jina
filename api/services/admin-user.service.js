@@ -145,6 +145,11 @@ export async function listUsers(actorId, { q, role, limit = 50, offset = 0 } = {
   const { rows: countRows } = await pool.query(
     `SELECT role, count(*)::int AS cnt FROM users GROUP BY role`,
   );
+  // 0인 등급도 키를 만든다. GROUP BY 는 그 역할의 사용자가 하나도 없으면 행 자체를 내놓지 않아
+  // 화면에서 `reviewer 0` 이 통째로 사라진다 — "없다" 도 정보다(리뷰 03 R8).
+  // 채우는 쪽을 서버로 정한 이유: roles 가 늘거나 이름이 바뀌어도 화면이 등급 목록을
+  // 다시 하드코딩하지 않아도 된다. counts 의 키 집합 = roles 의 code 집합임을 여기서 보장한다.
+  // (counts 는 q·role 필터와 무관한 전체 집계다 — 칩은 "지금 걸린 필터"가 아니라 전체 분포를 보여 준다.)
   const counts = Object.fromEntries(countRows.map((r) => [r.role, r.cnt]));
   for (const r of roles) {
     if (counts[r.code] === undefined) counts[r.code] = 0;

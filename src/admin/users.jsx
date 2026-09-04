@@ -13,6 +13,21 @@ const LOCK_LABELS = {
   last_admin: '마지막 관리자',
 };
 
+// 한 번에 받아 오는 행 수. 서버 기본 limit(admin.routes.js) 과 같은 값이어야
+// '더 보기' 가 offset = 지금까지 받은 행 수로 정확히 이어진다.
+const PAGE_SIZE = 50;
+// 서버가 limit 을 200 에서 자른다(admin.routes.js). 더 크게 요청하면 조용히 잘리므로
+// 조작 후 새로고침에서 이 값을 넘기지 않는다.
+const MAX_LIMIT = 200;
+
+// 누적 목록에 다음 페이지를 붙이되 같은 id 는 한 번만 남긴다.
+// 두 요청 사이에 사용자가 추가·삭제되면 offset 이 밀려 같은 행이 두 번 올 수 있고,
+// 그대로 두면 React key 가 중복된다.
+function mergeById(prev, next) {
+  const seen = new Set(prev.map((u) => u.id));
+  return prev.concat(next.filter((u) => !seen.has(u.id)));
+}
+
 function readThemeName() {
   try {
     const saved = JSON.parse(localStorage.getItem('jina_settings_v1') || '{}');
@@ -260,7 +275,8 @@ function AdminUsersScreen() {
   const theme = JINA_THEMES[themeName] || JINA_THEMES.aurora;
 
   const [state, setState] = React.useState({
-    loading: true, forbidden: false, error: null,
+    // loading 은 목록 전체 교체(스켈레톤), loadingMore 는 '더 보기'(기존 행 유지)를 구분한다.
+    loading: true, loadingMore: false, forbidden: false, error: null,
     users: [], total: 0, roles: [], counts: {}, recent_audit: [],
     q: '', roleFilter: '',
   });
@@ -282,29 +298,48 @@ function AdminUsersScreen() {
     setTimeout(() => setToast(null), 4000);
   };
 
-  const load = React.useCallback(async (q, roleFilter) => {
-    setState((p) => ({ ...p, loading: true, error: null, forbidden: false }));
+  // append=true 면 받은 행을 뒤에 이어 붙이고, 아니면 목록을 통째로 갈아끼운다.
+  // 검색·필터가 바뀔 때는 아래 useEffect 가 append 없이 부르므로 누적이 저절로 초기화된다 —
+  // 초기화하지 않으면 옛 조건으로 받은 행이 새 결과 뒤에 그대로 남는다.
+  const load = React.useCallback(async (q, roleFilter, { offset = 0, limit = PAGE_SIZE, append = false } = {}) => {
+    setState((p) => ({
+      ...p, error: null, forbidden: false,
+      loading: !append, loadingMore: append,
+    }));
     const qs = new URLSearchParams();
     if (q) qs.set('q', q);
     if (roleFilter) qs.set('role', roleFilter);
-    const res = await window.JINA_API.get(`/api/admin/users${qs.toString() ? `?${qs}` : ''}`);
+    qs.set('limit', String(limit));
+    if (offset) qs.set('offset', String(offset));
+    const res = await window.JINA_API.get(`/api/admin/users?${qs}`);
     if (res.ok) {
       setState((p) => ({
-        ...p, loading: false,
-        users: res.users, total: res.total, roles: res.roles,
+        ...p, loading: false, loadingMore: false,
+        users: append ? mergeById(p.users, res.users) : res.users,
+        total: res.total, roles: res.roles,
         counts: res.counts, recent_audit: res.recent_audit || [],
       }));
     } else if (res.code === 'FORBIDDEN') {
-      setState((p) => ({ ...p, loading: false, forbidden: true }));
+      setState((p) => ({ ...p, loading: false, loadingMore: false, forbidden: true }));
     } else {
       setState((p) => ({
-        ...p, loading: false,
+        ...p, loading: false, loadingMore: false,
         error: res.hint ? `${res.error} — ${res.hint}` : res.error,
       }));
     }
   }, []);
 
   React.useEffect(() => { load(state.q, state.roleFilter); }, [load, state.q, state.roleFilter]);
+
+  // 조작 뒤 새로고침. '더 보기' 로 펼쳐 둔 만큼을 한 번에 다시 받는다 —
+  // 기본 크기로 되돌리면 역할 하나 바꿨다고 화면이 접혀 버린다.
+  const reload = () => load(state.q, state.roleFilter, {
+    limit: Math.min(MAX_LIMIT, Math.max(PAGE_SIZE, state.users.length)),
+  });
+
+  const loadMore = () => load(state.q, state.roleFilter, {
+    offset: state.users.length, append: true,
+  });
 
   const patchRole = async (target, to) => {
     setRowBusy(target.id);
@@ -315,7 +350,7 @@ function AdminUsersScreen() {
         ...p,
         users: p.users.map((u) => (u.id === target.id ? res.user : u)),
       }));
-      load(state.q, state.roleFilter);
+      reload();
     } else {
       showToast(res.error || '역할 변경 실패', true);
     }
@@ -333,7 +368,7 @@ function AdminUsersScreen() {
         ...p,
         users: p.users.map((u) => (u.id === target.id ? res.user : u)),
       }));
-      load(state.q, state.roleFilter);
+      reload();
     } else {
       showToast(res.error || '상태 변경 실패', true);
     }
@@ -346,13 +381,18 @@ function AdminUsersScreen() {
     setRowBusy(null);
     if (res.ok) {
       showToast(`세션 ${res.revoked}개를 종료했습니다`);
-      load(state.q, state.roleFilter);
+      reload();
     } else {
       showToast(res.error || '세션 종료 실패', true);
     }
   };
 
-  const countChips = ['admin', 'reviewer', 'author', 'learner'].filter((c) => state.counts[c] > 0);
+  // 0인 등급도 칩을 만든다 — `reviewer 0` 이 사라지면 "없다" 는 정보를 잃고,
+  // 5개가 다 보이는 아래 필터 칩과도 어긋난다(리뷰 03 R8).
+  // 등급 목록은 서버가 준 roles 를 그대로 쓴다 — listUsers 가 counts 를 roles 기준으로 0까지
+  // 채워 주므로 화면이 등급 목록을 다시 하드코딩할 이유가 없다. 순서만 rank 내림차순으로
+  // 뒤집어 필터 칩(admin→learner)과 같은 방향으로 읽히게 한다.
+  const countChips = [...state.roles].sort((a, b) => b.rank - a.rank);
 
   // No. · 사용자 · 역할 · 가입 · 마지막 로그인 · 활성 세션 · ⋯
   const gridCols = '40px 1fr 176px 88px 108px 92px 40px';
@@ -436,7 +476,7 @@ function AdminUsersScreen() {
               display: 'flex', alignItems: 'center', gap: 12,
             }}>
               <span style={{ flex: 1 }}>{state.error}</span>
-              <button onClick={() => load(state.q, state.roleFilter)} style={{
+              <button onClick={() => reload()} style={{
                 padding: '6px 12px', borderRadius: 8, background: theme.error, color: '#fff',
                 fontSize: 12, fontWeight: 700, cursor: 'pointer',
               }}>재시도</button>
@@ -460,14 +500,19 @@ function AdminUsersScreen() {
               )}
             </div>
             <div style={{ display: 'flex', gap: 7, paddingBottom: 4 }}>
-              {countChips.map((c) => (
-                <span key={c} style={{
-                  padding: '6px 13px', borderRadius: 9, background: theme.surface,
-                  border: `1px solid ${theme.border}`, fontSize: 12, color: theme.textMuted,
-                }}>
-                  {c} <b style={{ fontWeight: 700, color: roleColor(theme, c) }}>{state.counts[c]}</b>
-                </span>
-              ))}
+              {countChips.map((r) => {
+                const n = state.counts[r.code] ?? 0;
+                return (
+                  <span key={r.code} data-testid={`count-${r.code}`} title={r.description || undefined} style={{
+                    padding: '6px 13px', borderRadius: 9, background: theme.surface,
+                    border: `1px solid ${theme.border}`, fontSize: 12, color: theme.textMuted,
+                    // 0 은 숨기는 대신 흐리게만 둔다 — 있는데 비었다는 것과 아예 없는 등급은 다르다.
+                    opacity: n > 0 ? 1 : 0.55,
+                  }}>
+                    {r.code} <b style={{ fontWeight: 700, color: roleColor(theme, r.code) }}>{n}</b>
+                  </span>
+                );
+              })}
             </div>
           </div>
 
@@ -589,6 +634,30 @@ function AdminUsersScreen() {
                   />
                 </div>
               ))
+            )}
+            {/* 목록이 잘렸으면 그 사실을 말하고 이어 받게 한다 —
+                없으면 limit(50)을 넘는 순간 51번째부터 화면에서 조용히 사라진다(리뷰 03 R4).
+                페이지네이션은 만들지 않는다. 지금 규모(21명)에서는 누적 로드로 충분하다. */}
+            {!state.loading && state.users.length > 0 && state.users.length < state.total && (
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
+                padding: '14px 18px', borderTop: `1px solid ${theme.border}`,
+              }}>
+                {/* 몇 명 중 몇 명인지는 제목 옆 총계가 이미 말한다 — 여기서는 남은 수만 반복하지 않는다. */}
+                <button
+                  data-testid="users-load-more"
+                  disabled={state.loadingMore}
+                  onClick={loadMore}
+                  style={{
+                    padding: '7px 16px', borderRadius: 9, fontSize: 12.5, fontWeight: 700,
+                    cursor: state.loadingMore ? 'wait' : 'pointer',
+                    background: theme.chipBg, border: `1px solid ${theme.borderStrong}`,
+                    color: theme.text,
+                  }}
+                >{state.loadingMore
+                  ? '불러오는 중…'
+                  : `${Math.min(PAGE_SIZE, state.total - state.users.length)}명 더 보기`}</button>
+              </div>
             )}
           </div>
 

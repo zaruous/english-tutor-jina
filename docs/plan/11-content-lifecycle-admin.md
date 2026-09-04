@@ -9,13 +9,13 @@ group:                       # 원래 한 플랜이었던 것을 셋으로 나�
   members: ["11", "12", "13"]
   order: 1
 created: 2026-09-03
-updated: 2026-09-04
+updated: 2026-09-05
 depends_on: ["07", "08", "10.5", "10.7"]   # 콘텐츠 스키마(content_items·status)=10.7 Phase 2 · 권한 경계=10.5 Phase 1
 blocks: ["12", "13"]
-migrations: ["0017_user_roles.sql (Phase 3 산출 — 10.7 baseline 에 role 체계가 없어 이 플랜이 얹었다)"]
+migrations: ["0017_user_roles.sql (Phase 3 산출 — 10.7 baseline 에 role 체계가 없어 이 플랜이 얹었다)", "0018_content_archived_public.sql (Phase 1 선결 — baseline 의 content_items_public_ck 가 열린질문 7 의 기각안이라 확정안으로 교체)"]
 phases:
-  - { id: "1", name: "상태 축 + 가시성 헬퍼 2종 + 전이 단일 소스 + 역할 미들웨어 + 표시부 정리 (UI 없음)", status: todo, note: "역할 미들웨어(requireRole)와 /api/auth/me DTO 는 Phase 3 이 먼저 넣었다. 남은 것은 content-scope.js · content-status.js · 표시부 47곳 · topicDto.eligible 격하 · verify-content-status.mjs" }
-  - { id: "2", name: "admin.html 최소 관리 UI — 목록 · 상태 전이", status: todo, note: "admin.html 뼈대 · server.js 정적 서빙 · 설정 패널 진입 링크는 Phase 3 과 함께 들어왔다. 남은 것은 admin-app.jsx · content-store.jsx · 콘텐츠 목록/전이 API · content_audit_log 기록" }
+  - { id: "1", name: "상태 축 + 가시성 헬퍼 2종 + 전이 단일 소스 + 역할 미들웨어 + 표시부 정리 (UI 없음)", status: done, done_at: 2026-09-05, note: "content-scope.js(discoverable/resolvable) · content-status.js(canTransition/canSetVisibility) · 표시부 6개 서비스 · topicDto.eligible 필터→배지 · 0018 선결 마이그레이션. verify-content-status 65/65 · npm test 81/81(신규 42건)" }
+  - { id: "2", name: "admin.html 최소 관리 UI — 목록 · 상태 전이", status: done, done_at: 2026-09-05, note: "admin-content.service.js + /api/admin/contents 3라우트 + src/admin/{admin-app,content-store}.jsx + 해시 탭. 전이마다 content_audit_log 1행. 브라우저 실사용 확인은 아직 — e2e 는 verify-content-status 의 API 매트릭스까지" }
   - { id: "3", name: "사용자 · 역할 관리 — 목록 · 역할 부여 · 세션 종료", status: done, done_at: 2026-09-04, note: "PR #7(b51eb9a). 산출물 5종 전부 + e2e-admin-users 17/17 + tests/admin-user.service.test.mjs 3건(CI). 0017_user_roles.sql 로 roles · users.role/is_active · user_audit_log 를 얹었다" }
 verify: ["scripts/verify-content-status.mjs (신규)", "scripts/e2e-admin-users.mjs", "tests/admin-user.service.test.mjs", "scripts/e2e-lesson.mjs", "scripts/e2e-dashboard.mjs", "scripts/e2e-plan08-screens.mjs", "scripts/e2e-topics.mjs"]
 follow_ups:

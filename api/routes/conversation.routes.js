@@ -65,6 +65,7 @@ export function registerConversationRoutes(router) {
     const abort = new AbortController();
     res.on('close', () => { if (!res.writableEnded) abort.abort(); });
     const ai = await askAI({
+      userId: user.id, // 사용자당 동기 요청 1건 — 초과분은 429 (플랜 10.5 S7)
       task: 'tutor',
       providerId,
       model: str(body.model, 'model', { max: 100, optional: true }) ?? null,
