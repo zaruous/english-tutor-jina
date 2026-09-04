@@ -79,8 +79,13 @@ function TopNav({ page, onNavigate, theme, onOpenSettings }) {
 // ─────────────────────────────────────────────────────
 // 음성 인식(STT) 설정 — 기본 = 브라우저 SpeechRecognition(받아쓰기 일치율), 선택 = OpenPronounce 사이드카(발음 점수).
 // 사이드카의 설치·기동·중지는 서버(/api/speaking/sidecar/*)가 실행하고, 이 패널은 상태를 폴링해 보여준다.
-// 서버가 production 이면 can_manage=false → 버튼 대신 안내만 낸다.
+// 조작 버튼은 두 조건을 모두 만족해야 보인다 — 서버가 dev(can_manage) 이고, 내가 관리자(can_admin).
+// 둘은 다른 것을 막는다: can_manage 는 '어디서'(production 서버에서는 아무도 못 띄운다),
+// can_admin 은 '누가'(설치·기동 라우트가 requireAdmin, 플랜 10.5 S1). can_admin 을 안 보면
+// learner 에게 버튼이 그대로 보이고 누르는 순간 403 토스트만 뜬다.
 function SttSettings({ theme, sttMode, setSttMode }) {
+  const { user } = useAuth();
+  const canAdmin = Boolean(user?.can_admin);
   const [status, setStatus] = React.useState(null); // GET /api/speaking/assess/status 응답 (ok:false 면 API 오류)
   const [busy, setBusy] = React.useState(null);     // 'install' | 'start' | 'stop'
   const [actionError, setActionError] = React.useState(null);
@@ -162,6 +167,10 @@ function SttSettings({ theme, sttMode, setSttMode }) {
             <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
               {!sc.can_manage ? (
                 <span style={{ fontSize: 11, color: theme.textMuted }}>이 서버는 화면에서 설치·기동할 수 없습니다 (production). 관리자에게 `lib/pronounce` 설치를 요청하세요.</span>
+              ) : !canAdmin ? (
+                <span data-testid="stt-sidecar-admin-only" style={{ fontSize: 11, color: theme.textMuted }}>
+                  관리자만 설치·기동할 수 있습니다. 상태는 위에서 확인할 수 있고, 사이드카가 꺼져 있으면 스피킹 화면은 브라우저 받아쓰기로 동작합니다.
+                </span>
               ) : (
                 <React.Fragment>
                   {!sc.installed && !installing && (
@@ -384,18 +393,26 @@ function SettingsPanel({ theme, themeName, setThemeName, aiConfig, setAiConfig, 
             })}
           </div>
 
+          {/* Ollama URL — 읽기 전용. 서버가 /config.js 로 주입한 값(.env OLLAMA_URL)을 그대로 보여준다.
+              자유 입력이었던 시절엔 이 값이 요청 본문에 실려 서버 fetch 대상이 됐고(SSRF, 플랜 10.5 S2),
+              지금은 서버가 본문의 ollamaUrl 을 아예 무시한다. 입력칸을 남겨두면 "바꿨는데 안 먹는" 화면이 된다. */}
           {aiConfig.provider === 'ollama' && (
             <React.Fragment>
               <label style={{ fontSize: 12, color: theme.textMuted, display: 'block', marginBottom: 6, fontWeight: 600 }}>Ollama URL</label>
-              <input
-                value={aiConfig.ollamaUrl}
-                onChange={e => setAiConfig(c => ({ ...c, ollamaUrl: e.target.value }))}
+              <div
+                data-testid="ollama-url-readonly"
                 style={{
-                  width: '100%', padding: '9px 12px', borderRadius: 8, marginBottom: 12,
-                  background: theme.card, border: `1px solid ${theme.borderStrong}`,
-                  color: theme.text, fontSize: 13, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
+                  width: '100%', padding: '9px 12px', borderRadius: 8, marginBottom: 6,
+                  background: theme.chipBg, border: `1px dashed ${theme.border}`,
+                  color: theme.textMuted, fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box',
+                  wordBreak: 'break-all',
                 }}
-              />
+              >
+                {window.JINA_CONFIG?.ollamaUrl || 'http://localhost:11434'}
+              </div>
+              <div style={{ fontSize: 10.5, color: theme.textDim, lineHeight: 1.6, marginBottom: 12 }}>
+                서버 설정값입니다. 바꾸려면 서버 <code>.env</code> 의 <code>OLLAMA_URL</code> 을 고치고 다시 시작하세요.
+              </div>
             </React.Fragment>
           )}
 
@@ -421,30 +438,51 @@ function SettingsPanel({ theme, themeName, setThemeName, aiConfig, setAiConfig, 
             );
           })()}
 
-          {/* 상태 pill — health.providers[선택 provider] */}
+          {/* 상태 pill — health.providers[선택 provider].
+              프로브 강제(force=1)는 관리자만 반영된다(플랜 10.5 S3). 비관리자에게 같은 버튼을 주면
+              "눌러도 아무 일이 없다" 로 보이므로, 라벨을 기대에 맞추고 캐시 응답이면 그렇다고 적는다. */}
           {(() => {
             const health = aiHealth.providers?.[aiConfig.provider];
+            const canAdmin = Boolean(user?.can_admin);
+            const checkedLabel = aiHealth.checkedAt
+              ? new Date(aiHealth.checkedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+              : null;
             return (
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                padding: '9px 12px', borderRadius: 8, marginBottom: 8,
-                background: aiHealth.checking ? theme.chipBg
-                  : health?.ok ? theme.success + '18' : theme.error + '18',
-                color: aiHealth.checking ? theme.textMuted
-                  : health?.ok ? theme.success : theme.error,
-                fontSize: 12, fontWeight: 600,
-              }}>
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'currentColor', flexShrink: 0,
-                  animation: aiHealth.checking ? 'jina-pulse 1s infinite' : 'none' }} />
-                <span style={{ flex: 1 }}>
-                  {aiHealth.checking ? '확인 중…'
-                    : health?.ok ? '연결됨'
-                    : `연결 실패 — ${health?.detail || '상태 미확인'}`}
-                </span>
-                <button onClick={onCheck} style={{ fontSize: 10, padding: '3px 7px', borderRadius: 5, background: 'rgba(0,0,0,0.1)', color: 'inherit', fontWeight: 700 }}>
-                  ↻
-                </button>
-              </div>
+              <React.Fragment>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '9px 12px', borderRadius: 8, marginBottom: 6,
+                  background: aiHealth.checking ? theme.chipBg
+                    : health?.ok ? theme.success + '18' : theme.error + '18',
+                  color: aiHealth.checking ? theme.textMuted
+                    : health?.ok ? theme.success : theme.error,
+                  fontSize: 12, fontWeight: 600,
+                }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'currentColor', flexShrink: 0,
+                    animation: aiHealth.checking ? 'jina-pulse 1s infinite' : 'none' }} />
+                  <span style={{ flex: 1 }}>
+                    {aiHealth.checking ? '확인 중…'
+                      : health?.ok ? '연결됨'
+                      : `연결 실패 — ${health?.detail || '상태 미확인'}`}
+                  </span>
+                  <button
+                    data-testid="ai-health-check"
+                    onClick={() => onCheck(canAdmin)}
+                    title={canAdmin ? '모든 제공자를 다시 검사합니다' : '서버가 마지막으로 검사한 결과를 다시 읽습니다 (강제 검사는 관리자만)'}
+                    style={{ fontSize: 10, padding: '3px 7px', borderRadius: 5, background: 'rgba(0,0,0,0.1)', color: 'inherit', fontWeight: 700, whiteSpace: 'nowrap' }}
+                  >
+                    {canAdmin ? '↻ 다시 검사' : '↻ 상태 새로고침'}
+                  </button>
+                </div>
+                {/* 첫 응답 전(checkedAt 없음)에는 아무 말도 하지 않는다 — 없는 시각을 지어내지 않기 위해 */}
+                {!aiHealth.checking && checkedLabel && (
+                  <div data-testid="ai-health-cache-note" style={{ fontSize: 10.5, color: theme.textDim, lineHeight: 1.6, marginBottom: 8 }}>
+                    {aiHealth.cached
+                      ? `캐시된 결과입니다 · ${checkedLabel} 기준${canAdmin ? '' : ' — 제공자를 다시 검사하는 것은 관리자만 할 수 있습니다.'}`
+                      : `방금 검사했습니다 · ${checkedLabel}`}
+                  </div>
+                )}
+              </React.Fragment>
             );
           })()}
 
@@ -474,9 +512,12 @@ function JinaApp() {
   const [themeName, setThemeName] = React.useState(() => readSettings().themeName || 'aurora');
   const [aiConfig, setAiConfig] = React.useState(() => {
     const saved = readSettings().aiConfig || {};
+    // saved.ollamaUrl 은 일부러 읽지 않는다 — 예전 버전이 localStorage 에 남긴 자유 입력값이
+    // 여기로 복원되면 window.__JINA_AI_CONFIG 를 타고 다시 살아난다. 서버가 본문의 ollamaUrl 을
+    // 무시하므로 실제 피해는 없지만, 화면에 서버와 다른 주소가 뜨는 거짓 표시가 된다 (플랜 10.5 S2).
+    // 마이그레이션(잔존값 삭제)은 하지 않는다 — 다음 저장 때 아래 setItem 이 통째로 덮어쓴다.
     return {
       provider: saved.provider || window.JINA_CONFIG?.provider || 'claude',
-      ollamaUrl: saved.ollamaUrl || window.JINA_CONFIG?.ollamaUrl || 'http://localhost:11434',
       // provider별 모델 맵 — 서버 기본값 위에 저장된 선택을 덮는다
       model: { ...(window.JINA_CONFIG?.models || {}), ...(saved.model || {}) },
     };
@@ -517,10 +558,18 @@ function JinaApp() {
     try { localStorage.setItem(JINA_SETTINGS_KEY, JSON.stringify({ themeName, aiConfig, sttMode })); } catch {}
   }, [themeName, aiConfig, sttMode]);
 
+  // force=1 은 provider 전원의 CLI 프로브를 강제한다 — 서버는 그것을 관리자에게만 반영하고
+  // 비관리자에겐 400 이 아니라 조용히 캐시를 돌려준다 (플랜 10.5 S3). 그래서 응답의 cached·checkedAt 을
+  // 그대로 들고 있다가 패널에 표시한다: 눌렀는데 아무 일도 안 난 것처럼 보이면 안 된다.
   const checkHealth = React.useCallback(async (force = true) => {
     setAiHealth(s => ({ ...s, checking: true }));
     const res = await window.JINA_AI.checkHealth({ force });
-    setAiHealth({ checking: false, providers: res.ok ? res.providers : {} });
+    setAiHealth({
+      checking: false,
+      providers: res.ok ? res.providers : {},
+      cached: res.ok ? Boolean(res.cached) : false,
+      checkedAt: res.ok ? (res.checkedAt || null) : null,
+    });
   }, []);
 
   React.useEffect(() => {

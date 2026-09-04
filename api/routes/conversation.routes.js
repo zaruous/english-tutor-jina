@@ -74,9 +74,6 @@ export function registerConversationRoutes(router) {
       context: session.scenario_system_prompt
         ? `[역할극 지시]\n${session.scenario_system_prompt}`
         : null,
-      ollamaUrl: body.provider === 'ollama'
-        ? str(body.ollamaUrl, 'ollamaUrl', { max: 200, optional: true })
-        : undefined,
       signal: abort.signal,
     }); // 실패(502/503/504)는 그대로 위로 — 아무것도 저장되지 않음 (재전송 안전)
 

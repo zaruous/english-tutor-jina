@@ -1,4 +1,5 @@
 import { config } from '../config.js';
+import { clientIp } from '../lib/client-ip.js';
 import { parseCookies, serializeCookie } from '../lib/cookies.js';
 import { HttpError } from '../lib/errors.js';
 import { atLeast, loadRoles } from '../lib/roles.js';
@@ -25,7 +26,7 @@ export async function optionalUser(req, res) {
   // X-Jina-No-Autologin: 1 — 클라이언트 opt-out(로그아웃 후). 이 헤더가 있으면
   // DEV_AUTOLOGIN이라도 dev 세션을 재발급하지 않는다 → 401 → 로그인 화면.
   if (!resolved && config.devAutologin && req.headers['x-jina-no-autologin'] !== '1') {
-    const dev = await devLogin({ userAgent: req.headers['user-agent'], ip: req.socket.remoteAddress });
+    const dev = await devLogin({ userAgent: req.headers['user-agent'], ip: clientIp(req) });
     if (dev) {
       setSessionCookie(res, dev.token);
       resolved = { user: dev.user, sessionId: dev.sessionId };

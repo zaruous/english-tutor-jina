@@ -103,9 +103,6 @@ export function registerLessonRoutes(router) {
       context,
       userMessage: question, // LEARNER_INPUT 블록으로 감싸진다 — 학습 자료(context)는 서버 작성이라 감싸지 않음
       sessionRef,
-      ollamaUrl: body.provider === 'ollama'
-        ? str(body.ollamaUrl, 'ollamaUrl', { max: 200, optional: true })
-        : undefined,
       signal: abort.signal,
     }); // 실패(502/503/504)는 그대로 위로 — 저장할 것이 없어 재전송 안전
 

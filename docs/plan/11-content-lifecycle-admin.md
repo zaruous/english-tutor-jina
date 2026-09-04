@@ -2,22 +2,22 @@
 # status: draft | in_progress | done · phase.status: done | pending_verification | todo
 plan: "11"
 title: "관리자 콘텐츠 ① — 상태 축 · 권한 · 최소 관리 UI (11 → 12 → 13 시리즈의 첫 플랜)"
-status: draft
+status: in_progress
 group:                       # 원래 한 플랜이었던 것을 셋으로 나눈 그룹 스콥 — 세 문서가 같은 블록을 가진다
   id: admin-content
   title: "관리자 콘텐츠 저작·관리"
   members: ["11", "12", "13"]
   order: 1
 created: 2026-09-03
-updated: 2026-09-03
-depends_on: ["07", "08", "10.5", "10.7"]   # requireAdmin=10.5 Phase 1 · 스키마(content_items·status)=10.7 Phase 2
+updated: 2026-09-04
+depends_on: ["07", "08", "10.5", "10.7"]   # 콘텐츠 스키마(content_items·status)=10.7 Phase 2 · 권한 경계=10.5 Phase 1
 blocks: ["12", "13"]
-migrations: []   # 스키마는 10.7 의 0001_baseline 이 담당 — 이 플랜은 마이그레이션 0개
+migrations: ["0017_user_roles.sql (Phase 3 산출 — 10.7 baseline 에 role 체계가 없어 이 플랜이 얹었다)"]
 phases:
-  - { id: "1", name: "상태 축 + 가시성 헬퍼 2종 + 전이 단일 소스 + 역할 미들웨어 + 표시부 정리 (UI 없음)", status: todo }
-  - { id: "2", name: "admin.html 최소 관리 UI — 목록 · 상태 전이", status: todo }
-  - { id: "3", name: "사용자 · 역할 관리 — 목록 · 역할 부여 · 세션 종료", status: todo }
-verify: ["scripts/verify-content-status.mjs (신규)", "scripts/e2e-lesson.mjs", "scripts/e2e-dashboard.mjs", "scripts/e2e-plan08-screens.mjs", "scripts/e2e-topics.mjs"]
+  - { id: "1", name: "상태 축 + 가시성 헬퍼 2종 + 전이 단일 소스 + 역할 미들웨어 + 표시부 정리 (UI 없음)", status: todo, note: "역할 미들웨어(requireRole)와 /api/auth/me DTO 는 Phase 3 이 먼저 넣었다. 남은 것은 content-scope.js · content-status.js · 표시부 47곳 · topicDto.eligible 격하 · verify-content-status.mjs" }
+  - { id: "2", name: "admin.html 최소 관리 UI — 목록 · 상태 전이", status: todo, note: "admin.html 뼈대 · server.js 정적 서빙 · 설정 패널 진입 링크는 Phase 3 과 함께 들어왔다. 남은 것은 admin-app.jsx · content-store.jsx · 콘텐츠 목록/전이 API · content_audit_log 기록" }
+  - { id: "3", name: "사용자 · 역할 관리 — 목록 · 역할 부여 · 세션 종료", status: done, done_at: 2026-09-04, note: "PR #7(b51eb9a). 산출물 5종 전부 + e2e-admin-users 17/17 + tests/admin-user.service.test.mjs 3건(CI). 0017_user_roles.sql 로 roles · users.role/is_active · user_audit_log 를 얹었다" }
+verify: ["scripts/verify-content-status.mjs (신규)", "scripts/e2e-admin-users.mjs", "tests/admin-user.service.test.mjs", "scripts/e2e-lesson.mjs", "scripts/e2e-dashboard.mjs", "scripts/e2e-plan08-screens.mjs", "scripts/e2e-topics.mjs"]
 follow_ups:
   - "AI 초안 검수 → 공개: 플랜 12"
   - "저작 에디터 · 토픽 구성 · 스피킹 세트: 플랜 13"
@@ -26,7 +26,8 @@ follow_ups:
 
 # 11 — 관리자 콘텐츠 ①: 상태 축 · 권한 · 최소 관리 UI (2026-09-03)
 
-관리자(`users.role`, [10.7 §3.3](10.7-db-rebaseline.md))가 **주제별 학습 · 리스닝(LC) · 스피킹** 콘텐츠를 직접 만들고
+관리자(`users.role` — 설계는 [10.7 §3.3](10.7-db-rebaseline.md), 실제 DDL 은 이 플랜 Phase 3 의 `0017_user_roles.sql`)가
+**주제별 학습 · 리스닝(LC) · 스피킹** 콘텐츠를 직접 만들고
 공개/비공개를 관리한다. 지금 콘텐츠가 생기는 경로는 AI 생성 하나뿐이고 그 결과는 항상
 `visibility='private'` 이라 **만든 사람만 본다** — 전체 사용자에게 보이는 콘텐츠를 만들 수단이 없다.
 
@@ -62,7 +63,7 @@ follow_ups:
 | AI 생성 | `ai_jobs`(lesson_gen·scenario_gen·vocab_set) + 인프로세스 워커(동시 2) + 자동 검증(`validateGeneratedLesson`·`validateLcScript`) + `lesson_drafts` | `lesson_drafts.review_status`(draft/approved/rejected)를 **바꾸는 코드가 없다** = 검수 워크플로 미구현. 저장 시 `'private'` 하드코딩 → 12 |
 | 리스닝 | 레슨 엔진 재사용 구조(`kind='toeic_lc'`, 스크립트는 `passage.body` 화자 라벨 배열, `jinaSpeak` 재생) — 08 Phase B | 저작 화면 → 13 |
 | 스피킹 | `listSpeakingSentences` — LC 스크립트·시나리오 opening·레슨 vocab 예문에서 문장을 **파생**하는 뷰 | **콘텐츠 테이블 자체가 없다.** → 13 (플랜 10 실측 조건부) |
-| 권한 | `users.is_admin`(0016) 불리언, `/api/auth/me` DTO 에 포함, **`requireAdmin` 미들웨어는 플랜 10.5 Phase 1 산출물** | `users.role` 서열(10.7 §3.3 이 `is_admin` 을 대체), `requireRole`, `/api/admin/*` 네임스페이스 |
+| 권한 | **Phase 3 에서 전부 들어왔다** — `users.role` 서열 4단계 + `roles` 기준정보(`0017_user_roles.sql`), `requireRole`/`requireAdmin`(`api/middleware/auth.js`), `/api/admin/*` 네임스페이스(`api/routes/admin.routes.js`), `/api/auth/me` DTO 의 `role`·`can_author`·`can_review`·`can_admin` | `is_admin` 불리언은 아직 남아 있다(한 사이클 뒤 제거). 콘텐츠 쪽 권한(`canTransition`)은 Phase 1 |
 | 클라이언트 | `index.html`(앱) · `canvas.html`(디자인 캔버스) 2엔트리 + `src/shared/*` 공유 패턴 확립 | admin 엔트리 |
 
 ## 화면 미리보기 — 관리자 콘텐츠 시리즈 5화면
@@ -122,6 +123,17 @@ follow_ups:
 1. **(10.7 이 제공) 상태 축과 콘텐츠 카탈로그.** 콘텐츠 4종은 `content_items` 한 테이블에 살고
    `status TEXT (draft|review|published|archived)` · `visibility (public|private)` 를 가진다.
    `CHECK (status = 'published' OR visibility = 'private')` 로 "공개 상태가 아닌데 public" 은 저장되지 않고,
+
+   > **실측 불일치 (2026-09-04) — Phase 1 의 선결 과제.** baseline 이 실제로 넣은 CHECK
+   > (`0001_baseline.sql` `content_items_public_ck`)는 위 문장 그대로 `status = 'published' OR visibility = 'private'`
+   > 인데, 이것은 **열린 질문 7 이 기각한 초안**이다. 확정안(후보 A)은
+   > `status IN ('published','archived') OR visibility = 'private'` 다.
+   > 지금 CHECK 로는 `archived + public` 행이 저장되지 않으므로, 내린 콘텐츠가 강제로 `private` 이 되어
+   > **작성자가 아닌 학습자의 오답 노트에서 그 레슨이 사라진다** — 결정 2 의 `resolvable` 이 무력화된다.
+   > Phase 1 검증 2번의 `archived + public` 픽스처 INSERT 도 거부되어 검증 자체를 못 한다.
+   > `0001_baseline.sql` 은 이미 적용·체크섬 고정이므로 **새 마이그레이션으로 제약을 교체**해야 한다
+   > (Phase 1 의 첫 산출물). 프런트매터 `migrations` 에 그때 추가한다.
+
    새 행 기본값은 `draft` 다. `topic_contents` 는 `(topic_id, content_id)` 단일 FK 이고,
    `lessons.published` 는 존재하지 않는다.
    의미를 못 박는다: **`status` = 생명주기(작성자·관리자 관점), `visibility` = 누가 볼 수 있나.**
@@ -316,8 +328,14 @@ follow_ups:
 삭제는 `ON DELETE CASCADE` 가 학습 이력을 함께 지우므로 비활성화가 먼저이고, 그 컬럼이 아직 없다(열린 질문 8).
 
 완료 판정: `learner` 계정을 `author` 로 올리면 **그 계정의 다음 요청부터** `/api/admin/contents` 가 200 이 되고
-(재로그인 없이), `reviewer` 로 올리기 전에는 `→ published` 전이가 403 이다. 마지막 `admin` 강등과 자기 강등은 409.
-모든 변경이 `user_audit_log` 에 남는다.
+(재로그인 없이), 마지막 `admin` 강등과 자기 강등은 409. 모든 변경이 `user_audit_log` 에 남는다.
+
+> **판정 이관 (2026-09-04).** 원래 여기 있던 "`reviewer` 로 올리기 전에는 `→ published` 전이가 403" 은
+> 전이 엔드포인트가 **Phase 2 산출물**이라 Phase 3 만으로는 검증할 수 없다. Phase 2 완료 판정으로 옮긴다.
+>
+> **달성 (2026-09-04, PR #7 → `b51eb9a`).** 나머지는 전부 확인됐다 — `scripts/e2e-admin-users.mjs` 17/17,
+> `tests/admin-user.service.test.mjs` 3건(CI 에서 매번 실행). 역할 즉시 반영은 `GET /api/admin/contents`
+> 스텁(`requireRole('author')`)으로 검증했고, 그 스텁은 Phase 2 가 실제 구현으로 교체한다.
 
 ## 5. 구현자 메모
 
@@ -325,7 +343,13 @@ follow_ups:
 
 `content_items` · `status` · `status × visibility` CHECK · 새 행 기본값 `draft` · `content_audit_log` ·
 `topic_contents (topic_id, content_id)` 는 [10.7 §3.2](10.7-db-rebaseline.md) 의 `0001_baseline.sql` 산출물이다.
-**이 플랜은 마이그레이션을 만들지 않는다.** `db/migrate.mjs` 의 `RESET_TABLES` 수기 목록도 10.7 에서
+**콘텐츠 쪽은 이 플랜이 마이그레이션을 만들지 않는다.**
+
+> **정정 (2026-09-04).** 권한 쪽은 달랐다. 10.7 의 `0001_baseline.sql` 이 `users.role`·`roles`·`user_audit_log`
+> 를 넣지 않았으므로(10.7 §3.3 결정이 baseline 에 반영되지 않았다) Phase 3 이 `0017_user_roles.sql` 로
+> 직접 얹었다. 프런트매터 `migrations` 가 그것을 기록한다. Phase 1·2 는 여전히 마이그레이션 0개다.
+
+`db/migrate.mjs` 의 `RESET_TABLES` 수기 목록도 10.7 에서
 `DROP SCHEMA … CASCADE` 로 대체돼 갱신할 것이 없다.
 
 10.7 이 아직 착수 전이라면 두 갈래가 있다: (a) 10.7 을 먼저 끝낸다(권장 — 이 플랜의 47곳 수정을 10.7 이
@@ -385,8 +409,12 @@ PATCH  /api/admin/users/:id/role                 { to }             admin
    유지하면서 archived 가 이전 가시성을 보존한다. 파생 문제였던 (a) 내렸다 올릴 때 `private` 에 갇히는 것과
    (b) 감사 로그에 이전 가시성이 없는 것도 함께 사라졌다 — 애초에 가시성을 건드리지 않기 때문이다.
    남은 것은 공개 조작 엔드포인트인데 §5 에 `POST …/:id/visibility` 로 넣었다.
-8. ~~**계정 비활성화 컬럼**~~ → **공통 컬럼 `users.is_active`·`is_deleted` 로 해소**
-   ([10.7 §3.4](10.7-db-rebaseline.md) 공통 컬럼 규약, 2026-09-03). `resolveSession` 의 WHERE 에
-   `u.is_active AND NOT u.is_deleted` 한 줄이면 `role` 과 같은 경로로 즉시 차단된다. Phase 3 의 `⋯` 메뉴에
+8. ~~**계정 비활성화 컬럼**~~ → **`users.is_active` 로 해소** (`0017_user_roles.sql`, 2026-09-04).
+   `resolveSession` 의 WHERE 에 `AND u.is_active` 한 줄이면 `role` 과 같은 경로로 즉시 차단된다.
+
+   > **정정 (2026-09-04).** 원문은 [10.7 §3.4](10.7-db-rebaseline.md) 공통 컬럼 규약의
+   > `is_active`·`is_deleted` 두 컬럼에 기댔지만, **그 규약은 채택되지 않았다**(10.7 §3.4 미반영 인용문).
+   > 실제 baseline 의 `users` 에는 `is_deleted` 가 없고 `is_active` 만 `0017` 이 넣었다.
+   > soft delete 가 없으므로 "지운 계정" 개념 자체가 아직 없다 — 사용 중지(`is_active=false`)가 전부다. Phase 3 의 `⋯` 메뉴에
    "사용 중지" 가 들어가고 `user_audit_log(action='disable')` 이 언제 누가를 남긴다.
    남은 세부: 사용 중지 계정의 학습 이력을 통계 집계에서 뺄지(빼면 전체 지표가 흔들리고, 두면 유령 사용자가 남는다).

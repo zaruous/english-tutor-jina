@@ -136,7 +136,8 @@ function LessonProvider({ children }) {
   // Jina Q&A — 비낙관적(AI 왕복 5~30초). 프롬프트(지문·문항·내 답)는 서버가 조립한다(POST /api/lessons/:id/qa):
   // 클라이언트는 question·attempt_id·item_id 만 보내고 정답/해설은 알지도, 보내지도 않는다.
   // 스토어 error 배너는 건드리지 않는다 — 패널이 응답 봉투 { ok, answer, citations… | ok:false, error, hint } 를 그대로 받아 표시한다.
-  const askLesson = React.useCallback(async ({ question, itemId, attemptId, provider, model, ollamaUrl, signal } = {}) => {
+  // ollamaUrl 은 받지도 보내지도 않는다 — 서버가 config.ai.ollamaUrl 만 쓴다 (플랜 10.5 S2 SSRF).
+  const askLesson = React.useCallback(async ({ question, itemId, attemptId, provider, model, signal } = {}) => {
     if (!currentId) return { ok: false, code: 'NO_LESSON', error: '선택된 레슨이 없습니다.' };
     const body = { question, client_request_id: crypto.randomUUID() };
     if (attemptId) {
@@ -145,7 +146,6 @@ function LessonProvider({ children }) {
     }
     if (provider) body.provider = provider;
     if (model) body.model = model;
-    if (ollamaUrl) body.ollamaUrl = ollamaUrl;
     return window.JINA_API.post(`/api/lessons/${currentId}/qa`, body, { signal });
   }, [currentId]);
 

@@ -59,9 +59,6 @@ export function registerVocabRoutes(router) {
         providerId: body.provider || defaultProviderId(),
         model: str(body.model, 'model', { max: 100, optional: true }) ?? null,
         userMessage: word,
-        ollamaUrl: body.provider === 'ollama'
-          ? str(body.ollamaUrl, 'ollamaUrl', { max: 200, optional: true })
-          : undefined,
         signal: abort.signal,
       }); // SCHEMA_VIOLATION 등은 그대로 위로 — 쓰레기 카드를 저장하지 않는다
       entry = ai.data;
@@ -90,9 +87,6 @@ export function registerVocabRoutes(router) {
       task: 'vocab_quiz',
       providerId, model,
       userMessage: renderQuizRequest({ kind, keyword, exclude }),
-      ollamaUrl: body.provider === 'ollama'
-        ? str(body.ollamaUrl, 'ollamaUrl', { max: 200, optional: true })
-        : undefined,
       signal: abort.signal,
     });
     const created = await quiz.createQuiz(user, {

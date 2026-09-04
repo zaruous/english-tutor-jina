@@ -1,5 +1,6 @@
 import { config } from '../config.js';
 import { readJson } from '../lib/body.js';
+import { clientIp } from '../lib/client-ip.js';
 import { parseCookies } from '../lib/cookies.js';
 import { sendJson } from '../lib/respond.js';
 import { EMAIL_RE, str } from '../lib/validate.js';
@@ -14,7 +15,7 @@ export function registerAuthRoutes(router) {
     const displayName = str(body.display_name, 'display_name', { max: 60, optional: true });
     const user = await auth.signup({ email, password, displayName });
     const session = await auth.createSession(user.id, {
-      userAgent: req.headers['user-agent'], ip: req.socket.remoteAddress,
+      userAgent: req.headers['user-agent'], ip: clientIp(req),
     });
     setSessionCookie(res, session.token);
     sendJson(res, 201, { ok: true, user });
@@ -26,7 +27,9 @@ export function registerAuthRoutes(router) {
     const password = str(body.password, 'password', { min: 1, max: 200 });
     const { user, token } = await auth.login({
       email, password,
-      userAgent: req.headers['user-agent'], ip: req.socket.remoteAddress,
+      // 레이트리밋 키가 `이메일|IP` 다 — 프록시 뒤에서 remoteAddress 를 그대로 쓰면
+      // 전원이 127.0.0.1 로 뭉쳐 IP 축이 사라진다(플랜 10.5 S6).
+      userAgent: req.headers['user-agent'], ip: clientIp(req),
     });
     setSessionCookie(res, token);
     sendJson(res, 200, { ok: true, user });

@@ -3,9 +3,13 @@
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "theme": "aurora",
   "provider": "ollama",
-  "ollamaUrl": "http://localhost:11434",
   "ollamaModel": "gemma4:e2b"
 }/*EDITMODE-END*/;
+
+// Ollama URL 은 더 이상 tweak 이 아니다 — 서버(.env OLLAMA_URL)가 /config.js 로 주입한 값을 읽기만 한다.
+// 자유 입력이던 시절엔 이 값이 API 요청 본문에 실려 서버 fetch 대상이 됐다(SSRF, 플랜 10.5 S2).
+// 지금 이 값의 쓰임은 두 가지뿐: 패널에 보여주는 것과 아래 pingOllama(브라우저 → Ollama 직결) 대상.
+const OLLAMA_URL = window.JINA_CONFIG?.ollamaUrl || 'http://localhost:11434';
 
 function App() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
@@ -20,29 +24,31 @@ function App() {
   React.useEffect(() => {
     window.__JINA_AI_CONFIG = {
       provider: t.provider,
-      ollamaUrl: t.ollamaUrl,
+      ollamaUrl: OLLAMA_URL, // 표시·ping 전용 서버값. 스토어들은 이 필드를 서버로 보내지 않는다.
       ollamaModel: t.ollamaModel,
     };
-  }, [t.provider, t.ollamaUrl, t.ollamaModel]);
+  }, [t.provider, t.ollamaModel]);
 
   const checkOllama = React.useCallback(async () => {
     setOllamaStatus((s) => ({ ...s, checking: true, error: null }));
-    const res = await window.JINA_AI.pingOllama(t.ollamaUrl);
+    // 브라우저 → Ollama 직결이라 SSRF 가 아니다(서버가 아니라 이 페이지가 부른다).
+    // canvas.html 은 미인증 화면이라 /api/ai/providers(requireUser)로 대체할 수 없어 이 경로를 유지한다.
+    const res = await window.JINA_AI.pingOllama(OLLAMA_URL);
     setOllamaStatus({
       checking: false,
       ok: res.ok,
       models: res.models || [],
       error: res.error || null,
     });
-  }, [t.ollamaUrl]);
+  }, []);
 
-  // Auto-check on mount and when URL changes
+  // Auto-check on mount (URL 은 서버 고정값이라 더 이상 바뀌지 않는다)
   React.useEffect(() => { checkOllama(); }, [checkOllama]);
 
   const theme = JINA_THEMES[t.theme] || JINA_THEMES.aurora;
   const aiConfig = {
     provider: t.provider,
-    ollamaUrl: t.ollamaUrl,
+    ollamaUrl: OLLAMA_URL, // 표시 전용 — 아트보드 안의 화면들도 이 값을 서버로 보내지 않는다
     ollamaModel: t.ollamaModel,
   };
 
@@ -177,12 +183,20 @@ function App() {
 
         {t.provider === 'ollama' && (
           <React.Fragment>
-            <TweakText
-              label="Ollama URL"
-              value={t.ollamaUrl}
-              onChange={(v) => setTweak('ollamaUrl', v)}
-              placeholder="http://localhost:11434"
-            />
+            {/* 읽기 전용 — 서버 .env 의 OLLAMA_URL. 입력칸을 남겨두면 "바꿨는데 안 먹는" 화면이 된다
+                (서버는 요청 본문의 ollamaUrl 을 무시한다 — 플랜 10.5 §2 결정 3) */}
+            <TweakRow label="Ollama URL">
+              <div className="twk-field" style={{
+                height: 'auto', minHeight: 26, padding: '4px 8px',
+                display: 'flex', alignItems: 'center', wordBreak: 'break-all',
+                opacity: 0.7, cursor: 'default',
+              }}>
+                {OLLAMA_URL}
+              </div>
+            </TweakRow>
+            <div style={{ fontSize: 10.5, color: '#666', lineHeight: 1.5, padding: '0 2px 6px' }}>
+              서버 설정값입니다. 바꾸려면 <code style={{ background: '#1d1d1f', color: '#fff', padding: '0 4px', borderRadius: 3 }}>.env</code> 의 <b>OLLAMA_URL</b> 을 고치고 다시 시작하세요.
+            </div>
             {ollamaStatus.ok && ollamaStatus.models.length > 0 ? (
               <TweakSelect
                 label="모델"

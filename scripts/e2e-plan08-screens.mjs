@@ -88,12 +88,19 @@ if (lcCount === 0) {
     (await page.locator('[data-testid="lc-play"]').count()) === 1
     && (await page.locator('[data-testid="lc-rate-1"]').count()) === 1
     && (await page.locator('[data-testid="lc-locked"]').count()) === 1);
-  // 스크립트 원문(서버 detail 의 passage.body)이 제출 전에는 화면에 렌더되지 않아야 한다
+  // 스크립트 원문(서버 detail 의 passage.body)이 제출 전에는 화면에 렌더되지 않아야 한다.
+  // passage.body 는 플랜 10.7 Phase 2 부터 [{speaker,text}] 객체 배열이다(그 전에는 "W: …" 문자열).
+  // 화면(src/screens/listening.jsx)은 이미 두 모양을 다 받으므로 여기서도 둘 다 받는다 —
+  // 문자열이면 "W: " 라벨 3자를 건너뛰고, 객체면 text 를 그대로 본다.
+  const scriptChunk = (l, n = 37) => (typeof l === 'string' ? l.slice(3, 3 + n) : String(l?.text ?? '').slice(0, n));
   const detail = (await (await fetch(`${API}/api/lessons/${lcList.lessons[0].id}`, { headers: H })).json()).lesson;
   const lines = detail.passage?.body || [];
   const bodyText = await page.locator('body').textContent();
   check('미제출 화면에 스크립트 텍스트 미렌더 (잠금)',
-    lines.length > 0 && lines.every((l) => !bodyText.includes(l.slice(3, 40))),
+    lines.length > 0 && lines.every((l) => {
+      const chunk = scriptChunk(l);
+      return chunk.length > 0 && !bodyText.includes(chunk);
+    }),
     `${lines.length}줄`);
   await page.locator('[data-testid="lc-play"]').click();
   await page.waitForTimeout(500);
@@ -111,7 +118,7 @@ if (lcCount === 0) {
   const after = await page.locator('body').textContent();
   check('채점 후 스크립트 공개 + 정답 수 표시',
     (await page.locator('[data-testid="lc-script"]').count()) === 1
-    && lines.every((l) => after.includes(l.slice(3, 30)))
+    && lines.every((l) => after.includes(scriptChunk(l, 27)))
     && /\d+\s*\/\s*\d+\s*정답/.test(after));
   check('세트 전환 칩', (await page.locator('[data-testid="lc-set"]').count()) === lcCount);
 

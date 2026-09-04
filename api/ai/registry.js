@@ -21,7 +21,9 @@ export function getProvider(id) {
 const HEALTH_TTL_MS = 60_000;
 let healthCache = { at: 0, providers: null, inflight: null };
 
-export async function providerHealth({ force = false, ollamaUrl } = {}) {
+// ollamaUrl 인자는 없다 — 호출부가 안 넘기는 죽은 인자였지만 ollama.probe 의 baseUrl 로 이어지는
+// SSRF 진입점이라 함께 지웠다(플랜 10.5 S2). 엔드포인트는 config.ai.ollamaUrl 하나뿐이다.
+export async function providerHealth({ force = false } = {}) {
   const now = Date.now();
   if (!force && healthCache.providers && now - healthCache.at < HEALTH_TTL_MS) {
     return { cached: true, checkedAt: healthCache.at, providers: healthCache.providers };
@@ -30,7 +32,7 @@ export async function providerHealth({ force = false, ollamaUrl } = {}) {
   healthCache.inflight = (async () => {
     const entries = await Promise.allSettled(
       [...PROVIDERS.values()].map(async (p) => {
-        const probe = await p.probe({ baseUrl: p.id === 'ollama' ? ollamaUrl : undefined });
+        const probe = await p.probe();
         return [p.id, { ok: probe.ok, detail: probe.detail, label: p.label }];
       }),
     );

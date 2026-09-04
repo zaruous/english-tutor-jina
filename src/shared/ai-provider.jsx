@@ -6,6 +6,9 @@
 
 const AI_DEFAULTS = {
   provider: window.JINA_CONFIG?.provider || 'claude',
+  // 표시 전용 + 캔버스 pingOllama 대상. 서버(.env OLLAMA_URL)가 /config.js 로 주입한 값이며
+  // 어떤 API 요청 본문에도 실리지 않는다 — 서버는 본문의 ollamaUrl 을 무시하고 자기 설정만 쓴다
+  // (플랜 10.5 §2 결정 3, S2 SSRF 차단). 화면에서 바꾸는 수단도 없앴다.
   ollamaUrl: window.JINA_CONFIG?.ollamaUrl || 'http://localhost:11434',
   // provider별 모델 맵. /config.js 가 .env 값을 주입한다.
   model: window.JINA_CONFIG?.models || {},
@@ -37,7 +40,7 @@ async function askJina({ history, userMessage, signal, conversationId, task = 't
     conversationId,
     provider,
     model: cfg.model?.[provider] ?? (provider === 'ollama' ? cfg.ollamaModel : null) ?? null,
-    ollamaUrl: provider === 'ollama' ? cfg.ollamaUrl : undefined,
+    // ollamaUrl 은 보내지 않는다 — 서버가 config.ai.ollamaUrl 만 쓴다 (플랜 10.5 S2 SSRF).
     history: (history || []).map((m) => ({ role: m.role, content: m.content })),
     userMessage,
   }, { signal });
@@ -55,7 +58,10 @@ async function listProviders() {
   return window.JINA_API.get('/api/ai/providers');
 }
 
-// 하위호환 별칭 — app.jsx(캔버스)가 Ollama 연결 pill에 사용
+// 하위호환 별칭 — app.jsx(캔버스)가 Ollama 연결 pill에 사용.
+// 이것만은 브라우저 → Ollama 직결이라 SSRF 가 아니다(서버가 아니라 사용자의 브라우저가 부른다).
+// 캔버스(canvas.html)는 미인증 화면이라 /api/ai/providers(requireUser)로 대체할 수 없어 남긴다.
+// url 인자는 서버 주입값(AI_DEFAULTS.ollamaUrl)만 들어온다 — 사용자 자유 입력 경로는 없앴다.
 async function pingOllama(url) {
   try {
     const r = await fetch((url || AI_DEFAULTS.ollamaUrl).replace(/\/$/, '') + '/api/tags');

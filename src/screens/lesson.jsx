@@ -430,7 +430,7 @@ function LessonQaChat({ theme, aiConfig, compact = false, active = true }) {
       provider: aiConfig?.provider,
       // 신형({model:{[provider]}})과 구형 캔버스({ollamaModel})를 모두 허용 — ai-provider.askJina 와 같은 규칙
       model: aiConfig?.model?.[provider] ?? (provider === 'ollama' ? aiConfig?.ollamaModel : null) ?? null,
-      ollamaUrl: provider === 'ollama' ? aiConfig?.ollamaUrl : undefined, // ollama 일 때만 의미가 있다
+      // ollamaUrl 은 보내지 않는다 — 서버가 config.ai.ollamaUrl 만 쓴다 (플랜 10.5 S2 SSRF).
       signal: controller.signal,
     });
     abortRef.current = null;

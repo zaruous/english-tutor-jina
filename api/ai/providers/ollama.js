@@ -12,9 +12,9 @@ export const ollama = {
   get defaultModel() { return config.ai.models.ollama; },
   timeoutMs: 120_000,
 
-  async models({ baseUrl } = {}) {
+  async models() {
     try {
-      const res = await fetch(url(baseUrl, '/api/tags'), { signal: AbortSignal.timeout(8000) });
+      const res = await fetch(url('/api/tags'), { signal: AbortSignal.timeout(8000) });
       if (!res.ok) return [];
       const data = await res.json();
       return (data.models || []).map((m) => m.name);
@@ -23,19 +23,19 @@ export const ollama = {
     }
   },
 
-  async probe({ baseUrl } = {}) {
+  async probe() {
     try {
-      const res = await fetch(url(baseUrl, '/api/tags'), { signal: AbortSignal.timeout(8000) });
+      const res = await fetch(url('/api/tags'), { signal: AbortSignal.timeout(8000) });
       return { ok: res.ok, detail: res.ok ? 'ok' : `HTTP ${res.status}` };
     } catch (err) {
       return { ok: false, detail: err.message };
     }
   },
 
-  async run({ messages, model, jsonSchema, timeoutMs, signal, baseUrl }) {
+  async run({ messages, model, jsonSchema, timeoutMs, signal }) {
     const started = Date.now();
     const call = async (format) => {
-      const res = await fetch(url(baseUrl, '/api/chat'), {
+      const res = await fetch(url('/api/chat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -75,8 +75,11 @@ export const ollama = {
   },
 };
 
-function url(baseUrl, path) {
-  return (baseUrl || config.ai.ollamaUrl).replace(/\/$/, '') + path;
+// 엔드포인트는 서버 설정만 본다. 예전 시그니처는 url(baseUrl, path) 였고 호출자가 준 baseUrl 이
+// 우선했는데, 그 baseUrl 이 라우트를 타고 들어온 클라이언트 입력이라 임의 주소로 POST 가 나갔다
+// (플랜 10.5 S2 SSRF). 인자를 아예 없애 재유입 경로를 막는다 — 바꾸려면 .env 의 OLLAMA_URL.
+function url(path) {
+  return config.ai.ollamaUrl.replace(/\/$/, '') + path;
 }
 
 function composeSignal(signal, timeoutMs) {

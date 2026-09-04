@@ -43,7 +43,10 @@ export async function askAI({
   task = 'tutor', providerId, model, history = [], userMessage, context = null,
   // promptVariant(선택): 같은 task 안에서 시스템 프롬프트를 고르는 키. 현재는 lesson_gen 의 part='lc' 만 쓴다.
   promptVariant = null,
-  sessionRef = null, ollamaUrl, signal,
+  // ollamaUrl 인자는 없다 — Ollama 엔드포인트는 서버 설정(config.ai.ollamaUrl)이 유일한 출처다.
+  // 예전에는 라우트가 클라이언트 본문의 ollamaUrl 을 여기로 실어 날랐고, 그게 그대로 fetch 대상이 돼
+  // 사내망·사이드카(:8000)·API 자기 자신에 임의 POST 를 보낼 수 있는 SSRF 였다(플랜 10.5 S2).
+  sessionRef = null, signal,
 }) {
   if (!TASK_SCHEMAS[task]) throw new HttpError(400, 'BAD_REQUEST', `알 수 없는 task: ${task}`);
   if (typeof userMessage !== 'string' || !userMessage.trim()) {
@@ -71,7 +74,7 @@ export async function askAI({
       prompt: renderCliPrompt({ task, history: withHistory ? history : [], userMessage, includeSchemaContract, context, part: promptVariant }),
       messages: renderChatMessages({ task, history: withHistory ? history : [], userMessage, context, part: promptVariant }),
       jsonSchema: provider.supportsJsonSchema ? schema : null,
-      model, sessionRef: ref, signal, baseUrl: ollamaUrl,
+      model, sessionRef: ref, signal,
       // 모든 task 공통 30분 기본(AI_PROCESS_TIMEOUT_MS 로 조정) — provider 기본값(120s)으로 더 줄이지 않는다
       timeoutMs: PROCESS_TIMEOUT_MS,
     });
