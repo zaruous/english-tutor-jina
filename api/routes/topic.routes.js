@@ -4,12 +4,14 @@ import { requireUser } from '../middleware/auth.js';
 import * as topics from '../services/topic.service.js';
 
 export function registerTopicRoutes(router) {
-  // 기본은 임계치(레슨3·시나리오1·단어20)를 충족한 토픽만. all=1은 생성 UI/검증용.
-  router.get('/api/topics', async (req, res, { query }) => {
+  // 임계치(레슨3·시나리오1·단어20)는 더 이상 목록을 거르지 않는다(플랜 11 결정 3) —
+  // 관리자가 새 토픽을 만들면 콘텐츠를 다 채우기 전까지 화면에 안 보여 저작이 막혔다.
+  // 계산은 유지해 DTO 의 eligible 로 나가고, 관리 화면이 경고 배지로 쓴다.
+  router.get('/api/topics', async (req, res) => {
     const { user } = await requireUser(req, res);
     sendJson(res, 200, {
       ok: true,
-      topics: await topics.listTopics(user, { includeIneligible: query.get('all') === '1' }),
+      topics: await topics.listTopics(user),
     });
   });
 

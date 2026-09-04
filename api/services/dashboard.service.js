@@ -10,6 +10,7 @@
 // 테이블 부재 가드: 이 탭은 회화(0004)·학습(0005)이 만드는 테이블을 집계하므로
 // 어떤 구현 순서에서도 500이 나지 않게 to_regclass로 존재하는 블록만 UNION 한다.
 // 부재 소스의 카드는 정의된 빈 상태(null)를 내려보낸다 — null = "기록 없음", 0 = "전부 틀림".
+import { resolvable } from '../lib/content-scope.js';
 import { pool } from '../lib/pool.js';
 import { recommendLessons } from './lesson.service.js';
 import { fetchStats } from './vocab.service.js';
@@ -38,6 +39,10 @@ const ACT_VOCAB = `
     SELECT (reviewed_at AT TIME ZONE $2)::date AS day,
            LEAST(COALESCE(elapsed_ms, 10000), 120000) / 60000.0 AS minutes
       FROM vocab_reviews WHERE user_id = $1`;
+// ACT_LESSON 에는 가시성 조건을 걸지 않는다(플랜 11 §3 표의 경계) — 이 원장은 "며칠 공부했나"
+// 를 세고 streak·주간 학습량의 소스다. 콘텐츠를 내리거나 비공개로 돌렸다고 지난주에 공부한
+// 사실이 없어지면 스트릭이 소급해 끊긴다. 콘텐츠 범위가 정의의 일부인 곳은 정답률
+// 집계(fetchLessonAccuracy) 하나뿐이고, 거기에만 source='seed' + resolvable 이 붙는다.
 const ACT_LESSON = `
     SELECT (ua.created_at AT TIME ZONE $2)::date AS day,
            LEAST(COALESCE(ua.elapsed_ms, l.est_minutes * 60000), 1800000) / 60000.0 AS minutes
@@ -131,6 +136,12 @@ async function fetchReviewAccuracy(params) {
 }
 
 // 레슨 정답률 — correct_count/total_count 합산. 같은 3개 창.
+// 조인 조건 두 개의 뜻이 다르다:
+//  - source = 'seed' : 난도가 보정된 시드 문항만 센다(플랜 07 열린 질문 1 → 08-31 채택).
+//    AI 생성 문항이 섞이면 예상 점수(predicted_score)와 정확도가 콘텐츠 난도에 흔들린다. **유지**한다.
+//  - resolvable      : "이미 푼 것의 집계" 라 archived 를 남긴다(플랜 11 §3 표).
+//    여기에 discoverable 을 걸면 관리자가 레슨을 내리는 순간 그 레슨으로 쌓은 정답률과
+//    predicted_score 가 과거까지 소급해 사라진다.
 async function fetchLessonAccuracy(t, params) {
   if (!t.lesson) {
     return {
@@ -165,6 +176,7 @@ async function fetchLessonAccuracy(t, params) {
        COALESCE(sum(total_count)   FILTER (WHERE l.kind = 'toeic_lc'), 0)::int AS total_all_lc
        FROM user_lesson_attempts ua
        JOIN content_items c ON c.id = ua.content_id AND c.source = 'seed'
+                           AND ${resolvable('c', '$1')}
        JOIN lesson_details l ON l.content_id = c.id
       WHERE ua.user_id = $1`,
     [params[0]],

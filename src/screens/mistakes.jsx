@@ -165,7 +165,7 @@ function MistakesEmpty({ theme, filtered }) {
 function useMistakeActions(onNavigate) {
   const { select, askAboutItem } = useLesson();
   const onRetake = React.useCallback(async (m) => {
-    await select(m.lesson_id);
+    await select(m.lesson_id, { fromHistory: true });   // 내린 레슨도 열려야 한다(플랜 11 결정 2)
     if (onNavigate) onNavigate('lesson');
   }, [select, onNavigate]);
   const onAsk = React.useCallback(async (m) => {

@@ -2,16 +2,25 @@
 // 정답·해설 유출 방지의 구조적 보장: GET 계열 쿼리는 컬럼을 나열하고
 // answer/explanation을 아예 쓰지 않는다 (SELECT * 금지).
 // 채점은 POST /api/lessons/:id/attempts 서버 채점 — 정답/해설은 채점 응답에만 실린다.
+import { discoverable, resolvable } from '../lib/content-scope.js';
 import { HttpError } from '../lib/errors.js';
 import { pool } from '../lib/pool.js';
 import { withTx } from '../lib/tx.js';
 
 // 레슨 = content_items(type='lesson') + lesson_details 1:1 (플랜 10.7 Phase 2).
-// 가시성 판정이 content_items 한 곳에만 있으므로 아래 두 조각을 모든 읽기 쿼리가 공유한다.
 // $1 은 항상 user_id 다 — 소유자는 비공개 콘텐츠도 본다.
 const LESSON_SOURCE = `content_items l JOIN lesson_details d ON d.content_id = l.id`;
-const LESSON_VISIBLE = `l.type = 'lesson' AND l.status = 'published'
-     AND (l.visibility = 'public' OR l.created_by = $1)`;
+
+// 옛 LESSON_VISIBLE 상수는 지웠다(플랜 11 §2 결정 2). 한 조건을 모든 쿼리가 공유하던 탓에
+// "새로 풀 수 있는 레슨"과 "이미 푼 레슨의 근거"가 구분되지 않았고, 관리자가 레슨을 내리면
+// (`status='archived'`) 그것을 이미 푼 사용자의 오답 노트·통계에서 점수와 오답이 통째로 사라졌다.
+// 이제 쿼리마다 아래 둘 중 하나를 **명시적으로** 고른다 — 고르는 행위 자체가 이 파일의 규범이다.
+//   LESSON_NEW  (discoverable) : 목록 · 추천 · 진도 분모 · 새 attempt 시작 · 다음 지문 · 신고
+//   LESSON_DONE (resolvable)   : 오답 노트 · Q&A · 이미 있는 attempt 로 여는 상세
+// 두 상수는 조건을 감추지 않는다(이름 옆에 헬퍼 이름이 그대로 붙어 있다). 감추는 대신
+// `type='lesson'` 을 빠뜨리는 실수만 막는다 — content_items 는 시나리오·단어 세트와 한 테이블이다.
+const LESSON_NEW = `l.type = 'lesson' AND ${discoverable('l', '$1')}`;
+const LESSON_DONE = `l.type = 'lesson' AND ${resolvable('l', '$1')}`;
 
 // 목록: LEFT JOIN LATERAL로 사용자별 attempt 집계 (저장 금지, 매 요청 계산)
 // LessonSummary 컬럼 — GET /api/lessons 행과 GET /api/lessons/recommended 행이 같은 모양이 되도록 한 곳에서 정의.
@@ -30,22 +39,27 @@ const ATTEMPT_AGG = `
         FROM user_lesson_attempts ua
        WHERE ua.user_id = $1 AND ua.content_id = l.id
     ) a ON true`;
+// 목록·추천이 공유하는 본문 — 둘 다 "지금 풀 수 있는 것" 이므로 discoverable.
+// 내린 레슨이 여기 남으면 추천이 계속 그것을 권하고 사용자가 다시 시작한다.
 const LIST_BODY = `
   SELECT ${SUMMARY_COLS}
     FROM ${LESSON_SOURCE} ${ATTEMPT_AGG}
-   WHERE ${LESSON_VISIBLE}`;
+   WHERE ${LESSON_NEW}`;
 const LIST_SELECT = `${LIST_BODY}
    ORDER BY d.position, l.id`;
 
 export const LESSON_STATUS_FILTERS = ['new', 'attempted']; // status 필터 허용값 — 라우트 400 판정과 공유
 
 // progress.done/total — 항상 이 쿼리로 집계 (저장 금지)
+// 분자·분모 **둘 다** discoverable 이어야 한다. 분모만 좁히면(내린 레슨 제외) 분자가 그것을 세어
+// done > total 이 되고 진도가 100% 를 넘는다. "이미 푼 것의 근거" 가 아니라 "남은 학습" 이라
+// 내린 레슨은 양쪽에서 함께 빠진다 — 그래야 남은 것을 다 풀었을 때 100% 가 된다.
 async function fetchProgress(userId, client = pool) {
   const { rows: [p] } = await client.query(
-    `SELECT (SELECT count(*)::int FROM content_items l WHERE ${LESSON_VISIBLE}) AS total,
+    `SELECT (SELECT count(*)::int FROM content_items l WHERE ${LESSON_NEW}) AS total,
             (SELECT count(DISTINCT ua.content_id)::int
                FROM user_lesson_attempts ua
-               JOIN content_items l ON l.id = ua.content_id AND ${LESSON_VISIBLE}
+               JOIN content_items l ON l.id = ua.content_id AND ${LESSON_NEW}
               WHERE ua.user_id = $1) AS done`,
     [userId],
   );
@@ -92,9 +106,13 @@ export async function recommendLessons(user, { limit = 3 } = {}) {
   const max = Math.min(Math.max(Number(limit) || 3, 1), 3);
   const [{ rows }, { rows: [last] }] = await Promise.all([
     pool.query(LIST_SELECT, [user.id]),
+    // "가장 최근에 채점한 레슨" — 이미 푼 것을 보여주려는 게 아니라 **그 다음 레슨을 고르려는**
+    // 조회다. 그래서 discoverable 이다. resolvable 로 넓히면 마지막 시도가 내린 레슨일 때
+    // 그 id 가 목록(rows, discoverable)에 없어 findIndex 가 -1 → next_in_series 가 통째로 빠지고,
+    // 모든 레슨을 이미 잘 풀어 둔 사용자에게는 추천이 0건이 된다(대시보드 '시험대비' 카드가 사라진다).
     pool.query(
       `SELECT ua.content_id AS lesson_id FROM user_lesson_attempts ua
-         JOIN content_items l ON l.id = ua.content_id AND ${LESSON_VISIBLE}
+         JOIN content_items l ON l.id = ua.content_id AND ${LESSON_NEW}
         WHERE ua.user_id = $1 ORDER BY ua.created_at DESC, ua.id DESC LIMIT 1`,
       [user.id],
     ),
@@ -120,13 +138,23 @@ export async function recommendLessons(user, { limit = 3 } = {}) {
   return picked.slice(0, max);
 }
 
-export async function getLesson(user, lessonId) {
+// 상세는 이 파일에서 유일하게 판단이 갈리는 자리다.
+//  - 새로 풀려고 여는 경로(목록·추천·토픽에서 진입) → discoverable. 내린 레슨을 다시 시작하면 안 된다.
+//  - 이미 푼 것의 근거로 여는 경로(오답 노트·Q&A 에서 진입) → resolvable. 내렸다고 자기 오답의
+//    지문·문항이 404 가 되면 안 된다.
+// 함수는 하나이므로 인자로 가른다. 기본값은 **좁은 쪽(discoverable)** 이다 — 넓은 쪽을 기본으로 두면
+// 호출부가 아무것도 안 적었을 때 조용히 내린 콘텐츠가 열린다. 좁은 쪽이 기본이면 최악이 404 라
+// 화면에서 바로 드러난다.
+// 지금 라우트(GET /api/lessons/:id)는 진입 맥락을 모르므로 기본값으로 들어온다 — 오답 노트에서
+// 내린 레슨을 여는 경로는 라우트가 맥락(예: ?from=mistakes)을 실어 줄 때 resolvable 로 붙는다.
+export async function getLesson(user, lessonId, { scope = 'discoverable' } = {}) {
+  const visible = scope === 'resolvable' ? LESSON_DONE : LESSON_NEW;
   // ★ answer/explanation은 컬럼 나열에 존재하지 않는다 — DTO 유출 불가
   const { rows: [l] } = await pool.query(
     `SELECT l.id, l.slug, d.kind, l.title, d.subtitle, l.difficulty, d.est_minutes, d.position,
             d.passage, d.vocab, d.faq, l.source, l.visibility
        FROM ${LESSON_SOURCE}
-      WHERE l.id = $2 AND ${LESSON_VISIBLE}`,
+      WHERE l.id = $2 AND ${visible}`,
     [user.id, lessonId],
   );
   if (!l) throw new HttpError(404, 'NOT_FOUND', '레슨을 찾을 수 없습니다.');
@@ -137,10 +165,12 @@ export async function getLesson(user, lessonId) {
     [lessonId],
   );
 
-  // '다음 지문': position, id 순서상 다음 published 레슨, 마지막이면 첫 레슨(순환)
+  // '다음 지문': position, id 순서상 다음 레슨, 마지막이면 첫 레슨(순환).
+  // 상세를 resolvable 로 열었어도(오답 노트에서 내린 레슨을 봤어도) **다음으로 갈 곳은 항상**
+  // discoverable 이다 — 내린 레슨으로 이어지면 거기서 새 시도가 시작된다.
   const { rows: [next] } = await pool.query(
     `SELECT l.id FROM ${LESSON_SOURCE}
-      WHERE ${LESSON_VISIBLE}
+      WHERE ${LESSON_NEW}
         AND (d.position, l.id) > ($3::int, $2::bigint)
       ORDER BY d.position, l.id LIMIT 1`,
     [user.id, lessonId, l.position],
@@ -149,7 +179,7 @@ export async function getLesson(user, lessonId) {
   if (nextLessonId === null) {
     const { rows: [first] } = await pool.query(
       `SELECT l.id FROM ${LESSON_SOURCE}
-        WHERE ${LESSON_VISIBLE}
+        WHERE ${LESSON_NEW}
         ORDER BY d.position, l.id LIMIT 1`,
       [user.id],
     );
@@ -201,11 +231,14 @@ const score = (correct, total) => Math.round((correct / total) * 100);
 
 export async function submitAttempt(user, lessonId, { answers, clientRequestId, elapsedMs }) {
   return withTx(async (client) => {
-    // 문항 로드 (published 레슨만) — 채점 재료. 트랜잭션 안은 SELECT/INSERT만.
+    // 문항 로드 — 채점 재료. 트랜잭션 안은 SELECT/INSERT만.
+    // **새 시도를 시작하는 자리**라 discoverable 이다(플랜 11 §2 결정 2: archived 는 새 시도만 막는다).
+    // 대가 하나: 제출과 재전송 사이에 관리자가 레슨을 내리면 멱등 replay 도 404 가 된다.
+    // 그 창은 초 단위이고, 반대로 resolvable 로 넓히면 내린 레슨에 **새 attempt 가 계속 쌓인다**.
     const { rows: items } = await client.query(
       `SELECT i.position, i.options, i.answer, i.explanation, i.skill_code
          FROM lesson_items i
-         JOIN content_items l ON l.id = i.content_id AND ${LESSON_VISIBLE}
+         JOIN content_items l ON l.id = i.content_id AND ${LESSON_NEW}
         WHERE i.content_id = $2 ORDER BY i.position`,
       [user.id, lessonId],
     );
@@ -331,9 +364,13 @@ function renderItems(items, answers) {
 //  - attemptId 없음 → 'pre_submit': 지문만. itemId 는 무시(단, 레슨에 없는 position 이면 400).
 //  - attemptId 있음 → 소유권(user)·레슨 일치 검증 후 'post_submit': 지문 + 문항(itemId 면 그 문항만) + 학습자의 답.
 export async function prepareQa(user, lessonId, { attemptId, itemId } = {}) {
+  // Q&A 는 resolvable 이다(플랜 11 §3 표). 오답 노트에서 "이 문항 왜 틀렸는지" 를 묻는 것이
+  // post_submit 모드의 본래 쓰임인데, 그 레슨이 내려갔다고 질문 자체가 404 가 되면
+  // 사용자는 자기 오답의 근거를 잃는다. 내린 레슨으로 새 시도가 열리는 것은 여기서 막히지 않지만
+  // 그 문은 submitAttempt(discoverable)가 따로 잠근다 — Q&A 는 읽기뿐이다.
   const { rows: [lesson] } = await pool.query(
     `SELECT l.id, d.passage FROM ${LESSON_SOURCE}
-      WHERE l.id = $2 AND ${LESSON_VISIBLE}`,
+      WHERE l.id = $2 AND ${LESSON_DONE}`,
     [user.id, lessonId],
   );
   if (!lesson) throw new HttpError(404, 'NOT_FOUND', '레슨을 찾을 수 없습니다.');
@@ -407,9 +444,13 @@ export async function saveQaSessionRef(user, lessonId, attemptId, provider, prov
   );
 }
 
+// 문항 신고 — discoverable. 신고는 "지금 유통 중인 콘텐츠를 고쳐 달라" 는 요청이고,
+// 이미 내려간 콘텐츠에는 관리자가 할 일이 없다(신고만으로 승격/강등되지도 않는다, 플랜 07).
+// 좁은 쪽을 골랐으므로 오답 노트에서 내린 레슨을 신고하면 404 다 — 넓혀야 할 근거가 생기면
+// 그때 resolvable 로 바꾸면 되고, 반대 방향(신고가 쌓였는데 아무도 못 보는 것)보다 되돌리기 쉽다.
 export async function reportLesson(user, lessonId, { reason, details }) {
   const { rowCount } = await pool.query(
-    `SELECT 1 FROM content_items l WHERE l.id = $2 AND ${LESSON_VISIBLE}`,
+    `SELECT 1 FROM content_items l WHERE l.id = $2 AND ${LESSON_NEW}`,
     [user.id, lessonId],
   );
   if (rowCount === 0) throw new HttpError(404, 'NOT_FOUND', '레슨을 찾을 수 없습니다.');
@@ -429,6 +470,10 @@ export async function reportLesson(user, lessonId, { reason, details }) {
 // 빠지므로 목록에서 자동으로 사라진다(극복). times_wrong 은 전체 attempt 누적이라 극복 후에도
 // "몇 번 틀렸던 문항인지"가 남는다.
 // 본인이 제출한 문항만 반환하므로 정답·해설 포함이 허용된다(플랜 07 '제출 후 공개' 규범).
+// 가시성은 resolvable 이다 — 이 절 전체가 "이미 푼 것의 근거" 다. 지금까지는 조건이 아예 없어
+// (content_items 를 제목·난도 때문에만 조인했다) 비공개 콘텐츠까지 새어 나올 수 있었고,
+// 반대로 여기에 discoverable 을 걸면 관리자가 레슨을 내리는 순간 그 레슨을 푼 사용자의
+// 오답이 목록에서 통째로 사라진다. 그 둘 사이를 정확히 가르는 것이 resolvable 이다.
 const MISTAKES_SQL = `
   WITH latest AS (
     SELECT DISTINCT ON (a.content_id) a.id, a.content_id AS lesson_id, a.answers, a.created_at
@@ -452,7 +497,7 @@ const MISTAKES_SQL = `
              AND a2.answers ? w.position::text
              AND a2.answers ->> w.position::text IS DISTINCT FROM w.answer) AS times_wrong
     FROM wrong w
-    JOIN content_items ls ON ls.id = w.lesson_id
+    JOIN content_items ls ON ls.id = w.lesson_id AND ${resolvable('ls', '$1')}
     JOIN lesson_details ld ON ld.content_id = ls.id`;
 
 const optionText = (options, id) => (options || []).find((o) => o.id === id)?.text ?? null;
@@ -504,11 +549,14 @@ export async function listMistakes(user, { skill, lessonId } = {}) {
        FROM (${MISTAKES_SQL}) w GROUP BY 1 ORDER BY 2 DESC`,
     [user.id],
   );
-  // 극복 = 과거에 틀렸으나 최신 attempt 에서는 오답이 아닌 문항
+  // 극복 = 과거에 틀렸으나 최신 attempt 에서는 오답이 아닌 문항.
+  // EXCEPT 의 양변이 같은 범위여야 한다 — 오른쪽(MISTAKES_SQL)만 resolvable 로 좁히면
+  // 범위 밖 레슨의 과거 오답이 왼쪽에만 남아 "극복" 으로 잘못 세어진다. 그래서 같은 조건을 건다.
   const { rows: [overcome] } = await pool.query(
     `SELECT count(*)::int AS n FROM (
        SELECT DISTINCT a.content_id AS lesson_id, i.position
          FROM user_lesson_attempts a
+         JOIN content_items ls ON ls.id = a.content_id AND ${resolvable('ls', '$1')}
          JOIN lesson_items i ON i.content_id = a.content_id
         WHERE a.user_id = $1 AND a.answers ? i.position::text
           AND a.answers ->> i.position::text IS DISTINCT FROM i.answer

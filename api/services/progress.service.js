@@ -11,6 +11,7 @@
 //  - monthly_scores: 점수 스냅샷 이력 테이블이 없다 → 항상 []
 //  - weeks_to_target: 스냅샷 없이는 기울기를 못 낸다 → 항상 null (mock의 "약 8주" 리터럴 대체)
 //  - skills의 Listening: LC 레슨(kind='toeic_lc') 정답률. 시도가 없으면 배열에서 제외 (JSX는 map이라 안전)
+import { resolvable } from '../lib/content-scope.js';
 import { pool } from '../lib/pool.js';
 import { listCorrections } from './conversation.service.js';
 
@@ -144,6 +145,11 @@ async function fetchConversationSkills(t, params) {
 
 // 레슨 기반 스킬 — kind 로 갈라 집계한다. Reading = Part 5/7, Listening = LC(플랜 08 §2.5).
 // 창(7일/직전 7일/전체) 규칙은 회화 스킬과 동일해 toSkill 이 그대로 처리한다.
+// 여기에는 가시성 조건을 걸지 않는다(플랜 11 §3 표의 경계). 이 값은 "사용자가 실제로 푼 문항의
+// 정답률" 이고 소스는 본인의 attempt 다 — 콘텐츠의 생명주기가 바뀌었다고 과거에 푼 실력이
+// 달라지지 않는다. 조건을 걸면 관리자가 콘텐츠를 비공개로 돌리는 순간 스킬 막대가 소급해 흔들린다.
+// 같은 이유로 활동 원장(ACT_LESSON)·일별 정확도·최근 세션도 무필터다. 예외는 예상 점수
+// (fetchScoreInputs) 하나 — 그쪽은 "시드 문항으로 재는 환산 점수" 라 콘텐츠 범위가 정의의 일부다.
 async function fetchLessonSkill(t, params, kinds) {
   if (!t.lesson) return null;
   const { rows: [r] } = await pool.query(
@@ -199,12 +205,18 @@ async function fetchScoreInputs(t, params) {
     out.conv = r?.d30 ?? r?.dall ?? null;
   }
   if (t.lesson) {
+    // source = 'seed' 는 유지한다. 예상 점수는 난도가 보정된 시드 문항으로만 재는 값이고
+    // (플랜 07 열린 질문 1 → 08-31 채택), AI 생성 문항 정답률이 섞이면 같은 실력에도 점수가 흔들린다.
+    // 여기에 resolvable 을 **더한다** — "이미 푼 것의 집계" 이므로 관리자가 내린(archived) 레슨의
+    // 점수는 남아야 하고(discoverable 이면 과거 점수가 통째로 증발한다), 대신 아직 공개되지 않은
+    // draft·review 나 남의 비공개 콘텐츠는 애초에 이 사용자의 점수 근거가 될 수 없다.
     const { rows: [r] } = await pool.query(
       `SELECT avg(pct) FILTER (WHERE created_at > now() - interval '30 days') AS d30,
               avg(pct)                                                        AS dall
          FROM (SELECT ua.created_at, ua.correct_count::numeric / ua.total_count * 100 AS pct
                  FROM user_lesson_attempts ua
                  JOIN content_items l ON l.id = ua.content_id AND l.source = 'seed'
+                                     AND ${resolvable('l', '$1')}
                 WHERE ua.user_id = $1) r`,
       [params[0]],
     );
