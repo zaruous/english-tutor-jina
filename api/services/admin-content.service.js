@@ -131,21 +131,56 @@ export async function getContent(actor, contentId) {
   }
 
   const { rows: audit } = await pool.query(
-    `SELECT a.id, a.action, a.from_status, a.to_status, a.note, a.created_at, u.email AS actor_email
+    `SELECT a.id, a.action, a.from_status, a.to_status, a.note, a.rev, a.created_at, u.email AS actor_email
        FROM content_audit_log a LEFT JOIN users u ON u.id = a.actor_id
       WHERE a.content_id = $1 ORDER BY a.created_at DESC, a.id DESC LIMIT 5`,
     [contentId],
   );
   content.recent_audit = audit;
+  content.current_rev = await latestRev(pool, contentId);
   return { content };
 }
 
-async function writeAudit(client, { contentId, actorId, action, fromStatus = null, toStatus = null, note = '' }) {
+async function writeAudit(client, { contentId, actorId, action, fromStatus = null, toStatus = null, note = '', rev = null }) {
   await client.query(
-    `INSERT INTO content_audit_log (content_id, actor_id, action, from_status, to_status, note)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [contentId, actorId, action, fromStatus, toStatus, note],
+    `INSERT INTO content_audit_log (content_id, actor_id, action, from_status, to_status, note, rev)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [contentId, actorId, action, fromStatus, toStatus, note, rev],
   );
+}
+
+// ── 리비전 (0019) — 저장 1번 = rev 1행, 현재 본문 = 최신 rev ────────────────
+// 스냅숏은 에디터 페이로드와 같은 모양이라 복원이 곧 "그 페이로드로 다시 저장"이다.
+
+async function latestRev(client, contentId) {
+  const { rows: [r] } = await client.query(
+    `SELECT COALESCE(max(rev), 0)::int AS rev FROM content_revisions WHERE content_id = $1`,
+    [contentId],
+  );
+  return r.rev;
+}
+
+// 호출 전 content_items 행이 FOR UPDATE 로 잠겨 있어야 rev 채번이 경합하지 않는다.
+async function writeRevision(client, { contentId, actorId, snapshot, statusAt, note }) {
+  const rev = (await latestRev(client, contentId)) + 1;
+  await client.query(
+    `INSERT INTO content_revisions (content_id, rev, snapshot, status_at, note, created_by)
+     VALUES ($1, $2, $3::jsonb, $4, $5, $6)`,
+    [contentId, rev, JSON.stringify(snapshot), statusAt, note, actorId],
+  );
+  return rev;
+}
+
+// 정규화 결과 → 스냅숏(에디터 PATCH 페이로드와 동일 모양). 복원 시 normalizeLessonPayload 를 그대로 통과한다.
+function lessonSnapshot(p) {
+  return {
+    kind: p.kind, title: p.title, subtitle: p.subtitle, difficulty: p.difficulty,
+    est_minutes: p.estMinutes, passage: p.passage, vocab: p.vocab, faq: p.faq,
+    items: p.items.map((i) => ({
+      stem: i.stem, options: i.options, answer: i.answer,
+      explanation: i.explanation, skill_code: i.skill_code ?? null,
+    })),
+  };
 }
 
 // 상태 전이 — from 은 클라이언트가 아니라 잠근 행에서 읽는다(경합 시 이중 전이 방지).
@@ -174,10 +209,14 @@ export async function transitionStatus(actor, contentId, { to, note = '' }) {
         RETURNING ${CONTENT_COLS.replaceAll('c.', '')}`,
       [contentId, to, actor.id],
     );
+    // 전이 시점의 본문 버전을 스탬프한다 — 승인 행의 rev 가 곧 "검수자가 승인한 그 내용"이다.
+    // 리비전이 없는 타입(시나리오·단어 세트)은 0 → null.
+    const revAt = await latestRev(client, contentId);
     await writeAudit(client, {
       contentId, actorId: actor.id, action: 'status_change',
       fromStatus: row.status, toStatus: to,
       note: [note, selfReview ? 'self_review=true' : null].filter(Boolean).join(' · '),
+      rev: revAt || null,
     });
     return { content: contentDto(updated) };
   });
@@ -276,7 +315,7 @@ async function replaceItems(client, contentId, items) {
 }
 
 // 생성 — 항상 draft + private + curated 로 태어난다(플랜 11 결정 1 기본값 함정: status 는 명시).
-// 공개는 상태 전이(→ published)와 공개 여닫기가 따로 담당한다.
+// 공개는 상태 전이(→ published)와 공개 여닫기가 따로 담당한다. rev 1 이 함께 생긴다.
 export async function createLesson(actor, payload) {
   const p = normalizeLessonPayload(payload);
   const slugBase = `curated-${p.kind.replace(/_/g, '-')}`;
@@ -296,40 +335,115 @@ export async function createLesson(actor, payload) {
        JSON.stringify(p.vocab), JSON.stringify(p.faq), pos.next],
     );
     await replaceItems(client, row.id, p.items);
-    await writeAudit(client, { contentId: row.id, actorId: actor.id, action: 'create', note: 'lesson 생성' });
+    const rev = await writeRevision(client, {
+      contentId: row.id, actorId: actor.id, snapshot: lessonSnapshot(p), statusAt: 'draft', note: '생성',
+    });
+    await writeAudit(client, { contentId: row.id, actorId: actor.id, action: 'create', note: 'lesson 생성', rev });
     return getContentInTx(client, row.id);
   });
 }
 
+// 저장(수정·복원)의 공통 경로 — 본문 교체 + 새 리비전 + 감사 로그.
+// 검수 중(review) 저장은 검수 요청을 자동 철회해 초안으로 되돌린다:
+// 검수자가 본 것과 다른 내용이 그대로 승인되는 구멍을 막는다(승인 무결성).
+async function applyLessonSave(client, actor, row, p, { action, note }) {
+  await client.query(
+    `UPDATE content_items
+        SET title = $2, difficulty = $3,
+            source = CASE WHEN source = 'seed' THEN 'curated' ELSE source END,
+            updated_by = $4, updated_at = now()
+      WHERE id = $1`,
+    [row.id, p.title, p.difficulty, actor.id],
+  );
+  await client.query(
+    `UPDATE lesson_details
+        SET kind = $2, subtitle = $3, est_minutes = $4,
+            passage = $5::jsonb, vocab = $6::jsonb, faq = $7::jsonb
+      WHERE content_id = $1`,
+    [row.id, p.kind, p.subtitle, p.estMinutes,
+     JSON.stringify(p.passage), JSON.stringify(p.vocab), JSON.stringify(p.faq)],
+  );
+  await replaceItems(client, row.id, p.items);
+  const rev = await writeRevision(client, {
+    contentId: row.id, actorId: actor.id, snapshot: lessonSnapshot(p), statusAt: row.status, note,
+  });
+  await writeAudit(client, { contentId: row.id, actorId: actor.id, action, note, rev });
+  if (row.status === 'review') {
+    await client.query(
+      `UPDATE content_items SET status = 'draft', updated_at = now() WHERE id = $1`, [row.id]);
+    await writeAudit(client, {
+      contentId: row.id, actorId: actor.id, action: 'status_change',
+      fromStatus: 'review', toStatus: 'draft', note: '수정으로 검수 요청 자동 철회', rev,
+    });
+  }
+  return rev;
+}
+
+async function lockLessonRow(client, contentId) {
+  const { rows: [row] } = await client.query(
+    `SELECT id, type, status, source FROM content_items WHERE id = $1 FOR UPDATE`,
+    [contentId],
+  );
+  if (!row || row.type !== 'lesson') throw new HttpError(404, 'NOT_FOUND', '레슨을 찾을 수 없습니다.');
+  return row;
+}
+
 // 수정 — 시드 편집은 curated 로 표시해 재시드가 덮어쓰지 않게 한다(플랜 13 결정 5).
-// 상태·가시성은 여기서 건드리지 않는다 — 그것은 전이 API 의 일이다.
+// 상태·가시성은 여기서 건드리지 않는다(검수 자동 철회 한 가지 예외) — 전이는 전이 API 의 일이다.
 export async function updateLesson(actor, contentId, payload) {
   const p = normalizeLessonPayload(payload);
   return withTx(async (client) => {
-    const { rows: [row] } = await client.query(
-      `SELECT id, type, source FROM content_items WHERE id = $1 FOR UPDATE`,
-      [contentId],
-    );
-    if (!row || row.type !== 'lesson') throw new HttpError(404, 'NOT_FOUND', '레슨을 찾을 수 없습니다.');
-    await client.query(
-      `UPDATE content_items
-          SET title = $2, difficulty = $3,
-              source = CASE WHEN source = 'seed' THEN 'curated' ELSE source END,
-              updated_by = $4, updated_at = now()
-        WHERE id = $1`,
-      [contentId, p.title, p.difficulty, actor.id],
-    );
-    await client.query(
-      `UPDATE lesson_details
-          SET kind = $2, subtitle = $3, est_minutes = $4,
-              passage = $5::jsonb, vocab = $6::jsonb, faq = $7::jsonb
-        WHERE content_id = $1`,
-      [contentId, p.kind, p.subtitle, p.estMinutes,
-       JSON.stringify(p.passage), JSON.stringify(p.vocab), JSON.stringify(p.faq)],
-    );
-    await replaceItems(client, contentId, p.items);
-    await writeAudit(client, { contentId, actorId: actor.id, action: 'update', note: 'lesson 수정' });
+    const row = await lockLessonRow(client, contentId);
+    await applyLessonSave(client, actor, row, p, { action: 'update', note: '수정' });
     return getContentInTx(client, contentId);
+  });
+}
+
+// ── 리비전 조회 · 복원 ──────────────────────────────────────────────────────
+
+export async function listRevisions(actor, contentId) {
+  const { rows: [c] } = await pool.query(
+    `SELECT id FROM content_items WHERE id = $1`, [contentId]);
+  if (!c) throw new HttpError(404, 'NOT_FOUND', '콘텐츠를 찾을 수 없습니다.');
+  const { rows } = await pool.query(
+    `SELECT r.rev, r.status_at, r.note, r.created_at, u.email AS created_by_email,
+            r.snapshot ->> 'title' AS title,
+            jsonb_array_length(r.snapshot -> 'items') AS question_count
+       FROM content_revisions r LEFT JOIN users u ON u.id = r.created_by
+      WHERE r.content_id = $1 ORDER BY r.rev DESC`,
+    [contentId],
+  );
+  return { revisions: rows, current_rev: rows[0]?.rev ?? 0 };
+}
+
+export async function getRevision(actor, contentId, rev) {
+  const { rows: [row] } = await pool.query(
+    `SELECT r.rev, r.snapshot, r.status_at, r.note, r.created_at, u.email AS created_by_email
+       FROM content_revisions r LEFT JOIN users u ON u.id = r.created_by
+      WHERE r.content_id = $1 AND r.rev = $2`,
+    [contentId, rev],
+  );
+  if (!row) throw new HttpError(404, 'NOT_FOUND', '리비전을 찾을 수 없습니다.');
+  return { revision: row };
+}
+
+// 복원 = 과거 rev 의 스냅숏을 새 rev 로 다시 저장한다 — 이력을 지우거나 되감지 않는다.
+// 스냅숏도 저장 시와 같은 검증을 다시 통과해야 한다(규칙이 그새 엄격해졌으면 422 로 알려준다).
+export async function restoreRevision(actor, contentId, rev) {
+  return withTx(async (client) => {
+    const row = await lockLessonRow(client, contentId);
+    const { rows: [r] } = await client.query(
+      `SELECT snapshot FROM content_revisions WHERE content_id = $1 AND rev = $2`,
+      [contentId, rev],
+    );
+    if (!r) throw new HttpError(404, 'NOT_FOUND', '리비전을 찾을 수 없습니다.');
+    const p = normalizeLessonPayload(r.snapshot);
+    const newRev = await applyLessonSave(client, actor, row, p, {
+      action: 'restore', note: `복원 ← rev ${rev}`,
+    });
+    const result = await getContentInTx(client, contentId);
+    result.restored = { from_rev: rev, to_rev: newRev };
+    return result;
   });
 }
 
@@ -355,5 +469,6 @@ async function getContentInTx(client, contentId) {
   content.detail = d ?? null;
   content.items = items;
   content.question_count = items.length;
+  content.current_rev = await latestRev(client, contentId);
   return { content };
 }

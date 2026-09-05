@@ -223,13 +223,90 @@ function inputStyle(theme) {
   };
 }
 
+// 리비전 이력 패널 — 목록 + 복원. 복원은 새 rev 를 만들므로(서버 규칙) 목록이 늘어난다.
+function RevisionPanel({ theme, contentId, currentRev, onRestored, showToast }) {
+  const [state, setState] = React.useState({ loading: true, revisions: [] });
+  const [busy, setBusy] = React.useState(null);
+
+  const load = React.useCallback(async () => {
+    setState((p) => ({ ...p, loading: true }));
+    const res = await window.JINA_API.get(`/api/admin/contents/${contentId}/revisions`);
+    setState({ loading: false, revisions: res.ok ? res.revisions : [] });
+  }, [contentId]);
+  React.useEffect(() => { load(); }, [load]);
+
+  const restore = async (rev) => {
+    if (!window.confirm(`rev ${rev} 의 내용으로 되돌리시겠습니까?\n(현재 내용도 이력에 남아 있으므로 다시 복원할 수 있습니다)`)) return;
+    setBusy(rev);
+    const res = await window.JINA_API.post(`/api/admin/contents/${contentId}/revisions/${rev}/restore`, {});
+    setBusy(null);
+    if (res.ok) {
+      showToast(`rev ${rev} 를 rev ${res.restored.to_rev} 로 복원했습니다`);
+      onRestored(res.content);
+      load();
+    } else {
+      showToast(res.error || '복원 실패', true);
+    }
+  };
+
+  return (
+    <div data-testid="revision-panel" style={{
+      padding: 14, borderRadius: 14, border: `1px dashed ${theme.borderStrong}`,
+      background: theme.card, marginBottom: 14,
+    }}>
+      <div style={{
+        fontSize: 11, fontWeight: 800, letterSpacing: '0.06em', color: theme.textDim,
+        textTransform: 'uppercase', marginBottom: 10,
+      }}>수정 이력 — 저장 1번 = 리비전 1개, 복원도 새 리비전으로 쌓입니다</div>
+      {state.loading ? (
+        <div style={{ fontSize: 12.5, color: theme.textDim }}>불러오는 중…</div>
+      ) : state.revisions.length === 0 ? (
+        <div style={{ fontSize: 12.5, color: theme.textDim }}>이력이 없습니다</div>
+      ) : (
+        state.revisions.map((r) => (
+          <div key={r.rev} data-testid="revision-row" style={{
+            display: 'flex', alignItems: 'center', gap: 12, padding: '7px 4px',
+            borderTop: `1px solid ${theme.border}`, fontSize: 12.5,
+          }}>
+            <span style={{
+              fontWeight: 800, color: r.rev === currentRev ? theme.accent : theme.textMuted,
+              fontFamily: 'ui-monospace, Consolas, monospace', width: 52, flexShrink: 0,
+            }}>rev {r.rev}</span>
+            <span style={{ color: theme.textDim, width: 128, flexShrink: 0, fontFamily: 'ui-monospace, Consolas, monospace' }}>
+              {String(r.created_at).slice(0, 16).replace('T', ' ')}
+            </span>
+            <span style={{
+              flex: 1, minWidth: 0, color: theme.textMuted,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }} title={r.title}>
+              {r.note} · {r.title} · 문항 {r.question_count}
+              {r.created_by_email ? ` · ${r.created_by_email}` : ''}
+            </span>
+            {r.rev === currentRev ? (
+              <span style={{ fontSize: 11, fontWeight: 700, color: theme.success }}>현재</span>
+            ) : (
+              <button data-testid={`revision-restore-${r.rev}`} disabled={busy !== null}
+                onClick={() => restore(r.rev)}
+                style={{
+                  padding: '5px 11px', borderRadius: 8, cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
+                  border: `1px solid ${theme.borderStrong}`, background: 'transparent', color: theme.textMuted,
+                }}>{busy === r.rev ? '복원 중…' : '이 버전으로 복원'}</button>
+            )}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
 function LessonEditor({ theme, me, contentId, onDone, onCancel, showToast }) {
   const isNew = contentId == null;
   const [form, setForm] = React.useState(() => emptyForm());
-  const [meta, setMeta] = React.useState(null);          // 기존 콘텐츠의 status/slug 표시용
+  const [meta, setMeta] = React.useState(null);          // 기존 콘텐츠의 status/slug/rev 표시용
   const [loading, setLoading] = React.useState(!isNew);
   const [saving, setSaving] = React.useState(false);
   const [errors, setErrors] = React.useState([]);        // 서버 validation_errors 그대로
+  const [historyOpen, setHistoryOpen] = React.useState(false);
 
   React.useEffect(() => {
     if (isNew) return;
@@ -291,8 +368,15 @@ function LessonEditor({ theme, me, contentId, onDone, onCancel, showToast }) {
         {meta && <StatusBadge theme={theme} status={meta.status} />}
         {meta && (
           <span style={{ fontSize: 11.5, color: theme.textDim, fontFamily: 'ui-monospace, Consolas, monospace' }}>
-            {meta.slug}
+            {meta.slug}{meta.current_rev ? ` · rev ${meta.current_rev}` : ''}
           </span>
+        )}
+        {!isNew && (
+          <button data-testid="lesson-history" onClick={() => setHistoryOpen((v) => !v)} style={{
+            padding: '7px 13px', borderRadius: 9, border: `1px solid ${historyOpen ? theme.accent : theme.borderStrong}`,
+            background: historyOpen ? theme.accent + '17' : 'transparent',
+            color: historyOpen ? theme.accent : theme.textMuted, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+          }}>이력</button>
         )}
         <button data-testid="lesson-save" disabled={saving} onClick={save} style={{
           marginLeft: 'auto', padding: '9px 20px', borderRadius: 10, border: 'none', cursor: saving ? 'wait' : 'pointer',
@@ -304,6 +388,21 @@ function LessonEditor({ theme, me, contentId, onDone, onCancel, showToast }) {
           새 레슨은 항상 <b style={{ color: theme.textMuted }}>초안(비공개)</b>으로 저장됩니다 —
           발행·공개는 목록의 [▾] 메뉴에서 따로 합니다.
         </div>
+      )}
+      {meta?.status === 'review' && (
+        <div style={{
+          marginBottom: 14, padding: '9px 14px', borderRadius: 10, fontSize: 12, fontWeight: 600,
+          background: theme.warning + '18', border: `1px solid ${theme.warning}44`, color: theme.warning,
+        }}>
+          검수 대기 중인 콘텐츠입니다 — 저장하면 검수 요청이 자동 철회되고 초안으로 돌아갑니다.
+        </div>
+      )}
+      {historyOpen && !isNew && (
+        <RevisionPanel
+          theme={theme} contentId={contentId} currentRev={meta?.current_rev}
+          showToast={showToast}
+          onRestored={(content) => { setForm(formFromContent(content)); setMeta(content); setErrors([]); }}
+        />
       )}
 
       {/* 서버 검증 오류 — 목업의 하단 빨간 띠. 이 화면은 렌더만 한다. */}

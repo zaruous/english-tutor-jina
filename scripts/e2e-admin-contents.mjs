@@ -129,13 +129,41 @@ await page.click('[data-testid="lesson-save"]');
 await page.waitForSelector(`[data-testid="content-row"]:has-text("${TITLE} (수정)")`, { timeout: 10000 });
 check('수정 저장 → 목록 제목 갱신', true);
 
-// 7) 감사 로그 누적
+// 7) 리비전 이력 — 에디터의 이력 패널에서 rev 1(생성 시점)로 복원하면 제목이 돌아온다
+await newRow.locator('[data-testid="content-kebab"]').click();
+await page.click('[data-testid="content-kebab-menu"] button:has-text("수정")');
+await page.waitForSelector('[data-testid="lesson-history"]');
+await page.click('[data-testid="lesson-history"]');
+await page.waitForSelector('[data-testid="revision-row"]', { timeout: 10000 });
+const revRows = await page.locator('[data-testid="revision-row"]').count();
+check('이력 패널 — 생성·수정 리비전 표시', revRows >= 2, `${revRows}개`);
+page.once('dialog', (d) => d.accept());
+await page.click('[data-testid="revision-restore-1"]');
+await page.waitForFunction(
+  (t) => document.querySelector('[data-testid="lesson-title"]')?.value === t,
+  TITLE, { timeout: 10000 },
+);
+check('rev 1 복원 → 에디터 제목 원복', true);
+// 복원 직후 패널이 재조회 중일 수 있다 — 행 수가 늘어날 때까지 기다린다
+await page.waitForFunction(
+  (n) => document.querySelectorAll('[data-testid="revision-row"]').length === n,
+  revRows + 1, { timeout: 10000 },
+);
+check('복원이 새 리비전으로 쌓인다 (되감기 없음)', true, `${revRows + 1}개`);
+await page.click('button:has-text("← 목록")');
+await page.waitForSelector(`[data-testid="content-row"]:has-text("${TITLE}")`, { timeout: 10000 });
+
+// 8) 감사 로그 누적 — 승인 행에 rev 스탬프 포함
 const list = await api(admin.cookie, 'GET', `/api/admin/contents?q=${encodeURIComponent(TITLE)}`);
 const created = list.body.contents?.[0];
 const detail = await api(admin.cookie, 'GET', `/api/admin/contents/${created.id}`);
-const actions = detail.body.content.recent_audit.map((a) => a.action);
-check('감사 로그 누적 (status/visibility/update)',
-  actions.includes('status_change') && actions.includes('update'), actions.join(','));
+const auditRows = detail.body.content.recent_audit;
+const actions = auditRows.map((a) => a.action);
+check('감사 로그 누적 (status/restore)',
+  actions.includes('status_change') && actions.includes('restore'), actions.join(','));
+const full = await api(admin.cookie, 'GET', `/api/admin/contents/${created.id}/revisions`);
+check('리비전 API — current_rev 일치',
+  full.body.current_rev === detail.body.content.current_rev, `rev ${full.body.current_rev}`);
 
 await browser.close();
 const fail = results.filter((r) => !r.ok).length;

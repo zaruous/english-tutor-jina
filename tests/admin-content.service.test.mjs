@@ -294,6 +294,92 @@ test('수정 — 시드 레슨 편집이 curated 로 표시되고 재시드가 �
     '재시드가 curated 편집본을 덮어썼다');
 });
 
+test('리비전 — 저장마다 rev 가 쌓이고 복원은 새 rev 로 과거 내용을 되살린다', async () => {
+  await setupDb();
+  const svc = await import('../api/services/admin-content.service.js');
+  const author = await userWithRole('author');
+
+  // 생성 = rev 1
+  const { content } = await svc.createLesson(author, lessonPayload({ title: '리비전 v1' }));
+  assert.equal(content.current_rev, 1);
+
+  // 수정 = rev 2
+  const { content: loaded } = await svc.getContent(author, content.id);
+  const payload2 = {
+    kind: loaded.detail.kind, title: '리비전 v2', subtitle: loaded.detail.subtitle,
+    difficulty: loaded.difficulty, est_minutes: loaded.detail.est_minutes,
+    passage: loaded.detail.passage, vocab: loaded.detail.vocab, faq: loaded.detail.faq,
+    items: loaded.items.map((i) => ({
+      stem: i.stem, options: i.options, answer: i.answer, explanation: i.explanation, skill_code: i.skill_code,
+    })),
+  };
+  const { content: v2 } = await svc.updateLesson(author, content.id, payload2);
+  assert.equal(v2.current_rev, 2);
+  assert.equal(v2.title, '리비전 v2');
+
+  // 이력 목록 — 최신순, 스냅숏 요약 포함
+  const { revisions, current_rev } = await svc.listRevisions(author, content.id);
+  assert.equal(current_rev, 2);
+  assert.deepEqual(revisions.map((r) => [r.rev, r.title]), [[2, '리비전 v2'], [1, '리비전 v1']]);
+
+  // 복원 = rev 3, 내용은 rev 1 과 같다 — 이력은 되감기지 않는다
+  const { content: restored, restored: info } = await svc.restoreRevision(author, content.id, 1);
+  assert.deepEqual(info, { from_rev: 1, to_rev: 3 });
+  assert.equal(restored.title, '리비전 v1');
+  assert.equal(restored.current_rev, 3);
+  const { revision: r1 } = await svc.getRevision(author, content.id, 1);
+  assert.equal(r1.snapshot.title, '리비전 v1');
+
+  const { rows: [audit] } = await pool.query(
+    `SELECT action, rev FROM content_audit_log
+      WHERE content_id = $1 AND action = 'restore'`, [content.id]);
+  assert.deepEqual(audit, { action: 'restore', rev: 3 });
+});
+
+test('승인 감사에 rev 스탬프 — 승인 행이 검수자가 본 버전을 가리킨다', async () => {
+  await setupDb();
+  const svc = await import('../api/services/admin-content.service.js');
+  const reviewer = await userWithRole('reviewer');
+
+  const { content } = await svc.createLesson(reviewer, lessonPayload({ title: '승인 rev 스탬프' }));
+  await svc.transitionStatus(reviewer, content.id, { to: 'review' });
+  await svc.transitionStatus(reviewer, content.id, { to: 'published' });
+
+  const { rows: [approved] } = await pool.query(
+    `SELECT rev FROM content_audit_log
+      WHERE content_id = $1 AND action = 'status_change' AND to_status = 'published'`,
+    [content.id]);
+  assert.equal(approved.rev, 1, '승인 감사 행에 당시 rev 가 없다');
+});
+
+test('검수 중 수정 — 검수 요청이 자동 철회되고 초안으로 돌아간다 (승인 무결성)', async () => {
+  await setupDb();
+  const svc = await import('../api/services/admin-content.service.js');
+  const author = await userWithRole('author');
+
+  const { content } = await svc.createLesson(author, lessonPayload({ title: '검수 중 수정' }));
+  await svc.transitionStatus(author, content.id, { to: 'review' });
+
+  const { content: loaded } = await svc.getContent(author, content.id);
+  const payload = {
+    kind: loaded.detail.kind, title: '검수 중 수정 v2', subtitle: loaded.detail.subtitle,
+    difficulty: loaded.difficulty, est_minutes: loaded.detail.est_minutes,
+    passage: loaded.detail.passage, vocab: loaded.detail.vocab, faq: loaded.detail.faq,
+    items: loaded.items.map((i) => ({
+      stem: i.stem, options: i.options, answer: i.answer, explanation: i.explanation, skill_code: i.skill_code,
+    })),
+  };
+  const { content: after } = await svc.updateLesson(author, content.id, payload);
+  assert.equal(after.status, 'draft', '검수 중 수정이 review 상태로 남아 있다');
+
+  const { rows: [auto] } = await pool.query(
+    `SELECT from_status, to_status, note FROM content_audit_log
+      WHERE content_id = $1 AND action = 'status_change' AND to_status = 'draft'`,
+    [content.id]);
+  assert.equal(auto.from_status, 'review');
+  assert.match(auto.note, /자동 철회/);
+});
+
 test('목록 — type/status 필터와 상태 칩 카운트', async () => {
   await setupDb();
   const svc = await import('../api/services/admin-content.service.js');

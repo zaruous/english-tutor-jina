@@ -84,6 +84,27 @@ export function registerAdminRoutes(router) {
     sendJson(res, 200, { ok: true, ...(await adminContents.getContent(user, contentId)) });
   });
 
+  // 리비전 이력 (0019) — 목록·스냅숏·복원. 복원은 새 rev 를 만든다(이력 되감기 없음).
+  router.get('/api/admin/contents/:id/revisions', async (req, res, { params }) => {
+    const { user } = await requireRole('author')(req, res);
+    const contentId = posInt(params.id, 'id');
+    sendJson(res, 200, { ok: true, ...(await adminContents.listRevisions(user, contentId)) });
+  });
+
+  router.get('/api/admin/contents/:id/revisions/:rev', async (req, res, { params }) => {
+    const { user } = await requireRole('author')(req, res);
+    const contentId = posInt(params.id, 'id');
+    const rev = posInt(params.rev, 'rev');
+    sendJson(res, 200, { ok: true, ...(await adminContents.getRevision(user, contentId, rev)) });
+  });
+
+  router.post('/api/admin/contents/:id/revisions/:rev/restore', async (req, res, { params }) => {
+    const { user } = await requireRole('author')(req, res);
+    const contentId = posInt(params.id, 'id');
+    const rev = posInt(params.rev, 'rev');
+    sendJson(res, 200, { ok: true, ...(await adminContents.restoreRevision(user, contentId, rev)) });
+  });
+
   router.post('/api/admin/contents/:id/status', async (req, res, { params }) => {
     const { user } = await requireRole('author')(req, res);
     const body = await readJson(req);

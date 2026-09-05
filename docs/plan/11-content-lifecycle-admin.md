@@ -12,7 +12,7 @@ created: 2026-09-03
 updated: 2026-09-04
 depends_on: ["07", "08", "10.5", "10.7"]   # 콘텐츠 스키마(content_items·status)=10.7 Phase 2 · 권한 경계=10.5 Phase 1
 blocks: ["12", "13"]
-migrations: ["0017_user_roles.sql (Phase 3 산출 — 10.7 baseline 에 role 체계가 없어 이 플랜이 얹었다)", "0018_content_public_ck.sql (Phase 1 선결 — CHECK 를 확정안(후보 A)으로 교체, topics 포함)"]
+migrations: ["0017_user_roles.sql (Phase 3 산출 — 10.7 baseline 에 role 체계가 없어 이 플랜이 얹었다)", "0018_content_public_ck.sql (Phase 1 선결 — CHECK 를 확정안(후보 A)으로 교체, topics 포함)", "0019_content_revisions.sql (열린 질문 3 해소 — 본문 이력 + 감사 로그 rev 스탬프)"]
 phases:
   - { id: "1", name: "상태 축 + 가시성 헬퍼 2종 + 전이 단일 소스 + 역할 미들웨어 + 표시부 정리 (UI 없음)", status: in_progress, note: "2026-09-05 — 0018 CHECK 교체 · content-scope.js(discoverable/resolvable) · content-status.js(canTransition, 409/403 구분) 완료. 기존 서비스 상수(LESSON_VISIBLE·topic VISIBLE·speaking 3곳·ai-job assertTopicAccess)를 discoverable 헬퍼 경유로 정리. tests/admin-content.service.test.mjs 8건이 픽스처·전이 매트릭스·archived 오답 노트 잔존을 단정. 남은 것: §3 의 resolvable 라우팅(오답 노트 조인·통계·Q&A·attempt 상세 — 현재 오답·통계는 status 무필터라 사실상 resolvable 로 동작, 명시 전환 필요) · topicDto.eligible 격하 · verify-content-status.mjs 독립 스크립트" }
   - { id: "2", name: "admin.html 최소 관리 UI — 목록 · 상태 전이", status: done, done_at: 2026-09-05, note: "admin-app.jsx(셸·탭) + contents.jsx(목록·전이·에디터 — content-store 는 users.jsx 선례대로 화면 내 상태로 대체) + GET/POST /api/admin/contents(:id/status·:id/visibility, canTransition + content_audit_log 트랜잭션). scripts/e2e-admin-contents.mjs 15/15 — 내리기가 공개범위를 유지하고 학습 목록에서 즉시 빠지는 것 실측" }
@@ -396,7 +396,13 @@ PATCH  /api/admin/users/:id/role                 { to }             admin
 1. ~~AI 검수 승인 시 `visibility`~~ → 12 로 이동.
 2. ~~`archived` 콘텐츠와 학습 이력~~ → **결정 2 로 확정**(이력에는 남고 새 시도만 막는다). 남은 세부: archived 레슨의
    오답 카드에서 "다시 풀기" 버튼을 숨길지, 눌렀을 때 안내를 띄울지.
-3. **본문 리비전** — 공개된 콘텐츠를 수정했을 때 되돌릴 수단. v1은 감사 로그(상태 전이)만 남기고 본문 스냅샷은 두지 않는다.
+3. ~~**본문 리비전**~~ → **`content_revisions` 로 해소** (`0019_content_revisions.sql`, 2026-09-05).
+   저장 1번 = rev 1행(스냅숏은 에디터 페이로드 그대로), 복원 = 과거 rev 를 새 rev 로 재저장(append-only, 되감기 없음).
+   승인관리 결합 2건: ① `content_audit_log.rev` — 전이 행에 당시 본문 버전을 스탬프해 "승인된 그 내용"이
+   어느 rev 인지 남는다. ② **검수 중(review) 수정은 검수 요청을 자동 철회**해 draft 로 되돌린다(감사 로그
+   status_change + '자동 철회' note) — 검수자가 본 것과 다른 내용이 승인되는 구멍을 막는다.
+   API: `GET /:id/revisions` · `GET /:id/revisions/:rev` · `POST /:id/revisions/:rev/restore`(author+).
+   화면: 에디터 [이력] 패널. 리비전은 레슨(에디터가 있는 타입)만 — 시나리오·단어 세트는 에디터가 생길 때(13) 함께.
 4. **빌드 단계** — `admin.html` 로 HTML 진입점이 셋이 된다. 이 시점에 번들러를 들이지 않으면 13 의 에디터까지 Babel
    런타임 컴파일 위에 쌓인다. 결정 4 의 비용 항목.
 5. ~~`lessons.published` 처리~~ → **10.7 에서 해소**. baseline 에 `published` 컬럼이 없다(축은 `status` 하나).
