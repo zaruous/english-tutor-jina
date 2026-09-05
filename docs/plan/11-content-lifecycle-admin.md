@@ -12,12 +12,12 @@ created: 2026-09-03
 updated: 2026-09-04
 depends_on: ["07", "08", "10.5", "10.7"]   # 콘텐츠 스키마(content_items·status)=10.7 Phase 2 · 권한 경계=10.5 Phase 1
 blocks: ["12", "13"]
-migrations: ["0017_user_roles.sql (Phase 3 산출 — 10.7 baseline 에 role 체계가 없어 이 플랜이 얹었다)"]
+migrations: ["0017_user_roles.sql (Phase 3 산출 — 10.7 baseline 에 role 체계가 없어 이 플랜이 얹었다)", "0018_content_public_ck.sql (Phase 1 선결 — CHECK 를 확정안(후보 A)으로 교체, topics 포함)"]
 phases:
-  - { id: "1", name: "상태 축 + 가시성 헬퍼 2종 + 전이 단일 소스 + 역할 미들웨어 + 표시부 정리 (UI 없음)", status: todo, note: "역할 미들웨어(requireRole)와 /api/auth/me DTO 는 Phase 3 이 먼저 넣었다. 남은 것은 content-scope.js · content-status.js · 표시부 47곳 · topicDto.eligible 격하 · verify-content-status.mjs" }
-  - { id: "2", name: "admin.html 최소 관리 UI — 목록 · 상태 전이", status: todo, note: "admin.html 뼈대 · server.js 정적 서빙 · 설정 패널 진입 링크는 Phase 3 과 함께 들어왔다. 남은 것은 admin-app.jsx · content-store.jsx · 콘텐츠 목록/전이 API · content_audit_log 기록" }
+  - { id: "1", name: "상태 축 + 가시성 헬퍼 2종 + 전이 단일 소스 + 역할 미들웨어 + 표시부 정리 (UI 없음)", status: in_progress, note: "2026-09-05 — 0018 CHECK 교체 · content-scope.js(discoverable/resolvable) · content-status.js(canTransition, 409/403 구분) 완료. 기존 서비스 상수(LESSON_VISIBLE·topic VISIBLE·speaking 3곳·ai-job assertTopicAccess)를 discoverable 헬퍼 경유로 정리. tests/admin-content.service.test.mjs 8건이 픽스처·전이 매트릭스·archived 오답 노트 잔존을 단정. 남은 것: §3 의 resolvable 라우팅(오답 노트 조인·통계·Q&A·attempt 상세 — 현재 오답·통계는 status 무필터라 사실상 resolvable 로 동작, 명시 전환 필요) · topicDto.eligible 격하 · verify-content-status.mjs 독립 스크립트" }
+  - { id: "2", name: "admin.html 최소 관리 UI — 목록 · 상태 전이", status: done, done_at: 2026-09-05, note: "admin-app.jsx(셸·탭) + contents.jsx(목록·전이·에디터 — content-store 는 users.jsx 선례대로 화면 내 상태로 대체) + GET/POST /api/admin/contents(:id/status·:id/visibility, canTransition + content_audit_log 트랜잭션). scripts/e2e-admin-contents.mjs 15/15 — 내리기가 공개범위를 유지하고 학습 목록에서 즉시 빠지는 것 실측" }
   - { id: "3", name: "사용자 · 역할 관리 — 목록 · 역할 부여 · 세션 종료", status: done, done_at: 2026-09-04, note: "PR #7(b51eb9a). 산출물 5종 전부 + e2e-admin-users 17/17 + tests/admin-user.service.test.mjs 3건(CI). 0017_user_roles.sql 로 roles · users.role/is_active · user_audit_log 를 얹었다" }
-verify: ["scripts/verify-content-status.mjs (신규)", "scripts/e2e-admin-users.mjs", "tests/admin-user.service.test.mjs", "scripts/e2e-lesson.mjs", "scripts/e2e-dashboard.mjs", "scripts/e2e-plan08-screens.mjs", "scripts/e2e-topics.mjs"]
+verify: ["tests/admin-content.service.test.mjs (신규 — Phase 1 검증 3묶음의 단위 테스트판)", "scripts/e2e-admin-contents.mjs (신규 — Phase 2 + 13 Phase A 브라우저 실측)", "scripts/verify-content-status.mjs (미작성)", "scripts/e2e-admin-users.mjs", "tests/admin-user.service.test.mjs", "scripts/e2e-lesson.mjs", "scripts/e2e-dashboard.mjs", "scripts/e2e-plan08-screens.mjs", "scripts/e2e-topics.mjs"]
 follow_ups:
   - "AI 초안 검수 → 공개: 플랜 12"
   - "저작 에디터 · 토픽 구성 · 스피킹 세트: 플랜 13"

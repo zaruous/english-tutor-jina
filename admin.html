@@ -22,6 +22,10 @@
   <script type="text/babel" src="src/shared/icons.jsx"></script>
   <script type="text/babel" src="src/shared/api-client.jsx"></script>
   <script type="text/babel" src="src/shared/auth-store.jsx"></script>
+  <!-- users.jsx 가 공용 헬퍼(readThemeName·useDismissMenu·fmtDate)를 정의하므로 먼저 로드한다.
+       마운트는 admin-app.jsx 가 한다 — 반드시 마지막. -->
   <script type="text/babel" src="src/admin/users.jsx"></script>
+  <script type="text/babel" src="src/admin/contents.jsx"></script>
+  <script type="text/babel" src="src/admin/admin-app.jsx"></script>
 </body>
 </html>

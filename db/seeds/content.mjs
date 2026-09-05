@@ -13,6 +13,8 @@ const DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'content');
 const read = (f) => JSON.parse(readFileSync(join(DIR, f), 'utf8'));
 
 // 시드 콘텐츠는 전부 공개 상태다 — status/visibility 축의 기본값(draft/private)이 아니라 명시한다.
+// 관리자가 편집한 행(source='curated')은 덮어쓰지 않는다(플랜 13 결정 5) — DO UPDATE 의 WHERE 가
+// 걸리면 RETURNING 이 비므로 null 을 돌려주고, 호출자가 detail/문항 upsert 까지 건너뛴다.
 async function upsertItem(client, { type, slug, title, description = '', difficulty = 3, source = 'seed', visibility = 'public' }) {
   const { rows: [row] } = await client.query(
     `INSERT INTO content_items (type, slug, title, description, difficulty, status, visibility, source)
@@ -20,10 +22,11 @@ async function upsertItem(client, { type, slug, title, description = '', difficu
      ON CONFLICT (slug) DO UPDATE SET
        title = EXCLUDED.title, description = EXCLUDED.description, difficulty = EXCLUDED.difficulty,
        status = 'published', visibility = EXCLUDED.visibility, source = EXCLUDED.source, updated_at = now()
+     WHERE content_items.source <> 'curated'
      RETURNING id`,
     [type, slug, title, description, difficulty, visibility, source],
   );
-  return row.id;
+  return row?.id ?? null;
 }
 
 async function seedLessons(client) {
@@ -33,6 +36,7 @@ async function seedLessons(client) {
       type: 'lesson', slug: l.slug, title: l.title, difficulty: l.difficulty,
       source: l.source, visibility: l.visibility,
     });
+    if (!id) continue; // curated — 관리자 편집본 보존
     await client.query(
       `INSERT INTO lesson_details (content_id, kind, subtitle, est_minutes, passage, vocab, faq, position)
        VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8)
@@ -66,6 +70,7 @@ async function seedScenarios(client) {
       type: 'scenario', slug: s.slug, title: s.title, description: s.description,
       source: s.source, visibility: s.visibility,
     });
+    if (!id) continue; // curated — 관리자 편집본 보존
     await client.query(
       `INSERT INTO scenario_details (content_id, tag, level, system_prompt, opening_message, objectives)
        VALUES ($1, $2, $3, $4, $5, $6::jsonb)
@@ -85,6 +90,7 @@ async function seedVocabSets(client) {
       type: 'vocab_set', slug: v.slug, title: v.title, description: v.description,
       source: v.source, visibility: v.visibility,
     });
+    if (!id) continue; // curated — 관리자 편집본 보존
     await client.query(
       `INSERT INTO vocab_set_details (content_id, words) VALUES ($1, $2::jsonb)
        ON CONFLICT (content_id) DO UPDATE SET words = EXCLUDED.words`,

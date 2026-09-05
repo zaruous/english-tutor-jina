@@ -20,6 +20,7 @@
     "db:new": "node db/new-migration.mjs",
     "db:inspect": "node db/inspect.mjs",
     "e2e:admin-users": "node scripts/e2e-admin-users.mjs",
+    "e2e:admin-contents": "node scripts/e2e-admin-contents.mjs",
     "verify:security": "node scripts/verify-security.mjs",
     "test": "node --import ./tests/setup.mjs --test tests/*.test.mjs",
     "test:pg": "DB_DRIVER=pg node --import ./tests/setup.mjs --test tests/*.test.mjs",
