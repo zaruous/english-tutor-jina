@@ -1,0 +1,590 @@
+# Codex gpt-6-astra 실행 로그 (요약본)
+
+원문 9676줄 / 537KB. 저장소 부피를 위해 두 가지를 잘랐다:
+  1. 400자를 넘는 줄(파일 본문을 실어 나르는 heredoc·python 페이로드) 12건 → 한 줄로 접음.
+     그 산출물은 저장소에 실물 파일로 있다.
+  2. 가운데 구간 — 앞 120줄(세션 헤더·지시서 수신)과 뒤 450줄(마지막 작업·자체 검증 실패·크레딧 소진)만 남겼다.
+
+================================================================================
+## 앞부분
+================================================================================
+
+OpenAI Codex v0.153.4
+--------
+workdir: D:\git\node\english tutor jina
+model: gpt-6-astra
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: xhigh
+reasoning summaries: none
+session id: 01a06ee8-4e40-7ce1-b57e-f6481067f8af
+--------
+user
+# 위임 지시서 — 플랜 12 (AI 초안 → 검수 → 카탈로그 공개)
+
+- 대상: **Codex CLI `gpt-6-astra`** (reasoning effort xhigh)
+- 저장소: `D:\git\node\english tutor jina` · 브랜치 `claude/plan-12-ai-draft-review`
+- 위임자: Claude (설계 검토·검증 담당, 구현은 하지 않는다)
+- 2026-09-05
+
+---
+
+## 0. 네가 할 일
+
+`docs/plan/12-ai-draft-review.md` 의 **Phase 1 과 Phase 2 를 구현한다.**
+플랜 문서를 먼저 끝까지 읽어라. 아래 §2 는 그 문서를 현재 코드에 대조해 본 **설계 검토 결과**이고,
+플랜과 코드가 어긋나는 지점과 그 해석을 담고 있다. **§2 가 플랜보다 우선한다.**
+
+문서(`docs/**`)는 고치지 마라 — 이 지시서와 네 보고서를 제외하면 위임자가 갱신한다.
+git 커밋·푸시 하지 마라. `npm run db:reset` 을 부르지 마라(개발 DB 를 날린다).
+
+---
+
+## 1. 저장소 오리엔테이션
+
+**스택**: Node 20.6+ ESM, 빌드 단계 없음. 서버는 정적 서버(`server.js`, :3003)가 `/api/*` 를
+API 서버(`api/server.js`, :3004)로 프록시한다. 프런트는 `src/**/*.jsx` 를 브라우저에서
+Babel standalone 이 런타임 컴파일한다 — **JSX 는 eslint 대상이 아니고 번들러도 없다.**
+HTML 진입점 셋: `index.html`(학습 앱) · `canvas.html`(디자인 캔버스) · `admin.html`(관리, 해시 탭).
+
+**DB**: PostgreSQL 16.15 `192.168.45.7:5433/jina_eng`, 스키마 `app`, `tester1`/`tester1`.
+`.env` 에 이미 설정돼 있다. SQL 에 **스키마 접두를 쓰지 마라** — 러너와 런타임이
+`search_path` 를 `DB_SCHEMA` 하나로 고정한다.
+
+**마이그레이션**: `db/migrations/NNNN_snake_case.sql` + 반드시 `.down.sql` 짝.
+적용된 파일은 **체크섬이 고정**돼 수정하면 러너가 즉시 실패한다 — 고칠 것은 새 번호로.
+현재 적용분: `0001_baseline` · `0017_user_roles` · `0018_content_archived_public`.
+다음 번호는 **0019**. 규약은 `db/README.md`.
+
+**작업트리는 CRLF 다.** 편집 도구가 개행을 LF 로 바꾸지 않게 주의하라.
+주석·사용자 문자열은 **한국어**로 쓰고, 기존 파일의 주석 밀도·어조를 따라라 —
+이 코드베이스의 주석은 "무엇을 왜 그렇게 했는지, 안 하면 무슨 일이 나는지"를 적는다.
+
+### 이번 작업이 올라타는 두 모듈 (플랜 11 산출물 — 먼저 읽어라)
+
+- `api/lib/content-scope.js` — `discoverable(alias, userParam)` / `resolvable(alias, userParam)`.
+  `discoverable` = `status='published' AND (visibility='public' OR created_by=$n)`,
+  `resolvable` = `status IN ('published','archived') AND (같은 가시성 조건)`.
+- `api/lib/content-status.js` — `canTransition(from,to,role)` · `assertTransition` ·
+  `canSetVisibility(status,to,role)` · `assertSetVisibility`.
+  **상태를 먼저 보고 역할을 나중에 본다**: 금지 전이는 역할 무관 **409 CONFLICT**,
+  역할 부족만 **403 FORBIDDEN**. `from === to` 도 409.
+- `api/lib/roles.js` 의 `atLeast(userRole, required)` — **`await loadRoles()` 를 먼저 부르지 않으면 throw** 한다.
+- `api/services/admin-content.service.js` + `api/routes/admin.routes.js` — 플랜 11 Phase 2 의
+  콘텐츠 목록·전이 API. 검수 API 는 이 옆에 붙는다.
+
+---
+
+## 2. 설계 검토 — 플랜 12 를 현재 코드에 대조한 결과
+
+플랜 12 는 2026-09-03 에 쓰였고 그 뒤 10.7(스키마 재정비)·11(상태 축)이 들어왔다.
+아래 7건은 **위임자가 코드로 확인한 사실**이다. 플랜 본문과 다르면 아래를 따라라.
+
+### 2.1 `lesson_drafts.review_status` 는 살아 있다 — 그러나 판정에 쓰지 않는다
+
+플랜 11 결정 8 은 이 컬럼을 baseline 에서 빼자고 권했지만 **10.7 은 그대로 남겼다.**
+실측: `db/migrations/0001_baseline.sql` 의 `lesson_drafts` 에
+`review_status TEXT NOT NULL DEFAULT 'draft'` + `CHECK (review_status IN ('draft','approved','rejected'))` 가 있고,
+`api/` 전체에서 **참조 0건**(진짜 죽은 컬럼이다).
+
+플랜 12 안에 모순이 있다 — **결정 3 은 "쓰지 않는다"** 고 하고 **Phase 1 표는 "approve → approved"** 라고 한다.
+해석은 이렇다. 둘은 층이 다르다:
+
+- **생명주기 단일 소스는 `content_items.status` 다.** 큐 판정·권한·감사·학습 API 가시성은 전부 이 컬럼만 본다.
+  `review_status` 를 판정에 쓰면 레슨만 상태 축이 둘이 되고, 시나리오·단어 세트에는 그 컬럼이 없다.
+- **`review_status` 는 초안 행의 부기(bookkeeping)다.** "이 생성 산출물이 승인됐는가/반려됐는가" 를
+  `lesson_drafts` 행에 남겨, 나중에 같은 초안을 다시 열었을 때 결과를 알 수 있게 한다.
+  플랜의 완료 판정("`review_status` 가 실제로 바뀐다")은 이 뜻이다.
+
+따라서 **둘 다 한다**: `content_items.status` 를 전이시키고, 레슨이면 `lesson_drafts.review_status` 도 같이 적는다.
+**단 어떤 판정도 `review_status` 를 읽지 않는다.** 이 경계를 코드 주석에 남겨라.
+
+### 2.2 검수 큐는 UNION 도, 세 쿼리도 필요 없다 — `content_items` 한 테이블이다
+
+플랜 구현자 메모는 "레슨은 `lesson_drafts` 행, 나머지는 본 테이블이라 세 쿼리를 서비스에서 합친다" 고 적었다.
+**그 전제는 10.7 Phase 2 로 사라졌다.** 지금은 레슨·시나리오·단어 세트가 전부 `content_items` 한 테이블이고
+타입은 `content_items.type` 이다(`lesson|scenario|vocab_set|speaking_set`).
+
+그래서 큐는 이렇게 된다:
+
+```
+content_items ci  (ci.status = 'review')
+  LEFT JOIN lesson_drafts ld ON ld.published_content_id = ci.id   -- 레슨만 붙는다
+```
+
+레슨 행에는 `ld.payload`(생성 결과)와 `ld.validation_errors` 가 붙고, 나머지는 `NULL` 이다.
+DTO 에 `cross_check: null` 슬롯을 남겨라(플랜 07 follow_up 의 교차 채점 자리).
+
+**주의**: `lesson_drafts.published_content_id` 는 `api/services/ai-job.service.js:362` 이
+콘텐츠를 만든 직후 채운다(`UPDATE lesson_drafts SET published_content_id = $2 ...`).
+그러니 `review` 로 떨어지는 catalog 경로에서도 **반드시 채워져야** 큐가 초안을 찾는다. 확인하라.
+
+플랜 §4 열린 질문 3("시나리오·단어 세트를 레슨과 같은 큐에 둘지")은 이 구조에서 자동으로 풀린다 — 같은 큐다.
+
+### 2.3 `request_hash` 는 손댈 필요가 없다
+
+구현자 메모가 "`request_hash` 에 `publish_target` 을 넣지 않으면 기존 job 을 재사용해 private 레슨을 돌려준다" 고
+경고했는데, 실측하면 `api/services/ai-job.service.js:78` 이
+`createHash('sha256').update(task + ':' + stable(input))` 로 **`input` 전체**를 해싱한다.
+따라서 `publish_target` 을 **`input` 안에 저장하기만 하면** 해시가 자동으로 갈린다.
+`publish_target` 을 별도 컬럼이나 별도 인자로 빼면 그 순간 이 경고가 현실이 된다 — **`input` 안에 둬라.**
+
+================================================================================
+## …(중략)…
+================================================================================
+
+
+================================================================================
+## 뒷부분 — 자체 검증 실패와 크레딧 소진
+================================================================================
+
+  CONSTRAINT topics_status_ck CHECK (status IN ('draft','review','published','archived')),
+  CONSTRAINT topics_vis_ck    CHECK (visibility IN ('public','private')),
+  CONSTRAINT topics_public_ck CHECK (status = 'published' OR visibility = 'private')
+);
+
+-- 배타 FK·부분 UNIQUE 3개·num_nonnulls CHECK 가 단일 FK 하나로 줄었다.
+CREATE TABLE IF NOT EXISTS topic_contents (
+  id         BIGSERIAL   PRIMARY KEY,
+  topic_id   BIGINT      NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+  content_id BIGINT      NOT NULL REFERENCES content_items(id) ON DELETE CASCADE,
+  position   INT         NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT topic_contents_uq UNIQUE (topic_id, content_id)
+);
+CREATE INDEX IF NOT EXISTS topic_contents_order_idx   ON topic_contents (topic_id, position, id);
+CREATE INDEX IF NOT EXISTS topic_contents_content_idx ON topic_contents (content_id);
+
+-- ── 단어 ──────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS vocab_words (
+  id         BIGSERIAL   PRIMARY KEY,
+  word       TEXT        NOT NULL,
+
+Name
+----
+.links
+.settings
+b
+chromium_headless_shell-1148
+chromium_headless_shell-1187
+chromium_headless_shell-1223
+chromium_headless_shell-1228
+chromium_headless_shell-1234
+chromium-1148
+chromium-1187
+chromium-1223
+chromium-1228
+chromium-1234
+ffmpeg-1010
+ffmpeg-1011
+firefox-1490
+mcp-chrome-06fea29
+mcp-chrome-7e786bd
+mcp-chrome-c50c9c5
+mcp-chrome-fe2375d
+webkit-2203
+winldd-1007
+
+
+exec
+"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command 'npm run db:verify' in D:\git\node\english tutor jina
+exec
+"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command 'npm test' in D:\git\node\english tutor jina
+exec
+"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command 'npm run verify:content-status' in D:\git\node\english tutor jina
+exec
+"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command '$env:SKIP_AI='"'1'; node scripts/verify-lesson-gen.mjs" in D:\git\node\english tutor jina
+ exited 1 in 2717ms:
+D:\git\node\english tutor jina\node_modules\pg-pool\index.js:45
+    Error.captureStackTrace(err)
+          ^
+
+Error: connect EACCES 192.168.45.7:5433
+    at D:\git\node\english tutor jina\node_modules\pg-pool\index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async main (file:///D:/git/node/english%20tutor%20jina/scripts/verify-lesson-gen.mjs:37:31)
+    at async file:///D:/git/node/english%20tutor%20jina/scripts/verify-lesson-gen.mjs:201:3 {
+  errno: -4092,
+  code: 'EACCES',
+  syscall: 'connect',
+  address: '192.168.45.7',
+  port: 5433
+}
+
+Node.js v24.19.0
+
+ exited 1 in 6009ms:
+
+> jina-english-tutor@0.1.0-prototype verify:content-status
+> node scripts/verify-content-status.mjs
+
+✖ http://localhost:3004 에 연결할 수 없습니다 (status=503 ) — npm run dev 를 먼저 실행하세요.
+
+ succeeded in 6661ms:
+
+> jina-english-tutor@0.1.0-prototype db:verify
+> node db/verify.mjs
+
+[db:verify] 통과 — migrations 3개
+
+ succeeded in 8757ms:
+
+> jina-english-tutor@0.1.0-prototype test
+> node --import ./tests/setup.mjs --test tests/*.test.mjs
+
+✔ 0017 이 roles · user_audit_log · users.role/is_active 를 만든다 (5168.3371ms)
+✔ auth.service 의 signup → login → resolveSession 이 새 스키마에서 돈다 (136.6153ms)
+✔ admin-user.service 목록·역할변경·감사로그가 돈다 (121.9074ms)
+▶ 사용자당 동기 AI 요청 1건
+  ✔ 같은 사용자의 두 번째 동시 요청은 기다리지 않고 429 로 거절된다 (1.3256ms)
+  ✔ 슬롯을 놓으면 같은 사용자가 다시 잡을 수 있다 (0.211ms)
+  ✔ 다른 사용자는 영향을 받지 않는다 (0.2027ms)
+  ✔ userId 가 없으면(ai_jobs 워커 경로) 게이트를 건너뛴다 (0.171ms)
+  ✔ Map 이 자라지 않는다 — 해제·거절 어느 쪽이어도 항목이 남지 않는다 (3.0094ms)
+✔ 사용자당 동기 AI 요청 1건 (6.2728ms)
+▶ 동기 askAI 호출부는 userId 를 넘긴다
+  ✔ api/routes/ai.routes.js — askAI 1곳이 userId 를 넘긴다 (37.4361ms)
+  ✔ api/routes/conversation.routes.js — askAI 1곳이 userId 를 넘긴다 (1.5724ms)
+  ✔ api/routes/lesson.routes.js — askAI 1곳이 userId 를 넘긴다 (1.4007ms)
+  ✔ api/routes/vocab.routes.js — askAI 2곳이 userId 를 넘긴다 (1.4124ms)
+  ✔ ai-job-worker 는 userId 를 넘기지 않는다 (워커 경로 제외) (0.9613ms)
+✔ 동기 askAI 호출부는 userId 를 넘긴다 (43.4793ms)
+▶ 카탈로그 스키마 불변식
+  ✔ 공개 상태가 아닌데 public 은 저장되지 않는다 (10.7769ms)
+  ✔ 같은 (토픽, 콘텐츠) 는 두 번 붙지 않는다 (3.8215ms)
+  ✔ detail 은 상위 콘텐츠가 사라지면 함께 사라진다 (13.2669ms)
+✔ 카탈로그 스키마 불변식 (5178.6986ms)
+▶ 카탈로그 DTO — 통합 전과 같은 모양
+  ✔ 레슨 목록은 타입별 detail 을 합쳐 이전 필드를 그대로 낸다 (8.2246ms)
+  ✔ kind 는 lesson_details 에서 오고 필터가 그대로 동작한다 (19.4663ms)
+  ✔ 토픽 카운트는 타입별로 갈라 세고 진행률 분모가 된다 (28.5071ms)
+  ✔ 시나리오 DTO 는 상위(title/description)와 detail(tag/level)을 합친다 (2.4738ms)
+✔ 카탈로그 DTO — 통합 전과 같은 모양 (59.3542ms)
+▶ LC 스크립트 구조화
+  ✔ passage.body 는 [{speaker,text}] 이고 text 에 화자 라벨이 없다 (1.3858ms)
+  ✔ 문장 은행은 구조에서 text 만 읽는다 (문자열 파싱 없음) (6.3378ms)
+✔ LC 스크립트 구조화 (8.0938ms)
+▶ content-scope — 조건 문자열
+  ✔ discoverable 은 published 만 받는다 (1.0634ms)
+  ✔ resolvable 은 archived 를 함께 받는다 (0.2436ms)
+  ✔ 가시성 조각(소유자 예외)은 두 헬퍼가 글자 그대로 같다 (0.256ms)
+  ✔ alias 가 식별자 형태가 아니면 던진다 (0.7908ms)
+  ✔ userParam 이 $n 형태가 아니면 던진다 (0.406ms)
+  ✔ 밑줄·숫자가 섞인 alias 와 두 자리 파라미터는 받는다 (0.3262ms)
+✔ content-scope — 조건 문자열 (4.7625ms)
+▶ content-scope — 실제 SQL
+  ✔ discoverable 은 published + (공개 | 내 것) 만 센다 (5.9733ms)
+  ✔ resolvable 은 여기에 archived 를 더한다 (1.9901ms)
+  ✔ 내려간(archived) 콘텐츠는 discoverable 에서만 빠진다 (2.6818ms)
+  ✔ 남이 만든 archived + public 도 나에게 resolvable 이다 (오답 노트가 살아 있다) (2.1701ms)
+  ✔ draft 와 남의 비공개는 어느 쪽에도 안 보인다 (1.7571ms)
+  ✔ 테이블 전체에서도 resolvable 은 discoverable 의 상위집합이다 (2.0337ms)
+  ✔ topics 에도 같은 조각이 그대로 붙는다 (1.0394ms)
+✔ content-scope — 실제 SQL (5336.2886ms)
+▶ content-status — 전이 매트릭스 (상태 4 × 상태 4 × 역할 4)
+  ✔ 역할 서열이 roles 테이블과 같다 (3.5542ms)
+  ✔ 64개 조합 전부가 표대로 판정된다 (0.8581ms)
+  ✔ from === to 는 멱등 no-op 이 아니라 409 다 (0.2056ms)
+  ✔ author 는 검수 요청까지만 한다 (0.1819ms)
+  ✔ reviewer 는 승인·반려·발행·내림·재발행을 전부 한다 (0.257ms)
+  ✔ learner 는 아무 전이도 못 한다 (되는 전이는 403, 없는 전이는 409) (0.151ms)
+  ✔ published → draft 는 역할과 무관하게 CONFLICT 다 (archived 를 거친다) (0.2016ms)
+  ✔ 상태가 아닌 값·프로토타입 키는 CONFLICT 로 떨어진다 (0.2194ms)
+  ✔ 알 수 없는 역할은 FORBIDDEN (되는 전이 위에서만) (0.224ms)
+  ✔ TRANSITIONS 는 얼어 있다 — 표를 런타임에 늘릴 수 없다 (0.6267ms)
+✔ content-status — 전이 매트릭스 (상태 4 × 상태 4 × 역할 4) (5156.0943ms)
+▶ content-status — assertTransition 의 상태코드 분리
+  ✔ 성공이면 조용히 반환한다 (0.4049ms)
+  ✔ 역할 부족은 403 FORBIDDEN (0.363ms)
+  ✔ 금지 전이는 409 CONFLICT (역할 문제가 아니라 상태 문제) (1.3675ms)
+  ✔ 금지 전이는 역할이 모자라도 409 다 — 상태를 먼저 본다 (0.1839ms)
+✔ content-status — assertTransition 의 상태코드 분리 (2.6157ms)
+▶ content-status — canSetVisibility
+  ✔ reviewer 이상만 공개 범위를 건드린다 (0.2617ms)
+  ✔ public 은 published·archived 에서만 허용된다 (content_items_public_ck 와 같은 집합) (0.1287ms)
+  ✔ private 으로 내리는 것은 어느 상태에서든 상태 문제가 아니다 (0.1277ms)
+  ✔ 알 수 없는 상태·가시성은 CONFLICT (0.0994ms)
+  ✔ assertSetVisibility 도 403/409 를 같은 규칙으로 나눈다 (0.3021ms)
+✔ content-status — canSetVisibility (1.1893ms)
+▶ getDashboard — 신규 계정
+  ✔ 활동이 없으면 streak 0 · 정확도 null · 예상 점수 null (42.6106ms)
+  ✔ 주간 막대는 항상 7칸이다 (generate_series) (38.0717ms)
+  ✔ skills 는 고정 4행이고 소스가 없으면 pct 가 null 이다 (21.3144ms)
+  ✔ 목표는 기본값 + exam_date 로부터 d_day 를 파생한다 (17.8806ms)
+✔ getDashboard — 신규 계정 (5251.8501ms)
+▶ getDashboard — 스트릭 산식
+  ✔ 어제와 오늘 복습하면 streak 가 2 가 된다 (저장된 카운터 없음) (27.9339ms)
+✔ getDashboard — 스트릭 산식 (28.1762ms)
+▶ db 어댑터
+  ✔ BIGINT 와 NUMERIC 이 문자열이 아니라 number 로 온다 (3.0379ms)
+  ✔ SELECT 의 rowCount 는 행 수, DML 의 rowCount 는 영향 행 수다 (12.5904ms)
+  ✔ withTx 는 예외에서 되돌린다 (6.6252ms)
+  ✔ withTx 가 겹쳐도 서로의 트랜잭션을 덮어쓰지 않는다 (11.1876ms)
+  ✔ advisory lock 을 트랜잭션 안에서 잡을 수 있다 (ai_jobs 중복 방지가 이 위에 있다) (4.5952ms)
+  ✔ APP_TZ 기준 일자 경계 계산이 동작한다 (대시보드·통계 집계의 토대) (2.5838ms)
+✔ db 어댑터 (5089.9433ms)
+✔ 세 작업의 기본값은 personal 이고 target 은 정규화 input 과 해시에 남는다 (5185.3081ms)
+✔ 서비스가 역할 캐시를 직접 채우고 learner catalog 는 작업을 만들지 않는다 (3.9212ms)
+✔ author 생성에서 personal/catalog 는 다른 작업이고 같은 대상은 멱등 재사용한다 (32.8907ms)
+✔ lesson_gen 저장은 personal=published, catalog=review 이고 모두 private 이다 (30.2399ms)
+✔ scenario_gen 저장은 personal=published, catalog=review 이고 모두 private 이다 (17.0082ms)
+✔ vocab_set 저장은 personal=published, catalog=review 이고 모두 private 이다 (39.1725ms)
+✔ 큐는 content_items.status 만 판정하고 세 유형의 결과·NULL 슬롯을 반환한다 (41.9681ms)
+✔ author 승인·반려는 403 이고 검수 상태와 감사는 변하지 않는다 (16.1451ms)
+✔ 승인은 private 를 유지하고 부기·행위자·자가 승인 표식을 함께 기록한다 (17.5976ms)
+✔ 반려는 행을 지우지 않고 draft/rejected 와 사유를 남긴다 (23.3347ms)
+✔ 승인과 공개는 status_change/visibility_change 두 행으로 남는다 (17.0118ms)
+✔ 공개 단계가 실패하면 승인·부기·감사도 전부 롤백한다 (14.5126ms)
+✔ 분리 검수 설정은 두 전이 API 와 큐의 버튼 권한에 동일하게 적용된다 (28.9111ms)
+✔ 기존 상태 API 로 검수해도 레슨 부기와 큐 상태가 함께 바뀐다 (30.2811ms)
+▶ getLesson
+  ✔ DTO 어디에도 정답·해설이 없다 (9.9401ms)
+  ✔ 없는 레슨은 404 로 던진다 (2.5208ms)
+✔ getLesson (5172.6386ms)
+▶ submitAttempt
+  ✔ 전부 맞히면 100점, 틀린 문항의 해설은 채점 응답에만 실린다 (10.733ms)
+  ✔ 한 문항을 틀리면 score 가 내려가고 skill_code 가 붙는다 (6.9136ms)
+  ✔ 같은 client_request_id 는 replay 로 되돌려주고 attempt 를 늘리지 않는다 (13.4474ms)
+  ✔ 답안이 모자라면 400 으로 던진다 (2.8125ms)
+  ✔ 선택지에 없는 값은 400 으로 던진다 (2.4115ms)
+  ✔ 진도는 저장값이 아니라 매번 집계된다 (11.1996ms)
+✔ submitAttempt (48.3423ms)
+▶ srs.applyReview
+  ✔ again 은 간격을 0 으로 접고 10분 뒤로 잡는다 (1.839ms)
+  ✔ ease_factor 는 1.3 아래로 내려가지 않는다 (0.2053ms)
+  ✔ ease_factor 는 3.0 위로 올라가지 않는다 (0.1534ms)
+  ✔ good 은 interval × ease_factor, 최소 2일 (0.1671ms)
+  ✔ hard 는 interval × 1.2, 최소 1일 (0.1739ms)
+  ✔ 모르는 result 는 던진다 (0.5506ms)
+✔ srs.applyReview (4.7765ms)
+▶ srs.predict
+  ✔ 4개 결과 전부를 applyReview 와 같은 값으로 미리 보여준다 (1.284ms)
+  ✔ again 만 in_days 가 0 이다 (오늘 안에 다시 나온다) (0.1899ms)
+✔ srs.predict (1.7875ms)
+ℹ tests 95
+ℹ suites 17
+ℹ pass 95
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 6584.131
+
+exec
+"C:\\Program Files\\PowerShell\\7\\pwsh.exe" -Command "@'
+from pathlib import Path
+p=Path('scripts/lib/draft-review-fixtures.mjs')
+s=p.read_text(encoding='utf-8').replace('INSERT INTO topics (slug, title, status, visibility, source, created_by)', 'INSERT INTO topics (slug, label_ko, status, visibility, created_by)').replace(\"VALUES ("'$1, $2, '"'published', 'public', 'curated', "'$3)", "VALUES ($1, $2, '"'published', 'public', "'$3)")
+p.write_bytes(s.replace('"'\\n','\\r\\n').encode('utf-8'))
+p=Path('scripts/verify-draft-review.mjs')
+s='''// 플랜 12 완료 판정 — 실제 AI 없이 저장 함수 + HTTP 인증/권한/학습 API 를 검증한다.
+// 실행: npm run dev 후 npm run verify:draft-review. DB 접속 불가 시 node scripts/verify-isolated.mjs draft-review.
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { pool } from '../api/lib/pool.js';
+import { config } from '../api/config.js';
+import { hashPassword } from '../api/services/password.js';
+import { SELF_REVIEW_TAG } from '../api/services/admin-content.service.js';
+import { cleanupReviewFixtures, createReviewUser, createReviewTopic, createReviewContent, reviewState, reviewAudit } from './lib/draft-review-fixtures.mjs';
+
+const BASE = process.env.E2E_BASE || 'http://localhost:3003';
+const API = process.env.E2E_API || 'http://localhost:3004';
+const TAG = "'`vdr-${Date.now()}`;
+const PASS = '"'draft-review-1234';
+const results = [];
+const users = {};
+const cookies = {};
+function check(name, ok, detail = '') {
+  results.push(ok);
+  console.log("'`${ok ? '"'✔' : '✖'} "'${name}${detail ? '"' — ' + detail : ''}"'`);
+}
+async function req(path, { role, method = '"'GET', body } = {}) {
+  const response = await fetch(API + path, {
+    method, signal: AbortSignal.timeout(20000),
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'jina', Origin: BASE,
+      'X-Jina-No-Autologin': '1', ...(role ? { Cookie: cookies[role] } : {}) },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  return { status: response.status, ...await response.json() };
+}
+const post = (path, role, body = {}) => req(path, { role, method: 'POST', body });
+async function login(role) {
+  const response = await fetch(API + '/api/auth/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'jina', 'X-Jina-No-Autologin': '1', Origin: BASE },
+    body: JSON.stringify({ email: users[role].email, password: PASS }),
+  });
+  assert.equal(response.status, 200, "'`${role} 로그인`);
+  cookies[role] = response.headers.getSetCookie().map((c) => c.split('"';')[0]).join('; ');
+  assert.ok(cookies[role]);
+  const me = await req('/api/auth/me', { role });
+  check("'`${role} 실제 인증 역할 확인`, me.user?.role === role);
+}
+async function learningSnapshot(role, topicId) {
+  const paths = ['"'/api/lessons', '/api/lessons/recommended', '/api/topics', "'`/api/topics/${topicId}`,
+    '"'/api/scenarios', '/api/speaking/sentences?limit=40', '/api/mistakes', '/api/progress', '/api/dashboard', "'`/api/vocab/pool?q=${TAG}`];
+  const responses = await Promise.all(paths.map((path) => req(path, { role })));
+  responses.forEach((r, i) => assert.equal(r.status, 200, `${role} ${paths[i]}`));
+  const [lessons, recommended, topics, detail, scenarios, speaking, mistakes, progress, dashboard, vocab] = responses;
+  return {
+    lessons: lessons.lessons.map((l) => l.id), total: lessons.progress.total,
+    recommended: recommended.lessons.map((l) => l.id),
+    topic: topics.topics.find((t) => t.id === topicId),
+    detail: { lessons: detail.lessons, scenarios: detail.scenarios, vocab_sets: detail.vocab_sets, progress: detail.progress },
+    scenarios: scenarios.scenarios.map((s) => s.id), speaking: speaking.sentences,
+    mistakes: mistakes.mistakes, progress: progress.progress, dashboard: dashboard.stats, vocab: vocab.words,
+  };
+}
+
+try {
+  assert.equal((await req('"'/api/health')).status, 200, '서버·DB 준비 필요');
+  const passwordHash = await hashPassword(PASS);
+  for (const role of ['learner', 'author', 'reviewer', 'admin']) {
+    users[role] = await createReviewUser(TAG, role, passwordHash);
+    await login(role);
+  }
+  check('미인증 큐 요청 401 (자동로그인 차단)', (await req('/api/admin/drafts')).status === 401);
+  check('learner 큐 요청 403', (await req('/api/admin/drafts', { role: 'learner' })).status === 403);
+  const topicId = await createReviewTopic(TAG, users.admin);
+  const before = {};
+  for (const role of ['admin', 'learner']) before[role] = await learningSnapshot(role, topicId);
+  const rows = [];
+  for (const task of ['lesson_gen', 'scenario_gen', 'vocab_set']) {
+    const row = await createReviewContent(TAG, users.admin, { task, topicId });
+    rows.push(row);
+    // 종결 job 을 재사용하게 해 HTTP enqueue 의 검증·해시 경로까지 실행하되 AI 는 부르지 않는다.
+    const generated = await post('/api/ai-jobs', 'admin', {
+      task, input: row.input, client_request_id: randomUUID(), provider: 'ollama',
+    });
+    check("'`admin ${task} catalog 요청 202 · 같은 종결 job 재사용`,
+      generated.status === 202 && generated.reused && generated.job?.id === row.job.id && generated.job.input.publish_target === '"'catalog');
+    const stored = await reviewState(row.id);
+    check("'`${task} 워커 저장 결과 review/private`, stored.status === '"'review' && stored.visibility === 'private');
+  }
+  for (const role of ['admin', 'learner']) {
+    const after = await learningSnapshot(role, topicId);
+    // 변동 시간·활동일 같은 무관한 집계는 제외하고 콘텐츠가 섞일 모든 컬렉션/분모를 대조한다.
+    for (const key of ['lessons', 'total', 'recommended', 'topic', 'detail', 'scenarios', 'speaking', 'mistakes', 'vocab']) {
+      check("'`${role} review 비노출: ${key}`, JSON.stringify(after[key]) === JSON.stringify(before[role][key]));
+    }
+    check(`${role} review 비노출: 대시보드·진도`,
+      !JSON.stringify(after.dashboard).includes(TAG) && !JSON.stringify(after.progress).includes(TAG));
+    check(`${role} review 레슨 상세 404`, (await req(`/api/lessons/${rows[0].id}`, { role })).status === 404);
+    check(`${role} review 레슨 제출 404`, (await post(`/api/lessons/${rows[0].id}/attempts`, role, {
+      answers: { 1: '"'A', 2: 'A', 3: 'A' }, client_request_id: randomUUID(),
+    })).status === 404);
+    check("'`${role} review 회화 시작 404`, (await post('"'/api/conversations', role, { scenario_id: rows[1].id })).status === 404);
+    check("'`${role} review 단어 세트 담기 404`, (await post(`/api/vocab-sets/${rows[2].id}/add`, role)).status === 404);
+  }
+  const queue = await req(`/api/admin/drafts?q=${TAG}`, { role: '"'author' });
+  check('author 큐에 세 유형이 한 번씩 등장', queue.status === 200 && queue.total === 3 && new Set(queue.drafts.map((d) => d.type)).size === 3);
+  const lessonQueue = queue.drafts.find((d) => d.id === rows[0].id);
+  check('레슨 초안 연결 · payload · 검증 오류 · 교차 채점 슬롯',
+    lessonQueue?.draft_id === rows[0].saved.draft_id && lessonQueue?.payload.items.length === 3
+    && lessonQueue.validation_errors.length === 0 && lessonQueue.cross_check === null);
+  check('시나리오·단어 payload/검증 기록 NULL · 실제 결과 제공', queue.drafts.filter((d) => d.type "'!== '"'lesson').every((d) => d.payload === null && d.validation_errors === null && d.generated_content && d.cross_check === null));
+  const page = await req("'`/api/admin/drafts?q=${TAG}&limit=1&offset=1`, { role: '"'reviewer' });
+  check('큐 페이지네이션 · 전체 건수', page.total === 3 && page.drafts.length === 1 && page.drafts[0].id === queue.drafts[1].id);
+  for (const task of ['lesson_gen', 'scenario_gen', 'vocab_set']) {
+    const denied = await post('/api/ai-jobs', 'learner', { task, input: { topic: TAG, publish_target: 'catalog' }, client_request_id: randomUUID(), provider: 'ollama' });
+    check("'`learner ${task} catalog 요청 400`, denied.status === 400 && denied.code === '"'BAD_REQUEST');
+  }
+  check('target 허용값 검증 400', (await post('/api/ai-jobs', 'admin', { task: 'lesson_gen', input: { publish_target: 'public' }, client_request_id: randomUUID(), provider: 'ollama' })).status === 400);
+  check('author 승인 403', (await post("'`/api/admin/drafts/${rows[0].id}/approve`, '"'author')).status === 403);
+  check('author 반려 403', (await post("'`/api/admin/drafts/${rows[0].id}/reject`, '"'author', { note: '검토' })).status === 403);
+  check('공개 플래그 문자열 400', (await post("'`/api/admin/drafts/${rows[0].id}/approve`, '"'reviewer', { publish: 'false' })).status === 400);
+  check('없는 콘텐츠 404', (await post('/api/admin/drafts/9007199254740991/approve', 'reviewer')).status === 404);
+  for (const row of rows) {
+    const approval = await post("'`/api/admin/drafts/${row.id}/approve`, '"'reviewer');
+    const state = await reviewState(row.id);
+    check("'`${row.type} reviewer 승인 200 · published/private`, approval.status === 200 && state.status === '"'published' && state.visibility === 'private');
+    const owner = await req("'`/api/topics/${topicId}`, { role: '"'admin' });
+    const learner = await req("'`/api/topics/${topicId}`, { role: '"'learner' });
+    const key = row.type === 'lesson' ? 'lessons' : row.type === 'scenario' ? 'scenarios' : 'vocab_sets';
+    check("'`${row.type} 승인 후 작성자만 학습 목록에서 조회`, owner[key].some((c) => c.id === row.id) && !learner[key].some((c) => c.id === row.id));
+    const published = await post(`/api/admin/contents/${row.type}/${row.id}/visibility`, '"'reviewer', { to: 'public' });
+    const publicTopic = await req("'`/api/topics/${topicId}`, { role: '"'learner' });
+    check("'`${row.type} 플랜 11 공개 전이 200 · learner 목록 노출`, published.status === 200 && publicTopic[key].some((c) => c.id === row.id));
+  }
+  check('"'레슨 승인 부기 approved', (await reviewState(rows[0].id)).review_status === 'approved');
+  const publicLesson = await req("'`/api/lessons/${rows[0].id}`, { role: '"'learner' });
+  check('공개 레슨 상세 200 · 정답 해설 미노출', publicLesson.status === 200 && "'!JSON.stringify(publicLesson).includes('"'\"answer\"') && "'!JSON.stringify(publicLesson).includes('"'\"explanation\"'));
+  check('공개 단어 세트 학습 가능 · 풀 등록은 담을 때', (await post("'`/api/vocab-sets/${rows[2].id}/add`, '"'learner')).added === 20);
+
+  const rejected = await createReviewContent(TAG, users.admin, { name: '반려' });
+  const count = async () => (await pool.query("'`SELECT count(*)::int AS n FROM content_items WHERE created_by = $1`, [users.admin.id])).rows[0].n;
+  const previousCount = await count();
+  check('"'빈 반려 사유 400', (await post("'`/api/admin/drafts/${rejected.id}/reject`, '"'reviewer', { note: '   ' })).status === 400);
+  const rejection = await post("'`/api/admin/drafts/${rejected.id}/reject`, '"'reviewer', { note: '정답 근거를 보완해 주세요.' });
+  const rejectedState = await reviewState(rejected.id);
+  check('반려 200 · 행 수 불변 · draft/rejected', rejection.status === 200 && await count() === previousCount && rejectedState.status === 'draft' && rejectedState.review_status === 'rejected');
+  check('반려 사유 감사 note 저장', (await reviewAudit(rejected.id))[0].note === '정답 근거를 보완해 주세요.');
+  check('반려 뒤 재승인은 상태 우선 409', (await post("'`/api/admin/drafts/${rejected.id}/approve`, '"'author')).status === 409);
+  check('반려된 레슨도 학습 상세 404', (await req("'`/api/lessons/${rejected.id}`, { role: '"'admin' })).status === 404);
+  const combined = await createReviewContent(TAG, users.admin, { name: '동시 승인' });
+  const races = await Promise.all([0, 1].map(() => post("'`/api/admin/drafts/${combined.id}/approve`, '"'reviewer', { publish: true })));
+  check('동시 승인: 성공 200 한 건 · 충돌 409 한 건', races.map((r) => r.status).sort().join(',') === '200,409');
+  const combinedAudit = await reviewAudit(combined.id);
+  check('한 번에 승인·공개: 감사 정확히 2행 · public/approved',
+    combinedAudit.length === 2 && combinedAudit[0].action === 'status_change' && combinedAudit[1].action === 'visibility_change'
+    && (await reviewState(combined.id)).visibility === 'public' && (await reviewState(combined.id)).review_status === 'approved');
+  const self = await createReviewContent(TAG, users.admin, { name: '자가 승인' });
+  const selfResult = await post("'`/api/admin/drafts/${self.id}/approve`, '"'admin');
+  check('자가 승인 정책 · 감사 표식', config.requireSeparateReviewer
+    ? selfResult.status === 403 && (await reviewAudit(self.id)).length === 0
+    : selfResult.status === 200 && selfResult.self_review && (await reviewAudit(self.id))[0].note.startsWith(SELF_REVIEW_TAG));
+  const remaining = await req("'`/api/admin/drafts?q=${TAG}`, { role: '"'reviewer' });
+  check('검수 완료 콘텐츠는 큐에서 제외', remaining.total === (config.requireSeparateReviewer ? 1 : 0));
+} catch (error) {
+  check('검증 실행 오류', false, error.stack || error.message);
+} finally {
+  try {
+    await cleanupReviewFixtures(TAG);
+    const { rows: [{ n }] } = await pool.query("'`SELECT count(*)::int AS n FROM users WHERE email LIKE $1`, [`${TAG}-%@test.dev`]);
+    check('"'픽스처 계정·세션·작업 정리', n === 0);
+  } catch (error) { check('픽스처 정리 오류', false, error.message); }
+  await pool.end();
+}
+const failed = results.filter((ok) => "'!ok).length;
+console.log(`'"\\\\n총 "'${results.length}개 중 ${results.length - failed}개 통과 · 실패 ${failed} · AI 호출 0건`);
+process.exitCode = failed ? 1 : 0;
+'"'''
+p.write_bytes(s.replace('\\n','\\r\\n').encode('utf-8'))
+p=Path('package.json')
+s=p.read_text(encoding='utf-8').replace('    \"verify:content-status\":', '    \"verify:draft-review\": \"node scripts/verify-draft-review.mjs\",\\n    \"verify:content-status\":')
+p.write_bytes(s.replace('\\n','\\r\\n').encode('utf-8'))
+p=Path('scripts/verify-lesson-gen.mjs')
+s=p.read_text(encoding='utf-8').replace('  recoverRunningJobs,', '  normalizeJobInput,\\n  requestHash,\\n  recoverRunningJobs,')
+s=s.replace('  // ── B. 자동 검증 규칙', '''  // 플랜 12 — 대상은 input 안에 남아야 같은 입력의 개인/카탈로그 작업을 잘못 재사용하지 않는다.
+  const personal = normalizeJobInput('lesson_gen', { topic: '대상 검증' });
+  const catalog = normalizeJobInput('lesson_gen', { topic: '대상 검증', publish_target: 'catalog' });
+  t('publish_target 기본 personal · catalog input 보관', personal.publish_target === 'personal' && catalog.publish_target === 'catalog');
+  t('personal/catalog request_hash 분리', requestHash('lesson_gen', personal) "'!== requestHash('"'lesson_gen', catalog));
+  const badTarget = await postRes('/api/ai-jobs', {
+    task: 'lesson_gen', input: { publish_target: 'public' }, client_request_id: newReq(),
+  });
+  t('publish_target=public → 400', badTarget.status === 400);
+
+  // ── B. 자동 검증 규칙''')
+p.write_bytes(s.replace('\\n','\\r\\n').encode('utf-8'))
+'@ | python -
+npm run verify:draft-review" in D:\git\node\english tutor jina
+ exited 1 in 2524ms:
+
+> jina-english-tutor@0.1.0-prototype verify:draft-review
+> node scripts/verify-draft-review.mjs
+
+✖ 검증 실행 오류 — AssertionError [ERR_ASSERTION]: 서버·DB 준비 필요
+
+503 !== 200
+
+    at file:///D:/git/node/english%20tutor%20jina/scripts/verify-draft-review.mjs:60:10
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+✖ 픽스처 정리 오류 — connect EACCES 192.168.45.7:5433
+
+총 2개 중 0개 통과 · 실패 2 · AI 호출 0건
+
+ERROR: Your workspace is out of credits. Ask your workspace owner to refill in order to continue.
+ERROR: Your workspace is out of credits. Ask your workspace owner to refill in order to continue.
+tokens used
+156,189

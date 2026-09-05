@@ -69,6 +69,8 @@ const GEN_PARTS = [
 ];
 
 function LessonGenerator({ theme, compact, generation, onGenerate, onDone }) {
+  const { user } = useAuth();
+  const [publishTarget, setPublishTarget] = React.useState('personal');
   const [topic, setTopic] = React.useState('비즈니스 커뮤니케이션');
   const [part, setPart] = React.useState(5);
   const [difficulty, setDifficulty] = React.useState(3);
@@ -81,8 +83,8 @@ function LessonGenerator({ theme, compact, generation, onGenerate, onDone }) {
     if (!meta.counts.includes(count)) setCount(meta.defaultCount);
   };
   const run = async () => {
-    const res = await onGenerate({ topic, difficulty, count, part });
-    if (res?.ok && res.job?.result?.lesson_id && onDone) onDone(res.job.result.lesson_id);
+    const res = await onGenerate({ topic, difficulty, count, part, publishTarget: user?.can_author ? publishTarget : 'personal' });
+    if (res?.ok && res.job?.result?.lesson_id && res.job?.input?.publish_target !== 'catalog' && onDone) onDone(res.job.result.lesson_id);
   };
   const inputStyle = {
     width: '100%', borderRadius: 9, border: `1px solid ${theme.border}`,
@@ -97,9 +99,16 @@ function LessonGenerator({ theme, compact, generation, onGenerate, onDone }) {
         <Icons.Sparkles size={17} style={{ color: theme.accent }} />
         <div>
           <div style={{ color: theme.text, fontSize: 13.5, fontWeight: 700 }}>AI로 레슨 만들기</div>
-          <div style={{ color: theme.textMuted, fontSize: 10.5, marginTop: 1 }}>생성물은 먼저 내 전용 레슨으로 저장됩니다.</div>
+          <div style={{ color: theme.textMuted, fontSize: 10.5, marginTop: 1 }}>{user?.can_author && publishTarget === 'catalog' ? '생성 후 검토 대기로 저장됩니다. 승인·공개 후 카탈로그에 표시됩니다.' : '생성물은 먼저 내 전용 레슨으로 저장됩니다.'}</div>
         </div>
       </div>
+      {user?.can_author && <fieldset data-testid="lesson-gen-target" style={{ border: 0, margin: '0 0 12px', padding: 0, display: 'flex', gap: 14, color: theme.textMuted, fontSize: 12 }}>
+        <legend style={{ marginBottom: 6 }}>저장 대상</legend>
+        {[['personal', '내 것'], ['catalog', '카탈로그']].map(([value, label]) => <label key={value} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <input type="radio" name="lesson-publish-target" data-testid={`lesson-gen-target-${value}`} value={value}
+            checked={publishTarget === value} disabled={busy} onChange={() => setPublishTarget(value)} style={{ accentColor: theme.accent }} />{label}
+        </label>)}
+      </fieldset>}
       <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
         {GEN_PARTS.map((p) => (
           <button key={String(p.id)} type="button" data-testid={`lesson-gen-part-${p.id}`} disabled={busy}
@@ -145,7 +154,9 @@ function LessonGenerator({ theme, compact, generation, onGenerate, onDone }) {
       )}
       {generation.status === 'succeeded' && (
         <div data-testid="lesson-gen-success" style={{ marginTop: 10, color: theme.success, fontSize: 11.5, fontWeight: 600 }}>
-          검증을 통과한 새 레슨이 내 목록에 추가되었습니다.
+          {generation.job?.input?.publish_target === 'catalog'
+            ? <React.Fragment>카탈로그 초안이 검토 대기로 저장되었습니다. <a href="admin.html#/review" data-testid="lesson-gen-open-review" style={{ color: theme.accent }}>검수 큐 열기</a></React.Fragment>
+            : '검증을 통과한 새 레슨이 내 목록에 추가되었습니다.'}
         </div>
       )}
     </div>
