@@ -2,22 +2,22 @@
 # status: draft | in_progress | done · phase.status: done | pending_verification | todo
 plan: "13"
 title: "관리자 콘텐츠 ③ — LC 에디터(최소형) · 토픽 구성 · 스피킹 세트"
-status: draft
+status: in_progress
 group:
   id: admin-content
   title: "관리자 콘텐츠 저작·관리"
   members: ["11", "12", "13"]
   order: 3
 created: 2026-09-03
-updated: 2026-09-03
+updated: 2026-09-05
 depends_on: ["10.7", "11", "12"]
 preconditions:
   - { phase: C, requires: "플랜 10 Phase 1·2 실측 검증 통과 (pending_verification → done)", reason: "focus 음소·target_wpm 은 발음 점수가 있어야 의미가 있다" }
-migrations: ["0018_speaking_set_details"]   # Phase C 에서만. 10.7 baseline 위에 detail 테이블 1개
+migrations: ["0019_topics_archived_public (Phase B 선결 — topics CHECK 가 열린질문 7 기각안이라 후보 A 로 교체)", "0018_speaking_set_details (Phase C 미착수)"]
 phases:
-  - { id: A, name: "LC 에디터 최소형 — AI 초안·기존 레슨을 폼으로 고친다", status: todo }
-  - { id: B, name: "토픽 생성 · 구성 · 순서", status: todo }
-  - { id: C, name: "스피킹 세트 — speaking_sets · 3단 폴백 · 에디터", status: todo, gated_by: "플랜 10 실측" }
+  - { id: A, name: "LC 에디터 최소형 — AI 초안·기존 레슨을 폼으로 고친다", status: done, done_at: 2026-09-05, note: "서브에이전트 워크플로 위임(라운드 05). 화자 M/W 토글(passage.body=[{speaker,text}] — 열린질문 5 를 토글로 확정), 서버 validateGeneratedLesson 단일 소스로 422. published 본문 편집은 reviewer 게이트. e2e-admin-authoring A0~A5 통과" }
+  - { id: B, name: "토픽 생성 · 구성 · 순서", status: done, done_at: 2026-09-05, note: "admin-topic.service + /api/admin/topics 6라우트 + src/admin/editors/topic.jsx. eligible 임계치는 api/lib/topic-eligible.js 단일 소스(학습 API 와 공유). e2e B6~B9 통과" }
+  - { id: C, name: "스피킹 세트 — speaking_sets · 3단 폴백 · 에디터", status: todo, gated_by: "플랜 10 실측(pending_verification 유지 — 화면·서버 미착수)" }
 verify: ["scripts/e2e-admin-authoring.mjs (신규)", "scripts/e2e-topics.mjs", "scripts/e2e-plan08-screens.mjs"]
 follow_ups:
   - "풀 기능 LC 에디터(줄 순서 드래그·문항 추가/삭제) — 최소형으로 부족하다고 판명될 때"
@@ -181,7 +181,13 @@ PUT    /api/admin/topics/:id/contents           구성·순서 일괄 저장
 3. **세트 선택 UI 노출 기준** — 세트 2개 이상일 때만(원안). 세트 1개 + 파생 문장이 섞이는 화면을 어떻게 표시할지.
 4. **Part 7 에디터를 같은 폼으로 처리하는 것이 충분한가** — 지문이 길어 textarea 하나면 되지만, 문항 수·지문 수(복수 지문)가
    LC 와 다르다. 최소형에서 부족하면 follow_up.
-5. **LC 스크립트 편집 단위 — 화자 토글인가, `M:` 접두 텍스트인가 (2026-09-03 검토, 미해결).**
+5. ~~**LC 스크립트 편집 단위 — 화자 토글인가, `M:` 접두 텍스트인가**~~ → **화자 토글로 확정 (2026-09-05)**.
+   에디터는 줄마다 `[M|W]` 토글 + 대사 textarea 이고 저장 페이로드는 `{speaker,text}` 그대로다 —
+   10.7 §3.2 의 구조화(`passage.body = [{speaker,text}]`)와 검증기(`validateLcScript` 가 `text` 에 `M:` 라벨이
+   남으면 거부)에 맞춘다. 접두 텍스트로 두면 저장 때 다시 파싱해야 하고 10.7 이 없앤 정규식을 되살린다.
+   아래 원문은 그 판단의 근거로 남긴다.
+
+   **LC 스크립트 편집 단위 — 화자 토글인가, `M:` 접두 텍스트인가 (2026-09-03 검토).**
    Phase A 표는 "줄 단위 textarea, `M:`/`W:` 접두는 텍스트로 그대로" 라고 적었는데, 이는 `passage.body` 가
    문자열 배열이던 시절의 전제다. [10.7 §3.2](10.7-db-rebaseline.md) 가 이를 `[{speaker, text}]` 로 구조화하기로
    했으므로, 접두를 텍스트로 두면 에디터가 저장할 때 `"M: ..."` 를 다시 파싱해 쪼개야 한다 — 10.7 이 구조화한

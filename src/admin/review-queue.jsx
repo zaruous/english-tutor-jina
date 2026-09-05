@@ -109,9 +109,19 @@ function AdminReviewDetail({ theme, item, busy, onReview, separateReviewer }) {
         </div>
       </div>}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <button type="button" disabled title="승인 전 수정 기능은 준비 중입니다" style={{ ...button, color: theme.textDim, background: 'transparent', cursor: 'not-allowed', opacity: 0.5 }}>
-          <Icons.Book size={13} /> 승인 전 수정
-        </button>
+        {/* 승인 전 수정 — 레슨만 LC 에디터(플랜 13 Phase A, editors/lc.jsx)로 보낸다. 해시 형식은 admin-app.jsx
+            adminRouteFromHash 의 것인데, adminGoto 는 이 파일 뒤에 로드되는 이름이라 해시를 직접 쓴다.
+            다른 유형은 흐리게 남긴다 — 사라지면 "이 유형은 편집이 없다" 가 아니라 "버그" 로 읽힌다. */}
+        {item.type === 'lesson'
+          ? <button type="button" data-testid="review-edit" disabled={busy} title="LC 에디터에서 고친 뒤 다시 검수합니다"
+            onClick={() => { window.location.hash = `#/edit/lesson/${encodeURIComponent(item.id)}?from=review`; }}   // 에디터의 '목록' 이 검수 큐로 돌아오게
+            style={{ ...button, color: theme.text, background: 'transparent', cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.5 : 1 }}>
+            <Icons.Book size={13} /> 승인 전 수정
+          </button>
+          : <button type="button" data-testid="review-edit" disabled title="레슨만 편집할 수 있습니다(플랜 13 최소형)"
+            style={{ ...button, color: theme.textDim, background: 'transparent', cursor: 'not-allowed', opacity: 0.5 }}>
+            <Icons.Book size={13} /> 승인 전 수정
+          </button>}
         <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: theme.textMuted }}>
           <input type="checkbox" data-testid="review-publish" checked={publish} disabled={busy || !item.can_approve}
             onChange={(event) => setPublish(event.target.checked)} style={{ accentColor: theme.accent }} />승인과 함께 공개

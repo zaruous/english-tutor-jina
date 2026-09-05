@@ -33,11 +33,23 @@ const ADMIN_ROLE_TONE = {
   learner: 'textDim',
 };
 
+// minRole 이 모자라면 탭을 흐리게 둔다. 판정은 /api/auth/me 의 can_* 불린(adminHasRole) — 서버가 어차피 403 을 준다.
 const ADMIN_TABS = [
   { key: 'contents', label: '콘텐츠' },
   { key: 'review', label: '검수' },
-  { key: 'users', label: '사용자', adminOnly: true },
+  // 토픽 구성(플랜 13 Phase B)은 저작이라 author 이상. 화면은 editors/topic.jsx 의 AdminTopicComposer 가 그린다.
+  { key: 'topics', label: '토픽', minRole: 'author' },
+  { key: 'users', label: '사용자', minRole: 'admin' },
 ];
+
+// 탭에 없는 라우트가 어느 탭 아래인지. 레슨 에디터는 목록의 [▾] 에서 들어오는 화면이라 콘텐츠 탭을 켜 둔다.
+const ADMIN_ROUTE_TAB = { 'edit-lesson': 'contents' };
+
+const ADMIN_TAB_BLOCKED = {
+  author: '저작자(author) 이상만 열 수 있습니다',
+  reviewer: '검수자(reviewer) 이상만 열 수 있습니다',
+  admin: '관리자(admin)만 열 수 있습니다',
+};
 
 // theme 팔레트에는 hex(`#B794F4`)와 rgba(`rgba(245,245,250,0.38)`)가 섞여 있다.
 // 색 뒤에 알파 2자리를 덧붙이는 흔한 트릭은 **hex 에서만** 통한다 — rgba 에 붙이면
@@ -73,25 +85,52 @@ function useAdminTheme() {
   return JINA_THEMES[name] || JINA_THEMES.aurora;
 }
 
-// 라우팅은 해시 하나로 끝낸다. 화면이 셋뿐이고, admin.html 은 학습 앱 라우팅(APP_PAGES)에
-// 편입하지 않는다는 결정 4 때문에 공용 라우터를 끌어올 수도 없다.
+// 라우팅은 해시 하나로 끝낸다. admin.html 은 학습 앱 라우팅(APP_PAGES)에 편입하지 않는다는
+// 결정 4 때문에 공용 라우터를 끌어올 수도 없다. 라우트는 { route, id } 객체다 — 플랜 13 이
+// id 를 싣는 화면(레슨 에디터·토픽 구성)을 더했다.
+//   #/contents · #/review · #/users     → { route, id: null }
+//   #/edit/lesson/new                   → { route: 'edit-lesson', id: null }   신규 → POST
+//   #/edit/lesson/:id                   → { route: 'edit-lesson', id }         수정 → PATCH
+//   #/topics · #/topics/new · #/topics/:id → { route: 'topics', id: null | 'new' | id }   (editors/topic.jsx 의 규약)
+// 모르는 경로·숫자가 아닌 id 는 콘텐츠 목록으로 떨어진다 — 빈 화면보다 낫다.
+const ADMIN_PLAIN_ROUTES = ['contents', 'review', 'users', 'topics'];
+
 function adminRouteFromHash() {
   const raw = String(window.location.hash || '').replace(/^#\/?/, '').split('?')[0];
-  return ['users', 'review'].includes(raw) ? raw : 'contents';
+  const seg = raw.split('/').filter(Boolean);
+  if (seg[0] === 'edit' && seg[1] === 'lesson') {
+    if (seg[2] === 'new') return { route: 'edit-lesson', id: null };
+    if (/^\d+$/.test(seg[2] || '')) return { route: 'edit-lesson', id: seg[2] };
+    return { route: 'contents', id: null };
+  }
+  if (seg[0] === 'topics' && seg.length > 1) {
+    if (seg[1] === 'new' || /^\d+$/.test(seg[1])) return { route: 'topics', id: seg[1] };
+    return { route: 'contents', id: null };
+  }
+  return { route: ADMIN_PLAIN_ROUTES.includes(seg[0]) ? seg[0] : 'contents', id: null };
 }
 
 function useAdminRoute() {
-  const [route, setRoute] = React.useState(adminRouteFromHash);
+  const [nav, setNav] = React.useState(adminRouteFromHash);
   React.useEffect(() => {
-    const onHash = () => setRoute(adminRouteFromHash());
+    const onHash = () => setNav(adminRouteFromHash());
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
-  return route;
+  return nav;
 }
 
-function adminGoto(route) {
-  window.location.hash = `#/${['users', 'review'].includes(route) ? route : 'contents'}`;
+// adminRouteFromHash 의 역함수. id 를 받는 라우트는 둘뿐이고 그 외는 id 를 버린다.
+function adminGoto(route, id) {
+  if (route === 'edit-lesson') {
+    window.location.hash = `#/edit/lesson/${id == null ? 'new' : encodeURIComponent(id)}`;
+    return;
+  }
+  if (route === 'topics' && id != null) {
+    window.location.hash = `#/topics/${encodeURIComponent(id)}`;
+    return;
+  }
+  window.location.hash = `#/${ADMIN_PLAIN_ROUTES.includes(route) ? route : 'contents'}`;
 }
 
 // 열린 메뉴 닫기 — 바깥 클릭 · Esc · 리사이즈 · 스크롤.
@@ -199,12 +238,14 @@ function AdminTopBar({ theme, me }) {
 // 그쪽을 고칠 수 없어 이 스트립은 콘텐츠 화면에만 있고, 사용자 화면에서 돌아오는 길은
 // AdminBackToContents 가 맡는다(그 주석 참조).
 function AdminTabs({ theme, route, me }) {
+  // 탭이 없는 라우트(레슨 에디터)는 상위 탭을 켠다 — 어느 탭도 켜지지 않으면 "어디에 있나" 를 잃는다.
+  const tab = ADMIN_ROUTE_TAB[route] || route;
   return (
     <div style={{ display: 'flex', gap: 7, padding: '16px 26px 0', flexShrink: 0 }}>
       {ADMIN_TABS.map((t) => {
-        const active = t.key === route;
-        const blocked = t.soon || (t.adminOnly && !me?.can_admin);
-        const title = t.soon || (t.adminOnly && !me?.can_admin ? '관리자(admin)만 열 수 있습니다' : undefined);
+        const active = t.key === tab;
+        const blocked = t.soon || (t.minRole && !adminHasRole(me, t.minRole));
+        const title = t.soon || (blocked ? ADMIN_TAB_BLOCKED[t.minRole] : undefined);
         const style = {
           padding: '8px 14px', borderRadius: 9, fontSize: 13, fontWeight: 600,
           background: active ? theme.surface : 'transparent',
@@ -374,8 +415,17 @@ function AdminRowMenu({ theme, item, me, busy, onTransition, onPreview }) {
             label="미리보기"
             onClick={() => { setOpen(false); onPreview(); }}
           />
-          {/* 경계를 보여주기 위해 남긴다 — 이 화면은 '있는 것을 내리고 올리는 것' 만 한다. */}
-          <AdminMenuRow theme={theme} testid="content-edit" label="수정" tag="플랜 13" disabled />
+          {/* 수정은 레슨만(플랜 13 Phase A 최소형 — editors/lc.jsx). 다른 유형은 경계를 보여주기 위해
+              흐리게 남긴다: 사라지면 "이 유형은 편집이 없다" 가 아니라 "버그" 로 읽힌다. */}
+          <AdminMenuRow
+            theme={theme}
+            testid="content-edit"
+            icon={item.type === 'lesson' ? 'Book' : null}
+            label="수정"
+            tag={item.type === 'lesson' ? null : '플랜 13 범위 밖'}
+            disabled={item.type !== 'lesson'}
+            onClick={() => { setOpen(false); adminGoto('edit-lesson', item.id); }}
+          />
           <AdminMenuRow theme={theme} testid="content-delete" label="삭제" tag="범위 밖" disabled />
         </div>
       )}
@@ -735,9 +785,23 @@ function AdminCentered({ theme, children }) {
   );
 }
 
+// 에디터 파일이 로드되지 않았을 때(admin.html 의 script 순서·경로가 어긋났을 때) 트리를 죽이지 않고 말해 준다.
+// users.jsx 에 대해 AdminShell 이 하는 것과 같은 방식이다. 전체 화면이 아니라 탭 아래 영역에 그린다 —
+// 상단바·탭은 살려 두어야 다른 화면으로 나갈 수 있다.
+function AdminMissingScreen({ theme, label, file }) {
+  return (
+    <div data-testid="admin-missing-screen" data-file={file} style={{
+      padding: '48px 40px', textAlign: 'center', color: theme.error, fontSize: 13.5, lineHeight: 1.8,
+    }}>
+      {label}({file})가 로드되지 않았습니다 — admin.html 의 script 순서를 확인하세요.
+    </div>
+  );
+}
+
 function AdminShell() {
   const theme = useAdminTheme();
-  const route = useAdminRoute();
+  const nav = useAdminRoute();
+  const { route } = nav;
   const { status, user: me, error: authError, refresh } = useAuth();
 
   if (status === 'loading') {
@@ -805,10 +869,23 @@ function AdminShell() {
       <AdminScrollStyle theme={theme} />
       <AdminTopBar theme={theme} me={me} />
       <AdminTabs theme={theme} route={route} me={me} />
-      {route === 'review' ? <AdminReviewQueue theme={theme} me={me} /> : <AdminContentProvider>
-        <AdminContentsScreen />
-        <AdminNotice theme={theme} />
-      </AdminContentProvider>}
+      {/* 에디터 둘(플랜 13)은 editors/*.jsx 가 전역 이름으로 내놓는다. key 에 id 를 걸어 다른 레슨·토픽으로
+          해시가 바뀌면 폼 상태를 통째로 새로 시작한다 — 이전 레슨의 입력이 다음 레슨에 남으면 오저장이 된다. */}
+      {route === 'review' ? <AdminReviewQueue theme={theme} me={me} />
+        : route === 'edit-lesson' ? (
+          typeof AdminLcEditor === 'function'
+            ? <AdminLcEditor key={nav.id ?? 'new'} theme={theme} me={me} lessonId={nav.id} />
+            : <AdminMissingScreen theme={theme} label="LC 편집기" file="src/admin/editors/lc.jsx" />
+        )
+        : route === 'topics' ? (
+          typeof AdminTopicComposer === 'function'
+            ? <AdminTopicComposer key={nav.id ?? 'list'} theme={theme} me={me} topicId={nav.id} />
+            : <AdminMissingScreen theme={theme} label="토픽 편집기" file="src/admin/editors/topic.jsx" />
+        )
+        : <AdminContentProvider>
+          <AdminContentsScreen />
+          <AdminNotice theme={theme} />
+        </AdminContentProvider>}
     </div>
   );
 }
