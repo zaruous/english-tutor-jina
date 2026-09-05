@@ -2,16 +2,16 @@
 // 정답·해설 유출 방지의 구조적 보장: GET 계열 쿼리는 컬럼을 나열하고
 // answer/explanation을 아예 쓰지 않는다 (SELECT * 금지).
 // 채점은 POST /api/lessons/:id/attempts 서버 채점 — 정답/해설은 채점 응답에만 실린다.
+import { discoverable } from '../lib/content-scope.js';
 import { HttpError } from '../lib/errors.js';
 import { pool } from '../lib/pool.js';
 import { withTx } from '../lib/tx.js';
 
 // 레슨 = content_items(type='lesson') + lesson_details 1:1 (플랜 10.7 Phase 2).
-// 가시성 판정이 content_items 한 곳에만 있으므로 아래 두 조각을 모든 읽기 쿼리가 공유한다.
+// 가시성 판정의 단일 소스는 api/lib/content-scope.js (플랜 11 결정 2).
 // $1 은 항상 user_id 다 — 소유자는 비공개 콘텐츠도 본다.
 const LESSON_SOURCE = `content_items l JOIN lesson_details d ON d.content_id = l.id`;
-const LESSON_VISIBLE = `l.type = 'lesson' AND l.status = 'published'
-     AND (l.visibility = 'public' OR l.created_by = $1)`;
+const LESSON_VISIBLE = `l.type = 'lesson' AND ${discoverable('l')}`;
 
 // 목록: LEFT JOIN LATERAL로 사용자별 attempt 집계 (저장 금지, 매 요청 계산)
 // LessonSummary 컬럼 — GET /api/lessons 행과 GET /api/lessons/recommended 행이 같은 모양이 되도록 한 곳에서 정의.

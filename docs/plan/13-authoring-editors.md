@@ -2,7 +2,7 @@
 # status: draft | in_progress | done · phase.status: done | pending_verification | todo
 plan: "13"
 title: "관리자 콘텐츠 ③ — LC 에디터(최소형) · 토픽 구성 · 스피킹 세트"
-status: draft
+status: in_progress
 group:
   id: admin-content
   title: "관리자 콘텐츠 저작·관리"
@@ -15,7 +15,7 @@ preconditions:
   - { phase: C, requires: "플랜 10 Phase 1·2 실측 검증 통과 (pending_verification → done)", reason: "focus 음소·target_wpm 은 발음 점수가 있어야 의미가 있다" }
 migrations: ["0018_speaking_set_details"]   # Phase C 에서만. 10.7 baseline 위에 detail 테이블 1개
 phases:
-  - { id: A, name: "LC 에디터 최소형 — AI 초안·기존 레슨을 폼으로 고친다", status: todo }
+  - { id: A, name: "LC 에디터 최소형 — AI 초안·기존 레슨을 폼으로 고친다", status: done, done_at: 2026-09-05, note: "src/admin/contents.jsx 의 LessonEditor(신규 생성 포함 — POST/PATCH /api/admin/contents/lesson). LC 는 화자 토글 + 본문 필드(열린 질문 5 를 토글안으로 확정). 검증은 서버 단일 소스(validateGeneratedLesson 재사용, 422 + validation_errors 렌더). 시드 편집 → curated 전환 + 재시드 보호. 진입점 중 '12 검수 화면 링크'는 12 미착수라 제외. e2e-admin-contents 15/15 · tests/admin-content.service.test.mjs" }
   - { id: B, name: "토픽 생성 · 구성 · 순서", status: todo }
   - { id: C, name: "스피킹 세트 — speaking_sets · 3단 폴백 · 에디터", status: todo, gated_by: "플랜 10 실측" }
 verify: ["scripts/e2e-admin-authoring.mjs (신규)", "scripts/e2e-topics.mjs", "scripts/e2e-plan08-screens.mjs"]
@@ -181,7 +181,10 @@ PUT    /api/admin/topics/:id/contents           구성·순서 일괄 저장
 3. **세트 선택 UI 노출 기준** — 세트 2개 이상일 때만(원안). 세트 1개 + 파생 문장이 섞이는 화면을 어떻게 표시할지.
 4. **Part 7 에디터를 같은 폼으로 처리하는 것이 충분한가** — 지문이 길어 textarea 하나면 되지만, 문항 수·지문 수(복수 지문)가
    LC 와 다르다. 최소형에서 부족하면 follow_up.
-5. **LC 스크립트 편집 단위 — 화자 토글인가, `M:` 접두 텍스트인가 (2026-09-03 검토, 미해결).**
+5. ~~**LC 스크립트 편집 단위**~~ → **화자 토글 + 본문 필드로 확정** (2026-09-05, Phase A 구현).
+   10.7 의 `[{speaker,text}]` 구조를 화면에서 되돌리지 않는 쪽 — 에디터가 저장 시 재파싱하지 않는다.
+   원문 검토 기록:
+   **LC 스크립트 편집 단위 — 화자 토글인가, `M:` 접두 텍스트인가 (2026-09-03 검토).**
    Phase A 표는 "줄 단위 textarea, `M:`/`W:` 접두는 텍스트로 그대로" 라고 적었는데, 이는 `passage.body` 가
    문자열 배열이던 시절의 전제다. [10.7 §3.2](10.7-db-rebaseline.md) 가 이를 `[{speaker, text}]` 로 구조화하기로
    했으므로, 접두를 텍스트로 두면 에디터가 저장할 때 `"M: ..."` 를 다시 파싱해 쪼개야 한다 — 10.7 이 구조화한

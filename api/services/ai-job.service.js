@@ -1,6 +1,7 @@
 // AI 생성 작업 상태/게시 서비스 — docs/plan/07 Phase 2~3.
 // 요청은 짧은 HTTP 안에서 queued로 저장하고, 느린 CLI 호출은 ai-job-worker.js가 처리한다.
 import { createHash } from 'node:crypto';
+import { discoverable } from '../lib/content-scope.js';
 import { HttpError } from '../lib/errors.js';
 import { pool } from '../lib/pool.js';
 import { withTx } from '../lib/tx.js';
@@ -100,8 +101,7 @@ export function jobDto(row) {
 async function assertTopicAccess(client, userId, topicId) {
   if (!topicId) return;
   const { rowCount } = await client.query(
-    `SELECT 1 FROM topics
-      WHERE id = $1 AND (visibility = 'public' OR created_by = $2)`,
+    `SELECT 1 FROM topics t WHERE t.id = $1 AND ${discoverable('t', '$2')}`,
     [topicId, userId],
   );
   if (rowCount === 0) throw new HttpError(404, 'NOT_FOUND', '토픽을 찾을 수 없습니다.');
