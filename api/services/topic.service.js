@@ -1,5 +1,6 @@
 // 토픽 서비스 — 콘텐츠 수와 진행률은 저장하지 않고 관계/이벤트 테이블에서 매 요청 계산한다.
 import { discoverable } from '../lib/content-scope.js';
+import { isEligible, topicCountCols } from '../lib/topic-eligible.js';
 import { HttpError } from '../lib/errors.js';
 import { pool } from '../lib/pool.js';
 import { withTx } from '../lib/tx.js';
@@ -15,19 +16,7 @@ const OF_TYPE = (a, type) => `${a}.type = '${type}' AND ${discoverable(a, '$1')}
 
 const TOPIC_SUMMARY = `
   SELECT t.id, t.slug, t.label_ko, t.description, t.visibility,
-         (SELECT count(*)::int
-            FROM topic_contents tc
-            JOIN content_items l ON l.id = tc.content_id
-           WHERE tc.topic_id = t.id AND ${OF_TYPE('l', 'lesson')}) AS lesson_count,
-         (SELECT count(*)::int
-            FROM topic_contents tc
-            JOIN content_items s ON s.id = tc.content_id
-           WHERE tc.topic_id = t.id AND ${OF_TYPE('s', 'scenario')}) AS scenario_count,
-         (SELECT COALESCE(sum(jsonb_array_length(vd.words)), 0)::int
-            FROM topic_contents tc
-            JOIN content_items v ON v.id = tc.content_id
-            JOIN vocab_set_details vd ON vd.content_id = v.id
-           WHERE tc.topic_id = t.id AND ${OF_TYPE('v', 'vocab_set')}) AS vocab_count
+         ${topicCountCols('t', '$1')}
     FROM topics t
    WHERE ${discoverable('t', '$1')}`;
 
@@ -38,7 +27,7 @@ const TOPIC_SUMMARY = `
 // 계산은 그대로 둔다 — 집계 3개는 화면에서 여전히 쓸모가 있다.
 // 학습 앱(src/screens/topics.jsx)은 이 필드를 렌더하지 않는다.
 function topicDto(row) {
-  const eligible = row.lesson_count >= 3 && row.scenario_count >= 1 && row.vocab_count >= 20;
+  const eligible = isEligible(row);   // 임계치는 api/lib/topic-eligible.js 한 곳
   return {
     id: row.id, slug: row.slug, label_ko: row.label_ko, description: row.description,
     lesson_count: row.lesson_count, scenario_count: row.scenario_count,

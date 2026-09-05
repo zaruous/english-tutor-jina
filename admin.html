@@ -25,20 +25,29 @@
          - icons 는 Icons.* 를 쓰는 모든 화면보다 앞
          - api-client(window.JINA_API) 는 auth-store 보다 앞
          - auth-store(AuthProvider·useAuth) 는 이것을 쓰는 모든 화면보다 앞
-       학습 화면(src/screens/**)·speech·app-nav 는 여기서 로드하지 않는다 — admin 은 별도 엔트리다. -->
+       학습 화면(src/screens/**)·app-nav 는 여기서 로드하지 않는다 — admin 은 별도 엔트리다.
+       speech.jsx 는 LC 에디터의 TTS 미리듣기 때문에 예외로 로드한다(아래 주석). -->
   <script type="text/babel" src="src/shared/tokens.jsx"></script>
   <script type="text/babel" src="src/shared/icons.jsx"></script>
   <script type="text/babel" src="src/shared/api-client.jsx"></script>
   <script type="text/babel" src="src/shared/auth-store.jsx"></script>
+  <!-- speech.jsx — LC 에디터의 TTS 미리듣기(window.jinaSpeak). 최상위 부작용은 window.* 할당뿐이고
+       내비 가드 모달은 훅을 쓰는 화면에서만 렌더되므로 관리 화면에는 나타나지 않는다. -->
+  <script type="text/babel" src="src/shared/speech.jsx"></script>
 
-  <!-- Admin: content-store → users → review-queue → admin-app
+  <!-- Admin: content-store → users → review-queue → editors/* → admin-app
        admin-app 이 **반드시 마지막**이다. users.jsx 는 자기 root 를 만들어 스스로 render 하는
        완결된 엔트리이고 이 플랜에서 수정 대상이 아니라서, admin-app 이 그 root 를 넘겨받아
-       다시 render 하는 방식으로 화면 전환(#/contents · #/review · #/users)을 얹는다.
-       순서가 뒤집히면 users.jsx 의 render 가 마지막에 이겨 콘텐츠 화면이 뜨지 않는다. -->
+       다시 render 하는 방식으로 화면 전환(#/contents · #/review · #/users · #/edit/lesson/:id · #/topics)을 얹는다.
+       순서가 뒤집히면 users.jsx 의 render 가 마지막에 이겨 콘텐츠 화면이 뜨지 않는다.
+       editors/*(플랜 13)는 전역 컴포넌트(AdminLcEditor·AdminTopicComposer)만 내놓고 admin-app 이 라우트에서
+       typeof 로 확인해 그린다 — 빠지거나 뒤로 가면 해당 화면만 "로드되지 않았습니다" 안내가 뜨고 나머지는 산다.
+       content-store 의 ADMIN_STATUS_META·ADMIN_KIND_LABELS 를 쓰므로 그 뒤여야 한다. -->
   <script type="text/babel" src="src/admin/content-store.jsx"></script>
   <script type="text/babel" src="src/admin/users.jsx"></script>
   <script type="text/babel" src="src/admin/review-queue.jsx"></script>
+  <script type="text/babel" src="src/admin/editors/lc.jsx"></script>
+  <script type="text/babel" src="src/admin/editors/topic.jsx"></script>
   <script type="text/babel" src="src/admin/admin-app.jsx"></script>
 </body>
 </html>
