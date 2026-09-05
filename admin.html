@@ -31,13 +31,14 @@
   <script type="text/babel" src="src/shared/api-client.jsx"></script>
   <script type="text/babel" src="src/shared/auth-store.jsx"></script>
 
-  <!-- Admin: content-store → users → admin-app
+  <!-- Admin: content-store → users → review-queue → admin-app
        admin-app 이 **반드시 마지막**이다. users.jsx 는 자기 root 를 만들어 스스로 render 하는
        완결된 엔트리이고 이 플랜에서 수정 대상이 아니라서, admin-app 이 그 root 를 넘겨받아
-       다시 render 하는 방식으로 화면 전환(#/contents ↔ #/users)을 얹는다.
+       다시 render 하는 방식으로 화면 전환(#/contents · #/review · #/users)을 얹는다.
        순서가 뒤집히면 users.jsx 의 render 가 마지막에 이겨 콘텐츠 화면이 뜨지 않는다. -->
   <script type="text/babel" src="src/admin/content-store.jsx"></script>
   <script type="text/babel" src="src/admin/users.jsx"></script>
+  <script type="text/babel" src="src/admin/review-queue.jsx"></script>
   <script type="text/babel" src="src/admin/admin-app.jsx"></script>
 </body>
 </html>

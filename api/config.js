@@ -78,6 +78,9 @@ export const config = {
   cookieSecure: process.env.COOKIE_SECURE === 'true',
   sessionTtlDays: int('SESSION_TTL_DAYS', 30),
 
+  // 1인 운영은 자가 승인을 허용한다. 검수와 일반 전이 API 가 같은 설정을 읽는다.
+  requireSeparateReviewer: process.env.REQUIRE_SEPARATE_REVIEWER === '1',
+
   devAutologin,
   devUserEmail: process.env.DEV_USER_EMAIL || 'jina@dev.local',
   devUserPassword: process.env.DEV_USER_PASSWORD || '',

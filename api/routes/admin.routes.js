@@ -71,6 +71,36 @@ export function registerAdminRoutes(router) {
     });
   });
 
+  // 큐 조회와 검수도 author 가 진입하고 실제 승인·반려 권한은 전이표가 판정한다.
+  router.get('/api/admin/drafts', async (req, res, { query }) => {
+    const { user } = await requireAuthor(req, res);
+    const type = oneOf(query.get('type') || undefined, 'type', adminContents.CONTENT_TYPES, { optional: true });
+    const q = str(query.get('q') || '', 'q', { optional: true, max: 200 });
+    const limit = Math.min(posInt(query.get('limit') || '50', 'limit'), 200);
+    const rawOffset = Number(query.get('offset') ?? 0);
+    const offset = Number.isSafeInteger(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
+    sendJson(res, 200, { ok: true, ...(await adminContents.listDrafts(user, { type, q, limit, offset })) });
+  });
+
+  router.post('/api/admin/drafts/:id/approve', async (req, res, { params }) => {
+    const { user } = await requireAuthor(req, res);
+    const body = await readJson(req);
+    const note = str(body.note, 'note', { optional: true, max: 500 }) ?? '';
+    const publish = body.publish === undefined ? false : bool(body.publish, 'publish');
+    sendJson(res, 200, {
+      ok: true, ...(await adminContents.approveDraft(user, posInt(params.id, 'id'), { note, publish })),
+    });
+  });
+
+  router.post('/api/admin/drafts/:id/reject', async (req, res, { params }) => {
+    const { user } = await requireAuthor(req, res);
+    const body = await readJson(req);
+    const note = str(body.note, 'note', { min: 1, max: 500 });
+    sendJson(res, 200, {
+      ok: true, ...(await adminContents.rejectDraft(user, posInt(params.id, 'id'), { note })),
+    });
+  });
+
   // 상태 전이. `:type` 은 여기서 형태만 보고(허용값 밖이면 400), 행의 type 과 다른지는
   // 서비스가 잠근 행에서 확인해 404 를 낸다 — 다른 유형의 id 로 조작하는 것을 막는다.
   router.post('/api/admin/contents/:type/:id/status', async (req, res, { params }) => {

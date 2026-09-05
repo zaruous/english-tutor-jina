@@ -35,7 +35,7 @@ const ADMIN_ROLE_TONE = {
 
 const ADMIN_TABS = [
   { key: 'contents', label: '콘텐츠' },
-  { key: 'review', label: '검수', soon: '아직 만들지 않은 화면입니다 (플랜 12 — AI 초안 검수 큐)' },
+  { key: 'review', label: '검수' },
   { key: 'users', label: '사용자', adminOnly: true },
 ];
 
@@ -73,11 +73,11 @@ function useAdminTheme() {
   return JINA_THEMES[name] || JINA_THEMES.aurora;
 }
 
-// 라우팅은 해시 하나로 끝낸다. 화면이 둘뿐이고, admin.html 은 학습 앱 라우팅(APP_PAGES)에
+// 라우팅은 해시 하나로 끝낸다. 화면이 셋뿐이고, admin.html 은 학습 앱 라우팅(APP_PAGES)에
 // 편입하지 않는다는 결정 4 때문에 공용 라우터를 끌어올 수도 없다.
 function adminRouteFromHash() {
   const raw = String(window.location.hash || '').replace(/^#\/?/, '').split('?')[0];
-  return raw === 'users' ? 'users' : 'contents';
+  return ['users', 'review'].includes(raw) ? raw : 'contents';
 }
 
 function useAdminRoute() {
@@ -91,7 +91,7 @@ function useAdminRoute() {
 }
 
 function adminGoto(route) {
-  window.location.hash = route === 'users' ? '#/users' : '#/contents';
+  window.location.hash = `#/${['users', 'review'].includes(route) ? route : 'contents'}`;
 }
 
 // 열린 메뉴 닫기 — 바깥 클릭 · Esc · 리사이즈 · 스크롤.
@@ -805,10 +805,10 @@ function AdminShell() {
       <AdminScrollStyle theme={theme} />
       <AdminTopBar theme={theme} me={me} />
       <AdminTabs theme={theme} route={route} me={me} />
-      <AdminContentProvider>
+      {route === 'review' ? <AdminReviewQueue theme={theme} me={me} /> : <AdminContentProvider>
         <AdminContentsScreen />
         <AdminNotice theme={theme} />
-      </AdminContentProvider>
+      </AdminContentProvider>}
     </div>
   );
 }
