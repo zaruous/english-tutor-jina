@@ -37,10 +37,12 @@ function topicDto(row) {
   };
 }
 
-export async function listTopics(user, { includeIneligible = false } = {}) {
+// 노출은 status 축이 결정한다(VISIBLE = published) — eligible 임계치는 필터가 아니라
+// DTO 필드로만 남는다(플랜 11 결정 3, 관리자 화면의 경고 배지용). 필터로 쓰면 관리자가
+// 새로 만든 토픽이 콘텐츠를 다 채우기 전까지 화면에 안 보여 저작이 막힌다.
+export async function listTopics(user) {
   const { rows } = await pool.query(`${TOPIC_SUMMARY} ORDER BY t.created_at, t.id`, [user.id]);
-  const topics = rows.map(topicDto);
-  return includeIneligible ? topics : topics.filter((t) => t.eligible);
+  return rows.map(topicDto);
 }
 
 async function getTopicRow(user, topicId) {

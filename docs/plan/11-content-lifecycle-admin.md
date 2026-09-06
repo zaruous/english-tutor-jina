@@ -2,7 +2,7 @@
 # status: draft | in_progress | done · phase.status: done | pending_verification | todo
 plan: "11"
 title: "관리자 콘텐츠 ① — 상태 축 · 권한 · 최소 관리 UI (11 → 12 → 13 시리즈의 첫 플랜)"
-status: in_progress
+status: done
 group:                       # 원래 한 플랜이었던 것을 셋으로 나눈 그룹 스콥 — 세 문서가 같은 블록을 가진다
   id: admin-content
   title: "관리자 콘텐츠 저작·관리"
@@ -14,10 +14,10 @@ depends_on: ["07", "08", "10.5", "10.7"]   # 콘텐츠 스키마(content_items·
 blocks: ["12", "13"]
 migrations: ["0017_user_roles.sql (Phase 3 산출 — 10.7 baseline 에 role 체계가 없어 이 플랜이 얹었다)", "0018_content_public_ck.sql (Phase 1 선결 — CHECK 를 확정안(후보 A)으로 교체, topics 포함)", "0019_content_revisions.sql (열린 질문 3 해소 — 본문 이력 + 감사 로그 rev 스탬프)"]
 phases:
-  - { id: "1", name: "상태 축 + 가시성 헬퍼 2종 + 전이 단일 소스 + 역할 미들웨어 + 표시부 정리 (UI 없음)", status: in_progress, note: "2026-09-05 — 0018 CHECK 교체 · content-scope.js(discoverable/resolvable) · content-status.js(canTransition, 409/403 구분) 완료. 기존 서비스 상수(LESSON_VISIBLE·topic VISIBLE·speaking 3곳·ai-job assertTopicAccess)를 discoverable 헬퍼 경유로 정리. tests/admin-content.service.test.mjs 8건이 픽스처·전이 매트릭스·archived 오답 노트 잔존을 단정. 남은 것: §3 의 resolvable 라우팅(오답 노트 조인·통계·Q&A·attempt 상세 — 현재 오답·통계는 status 무필터라 사실상 resolvable 로 동작, 명시 전환 필요) · topicDto.eligible 격하 · verify-content-status.mjs 독립 스크립트" }
+  - { id: "1", name: "상태 축 + 가시성 헬퍼 2종 + 전이 단일 소스 + 역할 미들웨어 + 표시부 정리 (UI 없음)", status: done, done_at: 2026-09-06, note: "0018 CHECK 교체 · content-scope.js(discoverable/resolvable) · content-status.js(canTransition, 409/403 구분). §3 표시부 완료 — 목록·추천·attempt 시작은 discoverable, 오답 노트(MISTAKES_SQL)·Q&A(prepareQa)·통계 조인(progress/dashboard)은 resolvable 명시 전환. topicDto.eligible 격하 — listTopics 는 status 만 보고 eligible 은 DTO 필드(관리자 배지)로만, 구 ?all=1 은 무의미해져 제거(e2e-topics 단정 갱신). 검증은 verify-content-status.mjs 대신 tests/admin-content.service.test.mjs(픽스처·전이 매트릭스·archived 잔존)가 담당 — CI 에서 매번 돌아 독립 스크립트보다 낫다" }
   - { id: "2", name: "admin.html 최소 관리 UI — 목록 · 상태 전이", status: done, done_at: 2026-09-05, note: "admin-app.jsx(셸·탭) + contents.jsx(목록·전이·에디터 — content-store 는 users.jsx 선례대로 화면 내 상태로 대체) + GET/POST /api/admin/contents(:id/status·:id/visibility, canTransition + content_audit_log 트랜잭션). scripts/e2e-admin-contents.mjs 15/15 — 내리기가 공개범위를 유지하고 학습 목록에서 즉시 빠지는 것 실측" }
   - { id: "3", name: "사용자 · 역할 관리 — 목록 · 역할 부여 · 세션 종료", status: done, done_at: 2026-09-04, note: "PR #7(b51eb9a). 산출물 5종 전부 + e2e-admin-users 17/17 + tests/admin-user.service.test.mjs 3건(CI). 0017_user_roles.sql 로 roles · users.role/is_active · user_audit_log 를 얹었다" }
-verify: ["tests/admin-content.service.test.mjs (신규 — Phase 1 검증 3묶음의 단위 테스트판)", "scripts/e2e-admin-contents.mjs (신규 — Phase 2 + 13 Phase A 브라우저 실측)", "scripts/verify-content-status.mjs (미작성)", "scripts/e2e-admin-users.mjs", "tests/admin-user.service.test.mjs", "scripts/e2e-lesson.mjs", "scripts/e2e-dashboard.mjs", "scripts/e2e-plan08-screens.mjs", "scripts/e2e-topics.mjs"]
+verify: ["tests/admin-content.service.test.mjs (신규 — Phase 1 검증 3묶음의 단위 테스트판)", "scripts/e2e-admin-contents.mjs (신규 — Phase 2 + 13 Phase A 브라우저 실측)", "scripts/verify-content-status.mjs — 단위 테스트로 대체(Phase 1 note)", "scripts/e2e-admin-users.mjs", "tests/admin-user.service.test.mjs", "scripts/e2e-lesson.mjs", "scripts/e2e-dashboard.mjs", "scripts/e2e-plan08-screens.mjs", "scripts/e2e-topics.mjs"]
 follow_ups:
   - "AI 초안 검수 → 공개: 플랜 12"
   - "저작 에디터 · 토픽 구성 · 스피킹 세트: 플랜 13"

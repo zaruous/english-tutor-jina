@@ -4,6 +4,7 @@
 
 const ADMIN_TABS = [
   { key: 'contents', label: '콘텐츠' },
+  { key: 'topics', label: '토픽' },
   { key: 'review', label: '검수' },
   { key: 'users', label: '사용자' },
 ];
@@ -98,6 +99,7 @@ function AdminShell() {
       </div>
 
       {tab === 'contents' ? <AdminContentsScreen theme={theme} editRequest={editRequest} />
+        : tab === 'topics' ? <AdminTopicsScreen theme={theme} />
         : tab === 'review' ? <AdminReviewScreen theme={theme} onEditLesson={openLessonEditor} />
         : <AdminUsersScreen theme={theme} />}
     </div>

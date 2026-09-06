@@ -23,22 +23,23 @@ check('비즈니스 면접 토픽 — 임계치 충족(레슨≥3·회화≥1·�
   T && T.lesson_count >= 3 && T.scenario_count >= 1 && T.vocab_count >= 20 && T.eligible === true,
   T && `${T.lesson_count}/${T.scenario_count}/${T.vocab_count}`);
 
-// 임계치 미만 토픽은 기본 목록에서 숨김 — 빈 임시 토픽을 넣어 검증
-await pool.query(`DELETE FROM topics WHERE slug = 'e2e-temp-topic'`);
-// status 축 도입 후(플랜 10.7 Phase 2)에는 공개 상태를 명시해야 목록에 뜬다 —
-// 이 픽스처가 검증하려는 것은 "draft 라서 숨김"이 아니라 "임계치 미만이라 숨김"이다.
+// 임계치는 필터가 아니라 DTO 필드다(플랜 11 결정 3) — 노출은 status 축이 결정한다.
+// published+public 이면 임계치 미만이라도 목록에 뜨고 eligible=false 로 내려온다.
+// draft 토픽은 status 때문에 숨는다(임계치와 무관).
+await pool.query(`DELETE FROM topics WHERE slug IN ('e2e-temp-topic', 'e2e-draft-topic')`);
 await pool.query(
   `INSERT INTO topics (slug, label_ko, description, status, visibility)
-   VALUES ('e2e-temp-topic', '임시 검증 토픽', 'e2e', 'published', 'public')`);
+   VALUES ('e2e-temp-topic', '임시 검증 토픽', 'e2e', 'published', 'public'),
+          ('e2e-draft-topic', '초안 검증 토픽', 'e2e', 'draft', 'private')`);
 try {
-  const hidden = await getJson('/api/topics');
-  check('임계치 미만 토픽 — 기본 목록에서 숨김',
-    hidden.ok && !hidden.topics.some((t) => t.slug === 'e2e-temp-topic'));
-  const all = await getJson('/api/topics?all=1');
-  const temp = all.topics?.find((t) => t.slug === 'e2e-temp-topic');
-  check('?all=1 — 임계치 미만 토픽 노출 · eligible=false', Boolean(temp) && temp.eligible === false);
+  const list = await getJson('/api/topics');
+  const temp = list.topics?.find((t) => t.slug === 'e2e-temp-topic');
+  check('published 토픽 — 임계치 미만이라도 목록 노출 · eligible=false',
+    Boolean(temp) && temp.eligible === false);
+  check('draft 토픽 — status 때문에 숨김',
+    list.ok && !list.topics.some((t) => t.slug === 'e2e-draft-topic'));
 } finally {
-  await pool.query(`DELETE FROM topics WHERE slug = 'e2e-temp-topic'`);
+  await pool.query(`DELETE FROM topics WHERE slug IN ('e2e-temp-topic', 'e2e-draft-topic')`);
 }
 
 // 단일 FK — 배타 FK 3종과 부분 UNIQUE 3개가 (topic_id, content_id) 하나로 줄었다(플랜 10.7 Phase 2).
@@ -119,7 +120,7 @@ await routeCdn(page);
 await page.goto(BASE);
 await page.waitForTimeout(9000); // in-browser Babel 컴파일
 
-// 대시보드 진입 카드 + 사이드바 항목 (eligible 토픽이 있을 때만 노출)
+// 대시보드 진입 카드 + 사이드바 항목 (published 토픽이 있을 때 노출 — eligible 은 배지용 필드)
 check('대시보드 — 주제별 학습 진입 카드', (await page.locator('[data-testid="dashboard-topic-entry"]').count()) === 1);
 const navItem = page.locator('aside[aria-label="주요 메뉴"] button', { hasText: '주제별 학습' });
 check('사이드바 — 주제별 학습 항목 노출', (await navItem.count()) === 1);

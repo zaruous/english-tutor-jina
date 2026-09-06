@@ -10,6 +10,7 @@
 // 테이블 부재 가드: 이 탭은 회화(0004)·학습(0005)이 만드는 테이블을 집계하므로
 // 어떤 구현 순서에서도 500이 나지 않게 to_regclass로 존재하는 블록만 UNION 한다.
 // 부재 소스의 카드는 정의된 빈 상태(null)를 내려보낸다 — null = "기록 없음", 0 = "전부 틀림".
+import { resolvable } from '../lib/content-scope.js';
 import { pool } from '../lib/pool.js';
 import { recommendLessons } from './lesson.service.js';
 import { fetchStats } from './vocab.service.js';
@@ -24,7 +25,8 @@ async function presentTables() {
     to_regclass('conversation_sessions') IS NOT NULL AS conv_sessions,
     to_regclass('conversation_messages') IS NOT NULL AS conv_messages,
     to_regclass('corrections')           IS NOT NULL AS corrections,
-    to_regclass('user_goals')            IS NOT NULL AS goals`);
+    to_regclass('user_goals')            IS NOT NULL AS goals,
+    to_regclass('speaking_attempts')     IS NOT NULL AS speaking`);
   r.conversation = r.conv_sessions && r.conv_messages; // 둘 다 있어야 조인 가능
   r.lesson = r.lessons && r.attempts;
   tablesCache = { at: Date.now(), val: r };
@@ -165,11 +167,25 @@ async function fetchLessonAccuracy(t, params) {
        COALESCE(sum(total_count)   FILTER (WHERE l.kind = 'toeic_lc'), 0)::int AS total_all_lc
        FROM user_lesson_attempts ua
        JOIN content_items c ON c.id = ua.content_id AND c.source = 'seed'
+        AND ${resolvable('c')}
        JOIN lesson_details l ON l.content_id = c.id
       WHERE ua.user_id = $1`,
     [params[0]],
   );
   return r;
+}
+
+// speaking 스킬 = 발음 점수 평균 (플랜 10 Phase 3). 30일 창이 비면 전체 평균 폴백 — 다른 스킬과 동일.
+async function fetchSpeakingAvg(t, params) {
+  if (!t.speaking) return { d30: null, dall: null };
+  const { rows: [r] } = await pool.query(
+    `SELECT round(avg(pron_score) FILTER (WHERE created_at > now() - interval '30 days'))::int AS d30,
+            round(avg(pron_score))::int AS dall
+       FROM speaking_attempts
+      WHERE user_id = $1 AND pron_score IS NOT NULL`,
+    [params[0]],
+  );
+  return { d30: r?.d30 ?? null, dall: r?.dall ?? null };
 }
 
 // 목표: 행이 없으면 INSERT 없이 기본값만 합성한다 (GET은 무부작용).
@@ -275,7 +291,7 @@ export async function getDashboard(user) {
 
   const [
     streakDays, weeklyDays, lastWeekMinutes, rAcc, qAcc,
-    goal, lastLesson, recLesson, todayFlags, recentCorrection, vocabStats,
+    goal, lastLesson, recLesson, todayFlags, recentCorrection, vocabStats, speakingAvg,
   ] = await Promise.all([
     fetchStreak(t, params),
     fetchWeekly(t, params),
@@ -288,6 +304,7 @@ export async function getDashboard(user) {
     fetchTodayFlags(t, params),
     fetchRecentCorrection(t, params),
     fetchStats(user.id), // vocab.service.js 재사용 — due 집계 중복 구현 금지
+    fetchSpeakingAvg(t, params),
   ]);
 
   const weekMinutes = weeklyDays.reduce((sum, d) => sum + d.minutes, 0);
@@ -343,17 +360,20 @@ export async function getDashboard(user) {
   });
   const doneCount = items.filter((it) => it.done).length;
 
-  // ── skills: 고정 4행. Listening = LC 레슨 정답률(플랜 08 §2.5), speaking 은 아직 소스 없음 → pct null ──
-  // 30일 창이 비면 전체 평균으로 폴백하는 규칙은 Reading/Vocabulary 와 동일하게 유지한다.
+  // ── skills: 고정 4행. Listening = LC 레슨 정답률(플랜 08 §2.5),
+  //    Speaking = 30일 발음 점수 평균(플랜 10 Phase 3 — speaking_attempts, 서버 평가 결과만) ──
+  // 30일 창이 비면 전체 평균으로 폴백하는 규칙은 네 스킬 모두 동일하다.
   const lessonPct = pooledPct(qAcc.pass_30_rc, qAcc.total_30_rc) ?? pooledPct(qAcc.pass_all_rc, qAcc.total_all_rc);
   const listeningPct = pooledPct(qAcc.pass_30_lc, qAcc.total_30_lc) ?? pooledPct(qAcc.pass_all_lc, qAcc.total_all_lc);
   const reviewPct = pooledPct(rAcc.pass_30, rAcc.total_30) ?? pooledPct(rAcc.pass_all, rAcc.total_all);
+  const speakingPct = speakingAvg.d30 ?? speakingAvg.dall ?? null;
   const skills = [
     { key: 'listening', label: 'Listening', pct: listeningPct,
       score_text: listeningPct === null ? '데이터 없음' : `LC 정답률 ${listeningPct}%` },
     { key: 'reading', label: 'Reading', pct: lessonPct,
       score_text: lessonPct === null ? '데이터 없음' : `레슨 정답률 ${lessonPct}%` },
-    { key: 'speaking', label: 'Speaking', pct: null, score_text: '데이터 없음' },
+    { key: 'speaking', label: 'Speaking', pct: speakingPct,
+      score_text: speakingPct === null ? '데이터 없음' : `발음 점수 평균 ${speakingPct}점` },
     { key: 'vocab', label: 'Vocabulary', pct: reviewPct,
       score_text: reviewPct === null ? '데이터 없음' : `복습 정답률 ${reviewPct}%` },
   ];

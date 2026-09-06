@@ -14,7 +14,7 @@ export function applyCors(req, res) {
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
-      'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
+      'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With, X-Jina-Mode, X-Jina-No-Autologin',
       'Access-Control-Max-Age': '600',
     });

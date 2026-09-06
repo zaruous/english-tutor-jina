@@ -11,6 +11,7 @@
 //  - monthly_scores: 점수 스냅샷 이력 테이블이 없다 → 항상 []
 //  - weeks_to_target: 스냅샷 없이는 기울기를 못 낸다 → 항상 null (mock의 "약 8주" 리터럴 대체)
 //  - skills의 Listening: LC 레슨(kind='toeic_lc') 정답률. 시도가 없으면 배열에서 제외 (JSX는 map이라 안전)
+import { resolvable } from '../lib/content-scope.js';
 import { pool } from '../lib/pool.js';
 import { listCorrections } from './conversation.service.js';
 
@@ -205,6 +206,7 @@ async function fetchScoreInputs(t, params) {
          FROM (SELECT ua.created_at, ua.correct_count::numeric / ua.total_count * 100 AS pct
                  FROM user_lesson_attempts ua
                  JOIN content_items l ON l.id = ua.content_id AND l.source = 'seed'
+                  AND ${resolvable('l')}
                 WHERE ua.user_id = $1) r`,
       [params[0]],
     );

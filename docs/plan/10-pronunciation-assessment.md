@@ -6,11 +6,11 @@ status: in_progress
 created: 2026-09-01
 updated: 2026-09-01
 depends_on: ["08"]
-migrations: []   # Phase 3 speaking_attempts 예정
+migrations: ["0020_speaking_attempts.sql (Phase 3)"]
 phases:
   - { id: "1", name: "서버 평가 경로 — 어댑터 2종 · 정규화 · lib/pronounce 사이드카", status: pending_verification, note: "구현 완료, 실제 사이드카 실측 대기" }
   - { id: "2", name: "화면 — 설정 → 음성 인식 모드 · 설치/기동 버튼 · 스피킹 발음 평가 모드", status: pending_verification, note: "구현 완료, 실측 대기" }
-  - { id: "3", name: "저장 · 통계 — speaking_attempts, speaking 스킬 30일 평균", status: todo }
+  - { id: "3", name: "저장 · 통계 — speaking_attempts, speaking 스킬 30일 평균", status: done, done_at: 2026-09-06, note: "0020 speaking_attempts(점수·단어별 분석만, 오디오 무저장 — §5.2). 서버 평가 성공 시에만 assess 라우트가 1행 저장(저장 실패는 평가 응답을 막지 않음), 받아쓰기 일치율은 계속 무저장. GET /api/speaking/attempts(최근+30일 평균) · 대시보드 speaking 스킬 = 30일 발음 점수 평균(비면 전체 평균 폴백, 다른 스킬과 동일) · 스피킹 화면 하단 최근 추이. 단위 테스트로 검증 — 실 점수 유입은 Phase 1 실측(사이드카)과 함께 확인" }
 verify: ["scripts/verify-pronunciation.mjs", "scripts/e2e-stt-settings.mjs"]
 next_step: "사이드카 설치·기동 후 verify-pronunciation.mjs 의 '오독 wav 점수가 낮은가' 통과"
 follow_ups:

@@ -4,13 +4,11 @@ import { requireUser } from '../middleware/auth.js';
 import * as topics from '../services/topic.service.js';
 
 export function registerTopicRoutes(router) {
-  // 기본은 임계치(레슨3·시나리오1·단어20)를 충족한 토픽만. all=1은 생성 UI/검증용.
-  router.get('/api/topics', async (req, res, { query }) => {
+  // 노출은 status(published)가 결정한다 — eligible 임계치는 DTO 필드로만 내려간다(플랜 11 결정 3).
+  // 구 all=1 파라미터는 필터가 사라져 의미가 없어졌다(받아도 무시).
+  router.get('/api/topics', async (req, res) => {
     const { user } = await requireUser(req, res);
-    sendJson(res, 200, {
-      ok: true,
-      topics: await topics.listTopics(user, { includeIneligible: query.get('all') === '1' }),
-    });
+    sendJson(res, 200, { ok: true, topics: await topics.listTopics(user) });
   });
 
   router.get('/api/topics/:id', async (req, res, { params }) => {

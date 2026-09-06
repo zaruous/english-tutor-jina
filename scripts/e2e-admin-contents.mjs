@@ -209,6 +209,44 @@ const detail2 = await api(admin.cookie, 'GET', `/api/admin/contents/${draft2.bod
 const approveAudit = detail2.body.content.recent_audit.find((a) => a.to_status === 'published');
 check('승인 감사 행에 rev 스탬프', approveAudit?.rev >= 1, `rev ${approveAudit?.rev}`);
 
+// 10) 토픽 탭 (플랜 13 Phase B) — 생성 → 구성 → 발행+공개 → 학습자 목록 노출(eligible=false 배지)
+const TOPIC_LABEL = `E2E 토픽 ${Date.now()}`;
+await page.click('[data-testid="admin-tab-topics"]');
+await page.waitForSelector('[data-testid="topic-new"]', { timeout: 10000 });
+await page.click('[data-testid="topic-new"]');
+await page.fill('[data-testid="topic-new-label"]', TOPIC_LABEL);
+await page.click('[data-testid="topic-new-submit"]');
+await page.waitForSelector('[data-testid="topic-content-search"]', { timeout: 10000 });
+check('새 토픽 → 컴포저 진입', true);
+
+// 시드 콘텐츠 하나를 검색해 붙이고 저장
+await page.waitForSelector('[data-testid="topic-search-row"]', { timeout: 10000 });
+await page.locator('[data-testid="topic-search-row"] button:has-text("+ 추가")').first().click();
+await page.waitForSelector('[data-testid="topic-content-row"]', { timeout: 5000 });
+await page.click('[data-testid="topic-contents-save"]');
+await page.waitForSelector('button:has-text("저장됨")', { timeout: 10000 });
+check('콘텐츠 붙이기 → 구성 저장', (await page.locator('[data-testid="topic-content-row"]').count()) === 1);
+
+// 목록으로 → 발행(검수 생략) → 전체 공개
+await page.click('button:has-text("← 토픽 목록")');
+await page.waitForSelector(`[data-testid="topic-admin-row"]:has-text("${TOPIC_LABEL}")`, { timeout: 10000 });
+const topicRow = page.locator(`[data-testid="topic-admin-row"]:has-text("${TOPIC_LABEL}")`);
+check('토픽 목록 — 초안 + 구성 부족 배지',
+  (await topicRow.innerText()).includes('초안') && (await topicRow.innerText()).includes('구성 부족'));
+async function topicAction(label) {
+  await topicRow.locator('[data-testid="content-kebab"]').click();
+  await page.click(`[data-testid="content-kebab-menu"] button:has-text("${label}")`);
+  await page.waitForTimeout(600);
+}
+await topicAction('발행 (검수 생략)');
+await topicAction('전체 공개로 전환');
+check('토픽 발행 + 공개', (await topicRow.innerText()).includes('전체 공개'));
+
+const learnerTopics = await api(learner.cookie, 'GET', '/api/topics');
+const listedTopic = learnerTopics.body.topics?.find((t) => t.label_ko === TOPIC_LABEL);
+check('학습자 토픽 목록 노출 (eligible=false 여도 — 배지 격하)',
+  Boolean(listedTopic) && listedTopic.eligible === false);
+
 await browser.close();
 const fail = results.filter((r) => !r.ok).length;
 console.log(`\n${results.length - fail}/${results.length} 통과`);

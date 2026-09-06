@@ -3,6 +3,7 @@ import { sendJson } from '../lib/respond.js';
 import { bool, oneOf, posInt, str } from '../lib/validate.js';
 import { requireAdmin, requireRole } from '../middleware/auth.js';
 import * as adminContents from '../services/admin-content.service.js';
+import * as adminTopics from '../services/admin-topic.service.js';
 import * as adminUsers from '../services/admin-user.service.js';
 
 export function registerAdminRoutes(router) {
@@ -112,6 +113,54 @@ export function registerAdminRoutes(router) {
     const note = str(body.note, 'note', { optional: true, max: 500 });
     const contentId = posInt(params.id, 'id');
     sendJson(res, 200, { ok: true, ...(await adminContents.transitionStatus(user, contentId, { to, note })) });
+  });
+
+  // ── 토픽 생성·구성 (플랜 13 Phase B) — 전 경로 author+, 전이·공개의 역할 판정은
+  // 콘텐츠와 같은 규칙(canTransition · reviewer)이 한다.
+  router.get('/api/admin/topics', async (req, res) => {
+    await requireRole('author')(req, res);
+    sendJson(res, 200, { ok: true, ...(await adminTopics.listTopicsAdmin()) });
+  });
+
+  router.post('/api/admin/topics', async (req, res) => {
+    const { user } = await requireRole('author')(req, res);
+    const body = await readJson(req);
+    sendJson(res, 201, { ok: true, ...(await adminTopics.createTopic(user, body)) });
+  });
+
+  router.get('/api/admin/topics/:id', async (req, res, { params }) => {
+    await requireRole('author')(req, res);
+    sendJson(res, 200, { ok: true, ...(await adminTopics.getTopicAdmin(posInt(params.id, 'id'))) });
+  });
+
+  router.patch('/api/admin/topics/:id', async (req, res, { params }) => {
+    const { user } = await requireRole('author')(req, res);
+    const body = await readJson(req);
+    sendJson(res, 200, { ok: true, ...(await adminTopics.updateTopic(user, posInt(params.id, 'id'), body)) });
+  });
+
+  // 구성·순서 일괄 저장 — 배열 순서가 곧 position
+  router.add('PUT', '/api/admin/topics/:id/contents', async (req, res, { params }) => {
+    const { user } = await requireRole('author')(req, res);
+    const body = await readJson(req);
+    sendJson(res, 200, {
+      ok: true,
+      ...(await adminTopics.setTopicContents(user, posInt(params.id, 'id'), body.contents)),
+    });
+  });
+
+  router.post('/api/admin/topics/:id/status', async (req, res, { params }) => {
+    const { user } = await requireRole('author')(req, res);
+    const body = await readJson(req);
+    const to = str(body.to, 'to', { min: 1, max: 40 });
+    sendJson(res, 200, { ok: true, ...(await adminTopics.setTopicStatus(user, posInt(params.id, 'id'), { to })) });
+  });
+
+  router.post('/api/admin/topics/:id/visibility', async (req, res, { params }) => {
+    const { user } = await requireRole('reviewer')(req, res);
+    const body = await readJson(req);
+    const to = oneOf(body.to, 'to', ['public', 'private']);
+    sendJson(res, 200, { ok: true, ...(await adminTopics.setTopicVisibility(user, posInt(params.id, 'id'), { to })) });
   });
 
   // ── AI 초안 검수 (플랜 12) — 큐 = status='review' 행. 승인/반려의 역할 판정은

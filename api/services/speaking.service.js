@@ -65,3 +65,38 @@ export async function listSpeakingSentences(user, { limit = 20 } = {}) {
 
   return { sentences: out.slice(0, cap), total: out.length };
 }
+
+// ── 발음 평가 이력 (플랜 10 Phase 3) ─────────────────────────────────────────
+// 서버 평가가 성공했을 때만 저장한다 — 받아쓰기 일치율(브라우저 STT)은 발음 점수가 아니다.
+
+export async function saveSpeakingAttempt(userId, { sentenceText, source, backend, result }) {
+  await pool.query(
+    `INSERT INTO speaking_attempts
+       (user_id, sentence_text, source, backend, pron_score, accuracy, fluency, completeness, prosody, words)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)`,
+    [userId, sentenceText, source ?? null, backend,
+     result.pron_score ?? null, result.accuracy ?? null, result.fluency ?? null,
+     result.completeness ?? null, result.prosody ?? null,
+     JSON.stringify(result.words ?? [])],
+  );
+}
+
+// 최근 시도 + 30일 평균 — 스피킹 화면 하단 추이와 대시보드 speaking 스킬이 같은 값을 본다.
+export async function listSpeakingAttempts(user, { limit = 20 } = {}) {
+  const cap = Math.min(Math.max(Number(limit) || 20, 1), 50);
+  const { rows } = await pool.query(
+    `SELECT id, sentence_text, source, backend, pron_score, accuracy, fluency, completeness, prosody, created_at
+       FROM speaking_attempts
+      WHERE user_id = $1 AND pron_score IS NOT NULL
+      ORDER BY created_at DESC, id DESC LIMIT $2`,
+    [user.id, cap],
+  );
+  const { rows: [avg] } = await pool.query(
+    `SELECT round(avg(pron_score) FILTER (WHERE created_at > now() - interval '30 days'))::int AS d30,
+            round(avg(pron_score))::int AS dall,
+            count(*)::int AS total
+       FROM speaking_attempts WHERE user_id = $1 AND pron_score IS NOT NULL`,
+    [user.id],
+  );
+  return { attempts: rows, avg_30d: avg.d30 ?? null, avg_all: avg.dall ?? null, total: avg.total };
+}
