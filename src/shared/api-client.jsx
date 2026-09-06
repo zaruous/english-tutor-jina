@@ -57,6 +57,7 @@ window.JINA_API = {
   fetch: apiFetch,
   get: (path, opts) => apiFetch(path, { ...opts, method: 'GET' }),
   post: (path, body, opts) => apiFetch(path, { ...opts, method: 'POST', body }),
+  put: (path, body, opts) => apiFetch(path, { ...opts, method: 'PUT', body }),
   patch: (path, body, opts) => apiFetch(path, { ...opts, method: 'PATCH', body }),
   del: (path, opts) => apiFetch(path, { ...opts, method: 'DELETE' }),
 };

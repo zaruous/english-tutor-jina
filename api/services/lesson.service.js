@@ -2,16 +2,18 @@
 // 정답·해설 유출 방지의 구조적 보장: GET 계열 쿼리는 컬럼을 나열하고
 // answer/explanation을 아예 쓰지 않는다 (SELECT * 금지).
 // 채점은 POST /api/lessons/:id/attempts 서버 채점 — 정답/해설은 채점 응답에만 실린다.
+import { discoverable, resolvable } from '../lib/content-scope.js';
 import { HttpError } from '../lib/errors.js';
 import { pool } from '../lib/pool.js';
 import { withTx } from '../lib/tx.js';
 
 // 레슨 = content_items(type='lesson') + lesson_details 1:1 (플랜 10.7 Phase 2).
-// 가시성 판정이 content_items 한 곳에만 있으므로 아래 두 조각을 모든 읽기 쿼리가 공유한다.
+// 가시성 판정의 단일 소스는 api/lib/content-scope.js (플랜 11 결정 2).
 // $1 은 항상 user_id 다 — 소유자는 비공개 콘텐츠도 본다.
 const LESSON_SOURCE = `content_items l JOIN lesson_details d ON d.content_id = l.id`;
-const LESSON_VISIBLE = `l.type = 'lesson' AND l.status = 'published'
-     AND (l.visibility = 'public' OR l.created_by = $1)`;
+const LESSON_VISIBLE = `l.type = 'lesson' AND ${discoverable('l')}`;
+// "이미 한 것의 근거" 쿼리(오답 노트·Q&A)용 — archived 레슨은 이력에는 남고 새 시도만 막는다(플랜 11 결정 2).
+const LESSON_RESOLVABLE = `l.type = 'lesson' AND ${resolvable('l')}`;
 
 // 목록: LEFT JOIN LATERAL로 사용자별 attempt 집계 (저장 금지, 매 요청 계산)
 // LessonSummary 컬럼 — GET /api/lessons 행과 GET /api/lessons/recommended 행이 같은 모양이 되도록 한 곳에서 정의.
@@ -331,9 +333,10 @@ function renderItems(items, answers) {
 //  - attemptId 없음 → 'pre_submit': 지문만. itemId 는 무시(단, 레슨에 없는 position 이면 400).
 //  - attemptId 있음 → 소유권(user)·레슨 일치 검증 후 'post_submit': 지문 + 문항(itemId 면 그 문항만) + 학습자의 답.
 export async function prepareQa(user, lessonId, { attemptId, itemId } = {}) {
+  // resolvable — 내린(archived) 레슨의 제출 후 Q&A 는 계속 돼야 한다(이미 한 것의 근거, 플랜 11 §3).
   const { rows: [lesson] } = await pool.query(
     `SELECT l.id, d.passage FROM ${LESSON_SOURCE}
-      WHERE l.id = $2 AND ${LESSON_VISIBLE}`,
+      WHERE l.id = $2 AND ${LESSON_RESOLVABLE}`,
     [user.id, lessonId],
   );
   if (!lesson) throw new HttpError(404, 'NOT_FOUND', '레슨을 찾을 수 없습니다.');
@@ -452,7 +455,9 @@ const MISTAKES_SQL = `
              AND a2.answers ? w.position::text
              AND a2.answers ->> w.position::text IS DISTINCT FROM w.answer) AS times_wrong
     FROM wrong w
-    JOIN content_items ls ON ls.id = w.lesson_id
+    -- resolvable(플랜 11 결정 2) — archived 는 남고(내린 레슨의 오답이 사라지면 안 된다),
+    -- draft/review 로 내려가거나 남의 private 이 된 레슨만 빠진다.
+    JOIN content_items ls ON ls.id = w.lesson_id AND ${resolvable('ls')}
     JOIN lesson_details ld ON ld.content_id = ls.id`;
 
 const optionText = (options, id) => (options || []).find((o) => o.id === id)?.text ?? null;

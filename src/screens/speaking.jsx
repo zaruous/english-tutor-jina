@@ -217,6 +217,15 @@ function SpeakingPractice({ theme, compact = false }) {
   // 이번 녹음 회차를 이미 채점했는가. 녹음을 시작할 때만 false 가 된다.
   const scoredRef = React.useRef(true);
 
+  // 발음 이력 (플랜 10 Phase 3) — 서버 평가 결과만 쌓인다. 받아쓰기 모드는 무저장 그대로.
+  const [history, setHistory] = React.useState({ attempts: [], avg_30d: null, total: 0 });
+  const loadHistory = React.useCallback(async () => {
+    if (!window.JINA_API || window.JINA_READONLY) return;
+    const res = await window.JINA_API.get('/api/speaking/attempts?limit=5');
+    if (res.ok) setHistory({ attempts: res.attempts, avg_30d: res.avg_30d, total: res.total });
+  }, []);
+  React.useEffect(() => { loadHistory(); }, [loadHistory]);
+
   // 발음 평가 서버 상태 — 설정이 openpronounce 일 때만 묻는다. { checked, available, detail }
   const [pron, setPron] = React.useState({ checked: false, available: false, detail: null });
   React.useEffect(() => {
@@ -267,6 +276,7 @@ function SpeakingPractice({ theme, compact = false }) {
     setAssessError(null);
     const form = new FormData();
     form.append('reference_text', sentence.text);
+    if (sentence.source) form.append('source', sentence.source); // 이력의 출처 태그
     form.append('audio', blob, blob.type.includes('mp4') ? 'clip.m4a' : 'clip.webm');
     const res = await window.JINA_API.post('/api/speaking/assess', form, { timeoutMs: 180_000 });
     setAssessing(false);
@@ -279,6 +289,7 @@ function SpeakingPractice({ theme, compact = false }) {
     }
     setPronResult(res);
     if (Number.isInteger(res.pron_score)) setPronScores((prev) => [...prev, res.pron_score]);
+    loadHistory(); // 서버가 방금 이력 1행을 저장했다 — 하단 추이 갱신
   };
 
   const active = pronMode ? recorder.recording : stt.listening;
@@ -479,12 +490,40 @@ function SpeakingPractice({ theme, compact = false }) {
           </div>
         ))}
       </div>
+      {history.total > 0 && (
+        <div data-testid="speaking-history" style={{
+          marginTop: 14, padding: '13px 16px', borderRadius: 14,
+          background: theme.surface, border: `1px solid ${theme.border}`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 800 }}>최근 발음 점수</span>
+            <span style={{ fontSize: 11, color: theme.textDim }}>
+              30일 평균 <b style={{ color: theme.accent }}>{history.avg_30d ?? '—'}점</b> · 누적 {history.total}회
+            </span>
+          </div>
+          {history.attempts.map((a) => (
+            <div key={a.id} style={{
+              display: 'flex', alignItems: 'center', gap: 10, padding: '4px 0',
+              fontSize: 11.5, color: theme.textMuted,
+            }}>
+              <b style={{
+                width: 34, textAlign: 'right', flexShrink: 0,
+                color: a.pron_score >= 80 ? theme.success : a.pron_score >= 60 ? theme.warning : theme.error,
+              }}>{a.pron_score}점</b>
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {a.sentence_text}
+              </span>
+              <span style={{ color: theme.textDim, flexShrink: 0 }}>{String(a.created_at).slice(5, 10)}</span>
+            </div>
+          ))}
+        </div>
+      )}
       <div data-testid="speaking-disclaimer" style={{
         marginTop: 14, fontSize: 11.5, color: theme.textDim, textAlign: 'center', lineHeight: 1.7,
       }}>
         {pronMode ? (
           <React.Fragment>
-            <b style={{ color: theme.accent }}>OpenPronounce 발음 점수 (실험 · 무저장)</b> — 사람 채점과 <b>캘리브레이션되지 않은 값</b>입니다.
+            <b style={{ color: theme.accent }}>OpenPronounce 발음 점수 (실험)</b> — 결과는 발음 이력에 저장되며, 사람 채점과 <b>캘리브레이션되지 않은 값</b>입니다.
             점수 절대값보다 단어별 표시와 기대/들림 음소를 참고하세요. 설정 → 음성 인식에서 모드를 바꿀 수 있습니다
           </React.Fragment>
         ) : (

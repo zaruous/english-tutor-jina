@@ -26,6 +26,8 @@ export function sendError(res, err, { provider } = {}) {
     error: httpErr.message,
     ...(hint ? { hint } : {}),
     ...(httpErr.extra?.provider ? { provider: httpErr.extra.provider } : {}),
+    // 저작 검증 실패(422) — 화면이 규칙을 재판정하지 않고 이 배열을 그대로 렌더한다(플랜 13 결정 2)
+    ...(httpErr.extra?.validation_errors ? { validation_errors: httpErr.extra.validation_errors } : {}),
   });
 }
 

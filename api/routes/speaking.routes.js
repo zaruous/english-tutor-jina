@@ -82,6 +82,24 @@ export function registerSpeakingRoutes(router) {
       referenceText,
       userId: user.id,
     });
+    // 평가 성공 시에만 이력 1행 (플랜 10 Phase 3). 저장 실패가 평가 응답을 막으면 안 된다 — 로그만.
+    if (result.available) {
+      const source = str(form.get('source') || '', 'source', { optional: true, max: 40 });
+      try {
+        await speaking.saveSpeakingAttempt(user.id, {
+          sentenceText: referenceText, source, backend: result.backend, result,
+        });
+      } catch (e) {
+        console.error('[speaking] 발음 이력 저장 실패:', e.message);
+      }
+    }
     sendJson(res, 200, { ok: true, reference_text: referenceText, ...result });
+  });
+
+  // 발음 이력 — 최근 시도 + 30일 평균 (플랜 10 Phase 3). 스피킹 화면 하단 추이용.
+  router.get('/api/speaking/attempts', async (req, res, { query }) => {
+    const { user } = await requireUser(req, res);
+    const limit = posInt(query.get('limit') || undefined, 'limit', { optional: true, max: 50 }) ?? 20;
+    sendJson(res, 200, { ok: true, ...(await speaking.listSpeakingAttempts(user, { limit })) });
   });
 }

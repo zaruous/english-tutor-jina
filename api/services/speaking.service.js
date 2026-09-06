@@ -3,6 +3,7 @@
 //  - 회화 시나리오 opening_message: 자연스러운 영어 첫 질문.
 //  - 레슨 vocab 예문: 문장 형태인 것만(시드 데이터에는 구 조각도 섞여 있다).
 // 문장이 없으면 빈 배열을 주고, 화면이 고정 시드 20문장으로 폴백한다.
+import { discoverable } from '../lib/content-scope.js';
 import { pool } from '../lib/pool.js';
 
 const MAX_SENTENCES = 40;
@@ -24,8 +25,7 @@ export async function listSpeakingSentences(user, { limit = 20 } = {}) {
       `SELECT c.title, jsonb_array_elements(d.passage -> 'body') ->> 'text' AS line
          FROM content_items c
          JOIN lesson_details d ON d.content_id = c.id
-        WHERE d.kind = 'toeic_lc' AND c.type = 'lesson' AND c.status = 'published'
-          AND (c.visibility = 'public' OR c.created_by = $1)
+        WHERE d.kind = 'toeic_lc' AND c.type = 'lesson' AND ${discoverable('c')}
           AND jsonb_typeof(d.passage -> 'body') = 'array'`,
       [user.id],
     ),
@@ -33,16 +33,14 @@ export async function listSpeakingSentences(user, { limit = 20 } = {}) {
       `SELECT c.title, sd.opening_message
          FROM content_items c
          JOIN scenario_details sd ON sd.content_id = c.id
-        WHERE c.type = 'scenario' AND c.status = 'published'
-          AND (c.visibility = 'public' OR c.created_by = $1)`,
+        WHERE c.type = 'scenario' AND ${discoverable('c')}`,
       [user.id],
     ),
     pool.query(
       `SELECT c.title, jsonb_array_elements(d.vocab) ->> 'ex' AS ex
          FROM content_items c
          JOIN lesson_details d ON d.content_id = c.id
-        WHERE c.type = 'lesson' AND c.status = 'published'
-          AND (c.visibility = 'public' OR c.created_by = $1)
+        WHERE c.type = 'lesson' AND ${discoverable('c')}
           AND jsonb_typeof(d.vocab) = 'array'`,
       [user.id],
     ),
@@ -66,4 +64,39 @@ export async function listSpeakingSentences(user, { limit = 20 } = {}) {
   for (const r of vocab.rows) push(r.ex, 'lesson', r.title);
 
   return { sentences: out.slice(0, cap), total: out.length };
+}
+
+// ── 발음 평가 이력 (플랜 10 Phase 3) ─────────────────────────────────────────
+// 서버 평가가 성공했을 때만 저장한다 — 받아쓰기 일치율(브라우저 STT)은 발음 점수가 아니다.
+
+export async function saveSpeakingAttempt(userId, { sentenceText, source, backend, result }) {
+  await pool.query(
+    `INSERT INTO speaking_attempts
+       (user_id, sentence_text, source, backend, pron_score, accuracy, fluency, completeness, prosody, words)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)`,
+    [userId, sentenceText, source ?? null, backend,
+     result.pron_score ?? null, result.accuracy ?? null, result.fluency ?? null,
+     result.completeness ?? null, result.prosody ?? null,
+     JSON.stringify(result.words ?? [])],
+  );
+}
+
+// 최근 시도 + 30일 평균 — 스피킹 화면 하단 추이와 대시보드 speaking 스킬이 같은 값을 본다.
+export async function listSpeakingAttempts(user, { limit = 20 } = {}) {
+  const cap = Math.min(Math.max(Number(limit) || 20, 1), 50);
+  const { rows } = await pool.query(
+    `SELECT id, sentence_text, source, backend, pron_score, accuracy, fluency, completeness, prosody, created_at
+       FROM speaking_attempts
+      WHERE user_id = $1 AND pron_score IS NOT NULL
+      ORDER BY created_at DESC, id DESC LIMIT $2`,
+    [user.id, cap],
+  );
+  const { rows: [avg] } = await pool.query(
+    `SELECT round(avg(pron_score) FILTER (WHERE created_at > now() - interval '30 days'))::int AS d30,
+            round(avg(pron_score))::int AS dall,
+            count(*)::int AS total
+       FROM speaking_attempts WHERE user_id = $1 AND pron_score IS NOT NULL`,
+    [user.id],
+  );
+  return { attempts: rows, avg_30d: avg.d30 ?? null, avg_all: avg.dall ?? null, total: avg.total };
 }

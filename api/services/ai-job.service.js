@@ -1,6 +1,7 @@
 // AI 생성 작업 상태/게시 서비스 — docs/plan/07 Phase 2~3.
 // 요청은 짧은 HTTP 안에서 queued로 저장하고, 느린 CLI 호출은 ai-job-worker.js가 처리한다.
 import { createHash } from 'node:crypto';
+import { discoverable } from '../lib/content-scope.js';
 import { HttpError } from '../lib/errors.js';
 import { pool } from '../lib/pool.js';
 import { withTx } from '../lib/tx.js';
@@ -33,6 +34,14 @@ export function normalizeJobInput(task, input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new HttpError(400, 'BAD_REQUEST', 'input 은 객체여야 합니다.');
   }
+  // 저장 목적지 (플랜 12 결정 1): personal(기본) = 지금처럼 published+private(만든 사람만),
+  // catalog = review 로 떨어져 검수를 기다린다. 해시에 포함되므로 같은 입력이라도 target 이
+  // 다르면 다른 job 이다 — 빠뜨리면 personal 결과가 catalog 요청에 멱등 재사용된다(구현자 메모).
+  const publishTarget = input.publish_target === 'catalog' ? 'catalog' : 'personal';
+  if (input.publish_target !== undefined && !['personal', 'catalog'].includes(input.publish_target)) {
+    throw new HttpError(400, 'BAD_REQUEST', 'input.publish_target 은 personal/catalog 중 하나여야 합니다.');
+  }
+  const base = { publish_target: publishTarget };
   const topicId = input.topic_id === undefined || input.topic_id === null
     ? null : intIn(input.topic_id, 'input.topic_id', 1, Number.MAX_SAFE_INTEGER);
   if (task === 'lesson_gen') {
@@ -44,6 +53,7 @@ export function normalizeJobInput(task, input) {
       ? intIn(input.count, 'input.count', 2, 4, 3)
       : intIn(input.count, 'input.count', 3, 10, 5);
     return {
+      ...base,
       part,
       difficulty: intIn(input.difficulty, 'input.difficulty', 1, 5, 3),
       topic: shortText(input.topic, 'input.topic', { min: 1, max: 80, fallback: '일반 비즈니스 및 사무 환경' }),
@@ -53,16 +63,25 @@ export function normalizeJobInput(task, input) {
   }
   if (task === 'scenario_gen') {
     return {
+      ...base,
       difficulty: intIn(input.difficulty, 'input.difficulty', 1, 5, 3),
       topic: shortText(input.topic, 'input.topic', { min: 1, max: 80 }),
       ...(topicId ? { topic_id: topicId } : {}),
     };
   }
   return {
+    ...base,
     topic: shortText(input.topic, 'input.topic', { min: 1, max: 80 }),
     count: 20,
     ...(topicId ? { topic_id: topicId } : {}),
   };
+}
+
+// 저장 상태 분기 (플랜 12 결정 1) — status 는 항상 명시한다(기본값 draft 함정, 플랜 11 결정 1).
+// catalog 는 review+private 로 떨어져 reviewer 의 승인을 기다린다 — 만드는 권한(author)과
+// 통과시키는 권한(reviewer)을 갈라 두는 것이 역할을 도입한 이유다(결정 6).
+function statusFor(job) {
+  return job.input?.publish_target === 'catalog' ? 'review' : 'published';
 }
 
 function stable(value) {
@@ -100,8 +119,7 @@ export function jobDto(row) {
 async function assertTopicAccess(client, userId, topicId) {
   if (!topicId) return;
   const { rowCount } = await client.query(
-    `SELECT 1 FROM topics
-      WHERE id = $1 AND (visibility = 'public' OR created_by = $2)`,
+    `SELECT 1 FROM topics t WHERE t.id = $1 AND ${discoverable('t', '$2')}`,
     [topicId, userId],
   );
   if (rowCount === 0) throw new HttpError(404, 'NOT_FOUND', '토픽을 찾을 수 없습니다.');
@@ -109,6 +127,10 @@ async function assertTopicAccess(client, userId, topicId) {
 
 export async function createJob(user, { task, input, clientRequestId, provider, model }) {
   const normalized = normalizeJobInput(task, input);
+  // catalog 생성은 author 이상 — 만드는 권한이지 통과시키는 권한이 아니다(플랜 12 결정 1).
+  if (normalized.publish_target === 'catalog' && !user.can_author) {
+    throw new HttpError(400, 'BAD_REQUEST', '카탈로그 대상 생성은 author 이상만 요청할 수 있습니다.');
+  }
   const hash = requestHash(task, normalized);
   return withTx(async (client) => {
     // 같은 사용자의 동일한 논리 요청은 한 트랜잭션씩만 판정한다.
@@ -317,12 +339,13 @@ export async function saveGeneratedLesson(job, data, aiMeta) {
     const faq = isLc
       ? ['이 대화의 핵심 표현을 정리해 주세요', '놓치기 쉬운 발음·연음을 짚어 주세요']
       : ['틀린 보기의 문법적 차이를 설명해 주세요', '이 문항과 비슷한 예문을 만들어 주세요'];
-    // 카탈로그 상위 + 타입별 detail 1:1 (플랜 10.7 Phase 2). 생성물은 공개 상태이되 본인에게만 보인다.
+    // 카탈로그 상위 + 타입별 detail 1:1 (플랜 10.7 Phase 2).
+    // personal 은 공개 상태이되 본인에게만 보이고, catalog 는 review 로 떨어진다(statusFor).
     const { rows: [lesson] } = await client.query(
       `INSERT INTO content_items (type, slug, title, difficulty, status, visibility, source, created_by)
-       VALUES ('lesson', $1, $2, $3, 'published', 'private', 'ai', $4)
+       VALUES ('lesson', $1, $2, $3, $5, 'private', 'ai', $4)
        RETURNING id`,
-      [slug, data.title, job.input.difficulty, job.user_id],
+      [slug, data.title, job.input.difficulty, job.user_id, statusFor(job)],
     );
     await client.query(
       `INSERT INTO lesson_details
@@ -365,9 +388,9 @@ export async function saveGeneratedScenario(job, data) {
     const slug = `ai-scenario-${job.user_id}-${job.id}`;
     const { rows: [row] } = await client.query(
       `INSERT INTO content_items (type, slug, title, description, difficulty, status, visibility, source, created_by)
-       VALUES ('scenario', $1, $2, $3, $4, 'published', 'private', 'ai', $5)
+       VALUES ('scenario', $1, $2, $3, $4, $6, 'private', 'ai', $5)
        RETURNING id`,
-      [slug, data.title, data.description, job.input.difficulty, job.user_id],
+      [slug, data.title, data.description, job.input.difficulty, job.user_id, statusFor(job)],
     );
     await client.query(
       `INSERT INTO scenario_details
@@ -395,9 +418,9 @@ export async function saveGeneratedVocabSet(job, data) {
     const slug = `ai-vocab-set-${job.user_id}-${job.id}`;
     const { rows: [row] } = await client.query(
       `INSERT INTO content_items (type, slug, title, description, status, visibility, source, created_by)
-       VALUES ('vocab_set', $1, $2, $3, 'published', 'private', 'ai', $4)
+       VALUES ('vocab_set', $1, $2, $3, $5, 'private', 'ai', $4)
        RETURNING id`,
-      [slug, data.title, data.description, job.user_id],
+      [slug, data.title, data.description, job.user_id, statusFor(job)],
     );
     await client.query(
       `INSERT INTO vocab_set_details (content_id, words) VALUES ($1, $2::jsonb)`,

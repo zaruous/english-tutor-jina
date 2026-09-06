@@ -1,11 +1,12 @@
 // 토픽 서비스 — 콘텐츠 수와 진행률은 저장하지 않고 관계/이벤트 테이블에서 매 요청 계산한다.
+import { discoverable } from '../lib/content-scope.js';
 import { HttpError } from '../lib/errors.js';
 import { pool } from '../lib/pool.js';
 import { withTx } from '../lib/tx.js';
 
 // 콘텐츠 가시성 판정은 타입과 무관하게 같다 — content_items 한 곳만 본다 (플랜 10.7 Phase 2).
-// $1 은 항상 user_id: 소유자는 자기 비공개 콘텐츠도 본다.
-const VISIBLE = (a) => `${a}.status = 'published' AND (${a}.visibility = 'public' OR ${a}.created_by = $1)`;
+// 조건 문자열의 단일 소스는 api/lib/content-scope.js (플랜 11 결정 2). $1 은 항상 user_id.
+const VISIBLE = (a) => discoverable(a);
 // 토픽 구성은 (topic_id, content_id) 단일 FK 다 — 배타 FK 3종과 부분 UNIQUE 가 사라졌다.
 const OF_TYPE = (a, type) => `${a}.type = '${type}' AND ${VISIBLE(a)}`;
 
@@ -36,10 +37,12 @@ function topicDto(row) {
   };
 }
 
-export async function listTopics(user, { includeIneligible = false } = {}) {
+// 노출은 status 축이 결정한다(VISIBLE = published) — eligible 임계치는 필터가 아니라
+// DTO 필드로만 남는다(플랜 11 결정 3, 관리자 화면의 경고 배지용). 필터로 쓰면 관리자가
+// 새로 만든 토픽이 콘텐츠를 다 채우기 전까지 화면에 안 보여 저작이 막힌다.
+export async function listTopics(user) {
   const { rows } = await pool.query(`${TOPIC_SUMMARY} ORDER BY t.created_at, t.id`, [user.id]);
-  const topics = rows.map(topicDto);
-  return includeIneligible ? topics : topics.filter((t) => t.eligible);
+  return rows.map(topicDto);
 }
 
 async function getTopicRow(user, topicId) {
