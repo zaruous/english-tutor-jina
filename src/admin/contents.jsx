@@ -605,7 +605,7 @@ function LessonEditor({ theme, me, contentId, onDone, onCancel, showToast }) {
 
 // ── 목록 화면 ────────────────────────────────────────────────────────────────
 
-function AdminContentsScreen({ theme }) {
+function AdminContentsScreen({ theme, editRequest }) {
   const { user: me } = useAuth();
   const [state, setState] = React.useState({
     loading: true, forbidden: false, error: null,
@@ -615,6 +615,11 @@ function AdminContentsScreen({ theme }) {
   const [view, setView] = React.useState({ mode: 'list' }); // list | new | edit
   const [toast, setToast] = React.useState(null);
   const [rowBusy, setRowBusy] = React.useState(null);
+
+  // 검수 탭의 "승인 전 수정" 이 이 탭으로 넘어올 때 — 해당 레슨의 에디터를 바로 연다
+  React.useEffect(() => {
+    if (editRequest?.id) setView({ mode: 'edit', id: editRequest.id });
+  }, [editRequest]);
 
   const showToast = (msg, isError = false) => {
     setToast({ msg, isError });

@@ -69,10 +69,13 @@ const GEN_PARTS = [
 ];
 
 function LessonGenerator({ theme, compact, generation, onGenerate, onDone }) {
+  const { user } = useAuth();
   const [topic, setTopic] = React.useState('비즈니스 커뮤니케이션');
   const [part, setPart] = React.useState(5);
   const [difficulty, setDifficulty] = React.useState(3);
   const [count, setCount] = React.useState(5);
+  // 저장 대상 (플랜 12): personal = 내 전용(지금과 동일), catalog = 검수 대기열(author 이상만 노출)
+  const [target, setTarget] = React.useState('personal');
   const partMeta = GEN_PARTS.find((p) => p.id === part) || GEN_PARTS[0];
   const busy = generation.status === 'queued' || generation.status === 'running';
   const pickPart = (id) => {
@@ -81,8 +84,9 @@ function LessonGenerator({ theme, compact, generation, onGenerate, onDone }) {
     if (!meta.counts.includes(count)) setCount(meta.defaultCount);
   };
   const run = async () => {
-    const res = await onGenerate({ topic, difficulty, count, part });
-    if (res?.ok && res.job?.result?.lesson_id && onDone) onDone(res.job.result.lesson_id);
+    const res = await onGenerate({ topic, difficulty, count, part, publishTarget: target });
+    // catalog 결과는 review 상태라 학습 목록에 없다 — 열지 않는다(검수 승인 후에 나타난다)
+    if (res?.ok && target === 'personal' && res.job?.result?.lesson_id && onDone) onDone(res.job.result.lesson_id);
   };
   const inputStyle = {
     width: '100%', borderRadius: 9, border: `1px solid ${theme.border}`,
@@ -100,7 +104,7 @@ function LessonGenerator({ theme, compact, generation, onGenerate, onDone }) {
           <div style={{ color: theme.textMuted, fontSize: 10.5, marginTop: 1 }}>생성물은 먼저 내 전용 레슨으로 저장됩니다.</div>
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
         {GEN_PARTS.map((p) => (
           <button key={String(p.id)} type="button" data-testid={`lesson-gen-part-${p.id}`} disabled={busy}
             onClick={() => pickPart(p.id)} style={{
@@ -110,6 +114,23 @@ function LessonGenerator({ theme, compact, generation, onGenerate, onDone }) {
               color: part === p.id ? theme.bg : theme.textMuted,
             }}>{p.label}</button>
         ))}
+        {user?.can_author && (
+          <span style={{ display: 'inline-flex', gap: 6, marginLeft: 'auto' }}>
+            {[['personal', '내 것'], ['catalog', '카탈로그(검수)']].map(([id, label]) => (
+              <button key={id} type="button" data-testid={`lesson-gen-target-${id}`} disabled={busy}
+                onClick={() => setTarget(id)} title={id === 'catalog'
+                  ? '검수 대기열로 보냅니다 — reviewer 승인 후 전체 사용자에게 공개할 수 있습니다'
+                  : '내 전용 레슨으로 바로 저장됩니다'}
+                style={{
+                  padding: '6px 12px', borderRadius: 999, fontSize: 11.5,
+                  fontWeight: target === id ? 700 : 500,
+                  border: `1px solid ${target === id ? theme.accent : theme.border}`,
+                  background: target === id ? theme.accent + '22' : 'transparent',
+                  color: target === id ? theme.accent : theme.textMuted,
+                }}>{label}</button>
+            ))}
+          </span>
+        )}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: compact ? '1fr 1fr' : 'minmax(180px, 1fr) 120px 120px auto', gap: 8, alignItems: 'end' }}>
         <label style={{ gridColumn: compact ? '1 / -1' : undefined, fontSize: 10.5, color: theme.textMuted }}>
@@ -145,7 +166,9 @@ function LessonGenerator({ theme, compact, generation, onGenerate, onDone }) {
       )}
       {generation.status === 'succeeded' && (
         <div data-testid="lesson-gen-success" style={{ marginTop: 10, color: theme.success, fontSize: 11.5, fontWeight: 600 }}>
-          검증을 통과한 새 레슨이 내 목록에 추가되었습니다.
+          {target === 'catalog'
+            ? '검증을 통과한 레슨이 검수 대기열로 갔습니다 — 승인되면 카탈로그에 나타납니다.'
+            : '검증을 통과한 새 레슨이 내 목록에 추가되었습니다.'}
         </div>
       )}
     </div>

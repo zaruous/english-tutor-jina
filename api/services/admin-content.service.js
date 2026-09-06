@@ -399,6 +399,65 @@ export async function updateLesson(actor, contentId, payload) {
   });
 }
 
+// ── 검수 큐 (플랜 12) ────────────────────────────────────────────────────────
+// 큐 = status='review' 행 (결정 8 — lesson_drafts.review_status 는 판정에 쓰지 않는다).
+// 레슨은 AI 초안(lesson_drafts)이 있으면 provider·validation_errors 를 곁들인다.
+// cross_check 는 07 follow_up 교차 채점이 들어올 자리 — v1 은 항상 null.
+
+export async function listReviewQueue() {
+  const { rows } = await pool.query(
+    `SELECT ${CONTENT_COLS}, u.email AS created_by_email, d.kind,
+            ld.id AS draft_id, ld.validation_errors, ld.provider AS draft_provider, ld.model AS draft_model,
+            (SELECT count(*)::int FROM lesson_items i WHERE i.content_id = c.id) AS question_count
+       FROM content_items c
+       LEFT JOIN users u ON u.id = c.created_by
+       LEFT JOIN lesson_details d ON d.content_id = c.id
+       LEFT JOIN lesson_drafts ld ON ld.published_content_id = c.id
+      WHERE c.status = 'review'
+      ORDER BY c.updated_at, c.id`, // 오래 기다린 것 먼저
+    [],
+  );
+  return {
+    queue: rows.map((row) => ({
+      ...contentDto(row),
+      draft: row.draft_id ? {
+        id: row.draft_id,
+        provider: row.draft_provider,
+        model: row.draft_model,
+        validation_errors: row.validation_errors,
+      } : null,
+      cross_check: null,
+    })),
+  };
+}
+
+// 승인 — status 전이(review → published)가 본체이고 role·자가 승인·감사·rev 스탬프를 그대로 탄다.
+// visibility 는 건드리지 않는 것이 기본(결정 2) — publishPublic 체크박스가 켜졌을 때만 공개까지 간다.
+// lesson_drafts.review_status 는 부가 기록이다(결정 8 — 판정에 쓰지 않는다).
+export async function approveDraft(actor, contentId, { note = '', publishPublic = false } = {}) {
+  let { content } = await transitionStatus(actor, contentId, { to: 'published', note });
+  if (publishPublic && content.visibility !== 'public') {
+    ({ content } = await setVisibility(actor, contentId, { to: 'public' }));
+  }
+  await pool.query(
+    `UPDATE lesson_drafts SET review_status = 'approved', updated_at = now()
+      WHERE published_content_id = $1`,
+    [contentId],
+  );
+  return { content };
+}
+
+// 반려 — review → draft 전이, 사유는 감사 로그 note (결정 3). 콘텐츠 행은 남는다.
+export async function rejectDraft(actor, contentId, { note = '' } = {}) {
+  const { content } = await transitionStatus(actor, contentId, { to: 'draft', note });
+  await pool.query(
+    `UPDATE lesson_drafts SET review_status = 'rejected', updated_at = now()
+      WHERE published_content_id = $1`,
+    [contentId],
+  );
+  return { content };
+}
+
 // ── 리비전 조회 · 복원 ──────────────────────────────────────────────────────
 
 export async function listRevisions(actor, contentId) {

@@ -165,6 +165,50 @@ const full = await api(admin.cookie, 'GET', `/api/admin/contents/${created.id}/r
 check('리비전 API — current_rev 일치',
   full.body.current_rev === detail.body.content.current_rev, `rev ${full.body.current_rev}`);
 
+// 9) 검수 탭 (플랜 12) — review 상태 레슨이 큐에 오르고, 승인+공개가 한 번에 간다
+const TITLE2 = `E2E 검수 대상 ${Date.now()}`;
+const draft2 = await api(admin.cookie, 'POST', '/api/admin/contents/lesson', {
+  kind: 'toeic_part5', title: TITLE2, difficulty: 3,
+  passage: { type: 'PART 5', subject: 'Incomplete Sentences', body: ['Choose the best answer.'] },
+  items: [{
+    stem: 'The shipment ___ next week.',
+    options: [
+      { id: 'A', text: 'arrive' }, { id: 'B', text: 'will arrive' },
+      { id: 'C', text: 'arriving' }, { id: 'D', text: 'arrives soon' },
+    ],
+    answer: 'B', explanation: '정답은 (B) — 미래.', skill_code: 'grammar',
+  }],
+});
+await api(admin.cookie, 'POST', `/api/admin/contents/${draft2.body.content.id}/status`, { to: 'review' });
+
+await page.click('[data-testid="admin-tab-review"]');
+await page.waitForSelector(`[data-testid="review-row"]:has-text("${TITLE2}")`, { timeout: 10000 });
+check('검수 대기열에 review 콘텐츠 노출', true);
+await page.click(`[data-testid="review-row"]:has-text("${TITLE2}")`);
+await page.waitForSelector('[data-testid="review-item"]', { timeout: 10000 });
+const itemText = await page.locator('[data-testid="review-item"]').first().innerText();
+check('검수 상세 — 정답·해설 렌더', itemText.includes('(B)') && itemText.includes('미래'));
+
+// 승인 전 수정 → 콘텐츠 탭 에디터로 건너간다
+await page.click('[data-testid="review-edit"]');
+await page.waitForSelector('[data-testid="lesson-title"]', { timeout: 10000 });
+check('승인 전 수정 → 에디터 크로스탭 진입',
+  (await page.inputValue('[data-testid="lesson-title"]')) === TITLE2);
+
+// 검수 탭으로 돌아가 승인 + 함께 공개
+await page.click('[data-testid="admin-tab-review"]');
+await page.click(`[data-testid="review-row"]:has-text("${TITLE2}")`);
+await page.waitForSelector('[data-testid="review-approve"]', { timeout: 10000 });
+await page.check('[data-testid="review-publish-public"]');
+await page.click('[data-testid="review-approve"]');
+await page.waitForSelector(`[data-testid="review-row"]:has-text("${TITLE2}")`, { state: 'detached', timeout: 10000 });
+check('승인 → 대기열에서 제거', true);
+const catalog2 = await api(learner.cookie, 'GET', '/api/lessons');
+check('승인+공개 → 학습자 목록 노출', Boolean(catalog2.body.lessons?.some((l) => l.title === TITLE2)));
+const detail2 = await api(admin.cookie, 'GET', `/api/admin/contents/${draft2.body.content.id}`);
+const approveAudit = detail2.body.content.recent_audit.find((a) => a.to_status === 'published');
+check('승인 감사 행에 rev 스탬프', approveAudit?.rev >= 1, `rev ${approveAudit?.rev}`);
+
 await browser.close();
 const fail = results.filter((r) => !r.ok).length;
 console.log(`\n${results.length - fail}/${results.length} 통과`);

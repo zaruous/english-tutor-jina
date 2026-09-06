@@ -152,7 +152,7 @@ function LessonProvider({ children }) {
   // Part 5 비동기 생성 — POST는 즉시 202, 실제 CLI 실행은 서버 워커가 처리한다.
   // 완료될 때까지 GET을 폴링하고 성공하면 목록을 새로 읽은 뒤 새 레슨을 선택한다.
   // part: 5(Part 5) | 'lc'(리스닝 대화·설명문) — 서버 normalizeJobInput 과 같은 계약
-  const generateLesson = React.useCallback(async ({ topic, difficulty = 3, count = 5, part = 5 } = {}) => {
+  const generateLesson = React.useCallback(async ({ topic, difficulty = 3, count = 5, part = 5, publishTarget = 'personal' } = {}) => {
     if (generation.status === 'queued' || generation.status === 'running') return null;
     const ai = window.__JINA_AI_CONFIG || {};
     const provider = ai.provider || window.JINA_CONFIG?.provider || 'claude';
@@ -160,7 +160,11 @@ function LessonProvider({ children }) {
     setGeneration({ status: 'queued', job: null, error: null, result: null });
     const created = await window.JINA_API.post('/api/ai-jobs', {
       task: 'lesson_gen',
-      input: { part: part === 'lc' ? 'lc' : 5, topic, difficulty: Number(difficulty), count: Number(count) },
+      input: {
+        part: part === 'lc' ? 'lc' : 5, topic, difficulty: Number(difficulty), count: Number(count),
+        // catalog 는 review 상태로 떨어져 검수를 기다린다(플랜 12) — author 이상만 서버가 허용
+        publish_target: publishTarget === 'catalog' ? 'catalog' : 'personal',
+      },
       client_request_id: crypto.randomUUID(),
       provider,
       ...(model ? { model } : {}),
@@ -190,7 +194,8 @@ function LessonProvider({ children }) {
     }
     if (job.status === 'succeeded' && job.result?.lesson_id) {
       await refresh();
-      await select(job.result.lesson_id);
+      // catalog 결과는 review 상태라 학습 목록·상세에 없다(discoverable 밖) — 선택하면 404 가 난다
+      if (publishTarget !== 'catalog') await select(job.result.lesson_id);
     } else if (['queued', 'running'].includes(job.status)) {
       setGeneration({ status: 'failed', job, error: '생성 상태 확인 시간이 초과되었습니다. 작업은 서버에서 계속 진행됩니다.', result: null });
     }

@@ -2,21 +2,21 @@
 # status: draft | in_progress | done · phase.status: done | pending_verification | todo
 plan: "12"
 title: "관리자 콘텐츠 ② — AI 초안 → 검수 → 카탈로그 공개"
-status: draft
+status: done
 group:
   id: admin-content
   title: "관리자 콘텐츠 저작·관리"
   members: ["11", "12", "13"]
   order: 2
 created: 2026-09-03
-updated: 2026-09-03
+updated: 2026-09-05
 depends_on: ["11", "07"]     # 11 의 status 축 · requireAdmin · admin.html 뼈대, 07 의 ai_jobs 파이프라인
 blocks: ["13"]               # 13 의 에디터는 이 플랜의 검수 화면에서 "승인 전 수정" 으로 열린다
-migrations: []               # lesson_drafts.review_status(0012) 를 그대로 쓴다
+migrations: []               # lesson_drafts.review_status(0012→baseline) 를 그대로 쓴다
 phases:
-  - { id: "1", name: "publish_target · 워커 저장 분기 · 검수 API", status: todo }
-  - { id: "2", name: "검수 화면 — 생성 결과 + validation_errors, 승인/반려", status: todo }
-verify: ["scripts/verify-lesson-gen.mjs (확장)", "scripts/verify-content-status.mjs (확장)"]
+  - { id: "1", name: "publish_target · 워커 저장 분기 · 검수 API", status: done, done_at: 2026-09-05, note: "normalizeJobInput 에 publish_target(해시 포함 — 멱등 재사용 격리) · catalog 는 author+ 400 가드 · 저장 3함수 status 분기(statusFor) · GET /api/admin/drafts(큐 = status='review' 통합, draft 메타·cross_check:null 슬롯) · POST /api/admin/drafts/:id/approve|reject — 승인/반려는 11 의 transitionStatus 를 그대로 타서 역할·자가승인·감사·rev 스탬프가 한 경로다. review_status 는 부가 기록(결정 8). tests/ai-draft-review.test.mjs 3건. verify-lesson-gen 확장 실행(실제 AI 호출 경로)은 provider 있는 환경 몫" }
+  - { id: "2", name: "검수 화면 — 생성 결과 + validation_errors, 승인/반려", status: done, done_at: 2026-09-05, note: "src/admin/review-queue.jsx — 큐(대기시간·요청자·AI/수기 구분) → 상세(스크립트/지문 + 문항 정답·해설, validation_errors) → 승인(+'승인과 함께 전체 공개' 기본 off)/반려(사유 필수). '승인 전 수정'은 콘텐츠 탭 에디터로 크로스탭 진입(13 Phase A 가 먼저 끝나 비활성 기간 없음). 레슨 생성 패널에 내 것/카탈로그 라디오(can_author 만). e2e-admin-contents 25/25 — 수기 경로 브라우저 실측, AI 경로는 단위 테스트" }
+verify: ["tests/ai-draft-review.test.mjs (신규)", "scripts/e2e-admin-contents.mjs (검수 탭 구간)", "scripts/verify-lesson-gen.mjs (확장 — AI provider 환경에서)", "scripts/verify-content-status.mjs (확장)"]
 follow_ups:
   - "승인 전 초안 수정 → 플랜 13 에디터"
   - "교차 채점(다른 provider 로 풀어보기) — 플랜 07 follow_up 을 검수 단계의 자동 필터로"

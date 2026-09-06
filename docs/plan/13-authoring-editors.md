@@ -15,7 +15,7 @@ preconditions:
   - { phase: C, requires: "플랜 10 Phase 1·2 실측 검증 통과 (pending_verification → done)", reason: "focus 음소·target_wpm 은 발음 점수가 있어야 의미가 있다" }
 migrations: ["0018_speaking_set_details"]   # Phase C 에서만. 10.7 baseline 위에 detail 테이블 1개
 phases:
-  - { id: A, name: "LC 에디터 최소형 — AI 초안·기존 레슨을 폼으로 고친다", status: done, done_at: 2026-09-05, note: "src/admin/contents.jsx 의 LessonEditor(신규 생성 포함 — POST/PATCH /api/admin/contents/lesson). LC 는 화자 토글 + 본문 필드(열린 질문 5 를 토글안으로 확정). 검증은 서버 단일 소스(validateGeneratedLesson 재사용, 422 + validation_errors 렌더). 시드 편집 → curated 전환 + 재시드 보호. 진입점 중 '12 검수 화면 링크'는 12 미착수라 제외. e2e-admin-contents 15/15 · tests/admin-content.service.test.mjs" }
+  - { id: A, name: "LC 에디터 최소형 — AI 초안·기존 레슨을 폼으로 고친다", status: done, done_at: 2026-09-05, note: "src/admin/contents.jsx 의 LessonEditor(신규 생성 포함 — POST/PATCH /api/admin/contents/lesson). LC 는 화자 토글 + 본문 필드(열린 질문 5 를 토글안으로 확정). 검증은 서버 단일 소스(validateGeneratedLesson 재사용, 422 + validation_errors 렌더). 시드 편집 → curated 전환 + 재시드 보호. '12 검수 화면 링크'는 12 구현(2026-09-05)의 '승인 전 수정' 크로스탭 진입으로 완성. e2e-admin-contents 25/25 · tests/admin-content.service.test.mjs" }
   - { id: B, name: "토픽 생성 · 구성 · 순서", status: todo }
   - { id: C, name: "스피킹 세트 — speaking_sets · 3단 폴백 · 에디터", status: todo, gated_by: "플랜 10 실측" }
 verify: ["scripts/e2e-admin-authoring.mjs (신규)", "scripts/e2e-topics.mjs", "scripts/e2e-plan08-screens.mjs"]

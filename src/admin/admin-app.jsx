@@ -4,7 +4,7 @@
 
 const ADMIN_TABS = [
   { key: 'contents', label: '콘텐츠' },
-  { key: 'review', label: '검수', disabled: true, hint: '아직 만들지 않은 화면입니다 (플랜 12)' },
+  { key: 'review', label: '검수' },
   { key: 'users', label: '사용자' },
 ];
 
@@ -13,6 +13,12 @@ function AdminShell() {
   const [themeName, setThemeName] = React.useState(readThemeName);
   const theme = JINA_THEMES[themeName] || JINA_THEMES.aurora;
   const [tab, setTab] = React.useState('contents');
+  // 검수 화면의 "승인 전 수정" — 콘텐츠 탭으로 건너가 해당 레슨의 에디터를 연다
+  const [editRequest, setEditRequest] = React.useState(null);
+  const openLessonEditor = (id) => {
+    setEditRequest({ id, ts: Date.now() });
+    setTab('contents');
+  };
 
   React.useEffect(() => {
     const onTheme = () => setThemeName(readThemeName());
@@ -91,7 +97,9 @@ function AdminShell() {
         })}
       </div>
 
-      {tab === 'contents' ? <AdminContentsScreen theme={theme} /> : <AdminUsersScreen theme={theme} />}
+      {tab === 'contents' ? <AdminContentsScreen theme={theme} editRequest={editRequest} />
+        : tab === 'review' ? <AdminReviewScreen theme={theme} onEditLesson={openLessonEditor} />
+        : <AdminUsersScreen theme={theme} />}
     </div>
   );
 }

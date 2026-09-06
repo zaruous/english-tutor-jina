@@ -114,6 +114,30 @@ export function registerAdminRoutes(router) {
     sendJson(res, 200, { ok: true, ...(await adminContents.transitionStatus(user, contentId, { to, note })) });
   });
 
+  // ── AI 초안 검수 (플랜 12) — 큐 = status='review' 행. 승인/반려의 역할 판정은
+  // transitionStatus(canTransition)가 한다 — reviewer 미만이면 403.
+  router.get('/api/admin/drafts', async (req, res) => {
+    await requireRole('author')(req, res);
+    sendJson(res, 200, { ok: true, ...(await adminContents.listReviewQueue()) });
+  });
+
+  router.post('/api/admin/drafts/:id/approve', async (req, res, { params }) => {
+    const { user } = await requireRole('author')(req, res);
+    const body = await readJson(req);
+    const note = str(body.note, 'note', { optional: true, max: 500 });
+    const publishPublic = body.publish_public === true;
+    const contentId = posInt(params.id, 'id');
+    sendJson(res, 200, { ok: true, ...(await adminContents.approveDraft(user, contentId, { note, publishPublic })) });
+  });
+
+  router.post('/api/admin/drafts/:id/reject', async (req, res, { params }) => {
+    const { user } = await requireRole('author')(req, res);
+    const body = await readJson(req);
+    const note = str(body.note, 'note', { min: 1, max: 500 }); // 반려 사유는 필수 — 감사 로그에 남는다
+    const contentId = posInt(params.id, 'id');
+    sendJson(res, 200, { ok: true, ...(await adminContents.rejectDraft(user, contentId, { note })) });
+  });
+
   router.post('/api/admin/contents/:id/visibility', async (req, res, { params }) => {
     const { user } = await requireRole('reviewer')(req, res);
     const body = await readJson(req);
