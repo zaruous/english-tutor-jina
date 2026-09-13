@@ -57,3 +57,31 @@ test('admin-user.service 목록·역할변경·감사로그가 돈다', async ()
     `SELECT action, from_role, to_role FROM user_audit_log WHERE target_user_id = $1`, [target.id]);
   assert.deepEqual(audit, { action: 'role_change', from_role: 'learner', to_role: 'author' });
 });
+
+test('admin-user.service createUser 가 계정을 만들고 감사 로그를 남긴다', async () => {
+  await setupDb();
+  const svc = await import('../api/services/admin-user.service.js');
+  const { signup } = await import('../api/services/auth.service.js');
+  const actor = await signup({ email: `mc-create-admin-${Date.now()}@jina.test`, password: 'pw-12345678' });
+  await pool.query(`UPDATE users SET role = 'admin', is_admin = true WHERE id = $1`, [actor.id]);
+
+  const email = `mc-created-${Date.now()}@jina.test`;
+  const created = await svc.createUser(actor.id, {
+    email,
+    password: 'pw-12345678',
+    displayName: '신규 사용자',
+    role: 'author',
+  });
+  assert.equal(created.user.email, email);
+  assert.equal(created.user.role, 'author');
+  assert.equal(created.user.display_name, '신규 사용자');
+
+  const { rows: [audit] } = await pool.query(
+    `SELECT action, from_role, to_role, description FROM user_audit_log WHERE target_user_id = $1`,
+    [created.user.id],
+  );
+  assert.equal(audit.action, 'role_change');
+  assert.equal(audit.from_role, null);
+  assert.equal(audit.to_role, 'author');
+  assert.equal(audit.description, '계정 생성');
+});

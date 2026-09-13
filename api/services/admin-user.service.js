@@ -1,6 +1,7 @@
 import { HttpError } from '../lib/errors.js';
 import { pool } from '../lib/pool.js';
 import { loadRoles, rankOf } from '../lib/roles.js';
+import { hashPassword } from './password.js';
 
 const USER_SELECT = `
   u.id, u.email, u.display_name, u.role, u.is_active, u.is_dev,
@@ -103,6 +104,52 @@ async function writeAudit(client, { targetUserId, action, fromRole, toRole, desc
      VALUES ($1, $2, $3, $4, $5, $6)`,
     [targetUserId, action, fromRole ?? null, toRole ?? null, description || '', createdBy],
   );
+}
+
+export async function createUser(actorId, { email, password, displayName = '', role = 'learner', note = '' }) {
+  await loadRoles();
+  const normalized = email.toLowerCase().trim();
+  const passwordHash = await hashPassword(password);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await assertRoleExists(client, role);
+
+    let targetId;
+    try {
+      const { rows: [row] } = await client.query(
+        `INSERT INTO users (email, display_name, password_hash, role, is_admin, is_active)
+         VALUES ($1, $2, $3, $4, $5, true)
+         RETURNING id`,
+        [normalized, displayName || '', passwordHash, role, role === 'admin'],
+      );
+      targetId = row.id;
+    } catch (err) {
+      if (err.code === '23505') throw new HttpError(409, 'CONFLICT', '이미 가입된 이메일입니다.');
+      throw err;
+    }
+
+    await writeAudit(client, {
+      targetUserId: targetId,
+      action: 'role_change',
+      fromRole: null,
+      toRole: role,
+      description: note || '계정 생성',
+      createdBy: actorId,
+    });
+    await client.query('COMMIT');
+
+    const adminCount = (await pool.query(
+      `SELECT count(*)::int AS cnt FROM users WHERE role = 'admin' AND is_active`,
+    )).rows[0].cnt;
+    const user = await fetchUserById(pool, targetId, actorId, adminCount);
+    return { user };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export async function listUsers(actorId, { q, role, limit = 50, offset = 0 } = {}) {

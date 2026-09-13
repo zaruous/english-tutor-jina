@@ -6,7 +6,7 @@
 // **최상위 이름은 전부 전역에 들어간다.** admin.html 에는 빌드 단계가 없고 Babel standalone 이
 // 파일마다 classic script 를 하나씩 만들어 붙인다. 그래서 users.jsx · shared/*.jsx 와 이름이 겹치면
 // const 는 SyntaxError 로 스크립트가 통째로 죽고, function 은 **조용히 덮어써서** 남의 화면을 깨뜨린다
-// (users.jsx 의 menuRect·useDismissMenu·fmtDate 를 여기서 다시 선언하면 그쪽 드롭다운이 망가진다).
+// (components/JinaDropdown.jsx · users.jsx 의 전역 이름을 여기서 다시 선언하면 그쪽이 망가진다).
 // 그래서 이 파일의 모든 이름에 admin/Admin 접두사를 붙였다. 새 이름을 더할 때도 지켜라.
 
 // 한 번에 받아 오는 행 수. 서버 기본 limit 과 같은 값이어야 '더 보기' 가

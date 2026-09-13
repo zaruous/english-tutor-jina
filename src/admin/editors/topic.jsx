@@ -35,7 +35,7 @@
 // ── 이름 · 로드 순서 ─────────────────────────────────────────────────────────
 // 최상위 이름은 전부 전역이다(content-store.jsx 머리말). 그래서 전부 AdminTopic/adminTopic/ADMIN_TOPIC_ 접두.
 // content-store.jsx 의 상수·헬퍼(ADMIN_STATUS_META · ADMIN_CONTENT_TYPES · adminTypeLabel · adminTransitionsFor ·
-// adminFmtDate)와 admin-app.jsx 의 헬퍼(useAdminDismiss · adminMenuRect · adminTint · AdminStatusBadge ·
+// adminFmtDate)와 admin-app.jsx · components/JinaDropdown.jsx 의 헬퍼(JinaDropdown · adminTint · AdminStatusBadge ·
 // AdminVisibilityChip · AdminMenuRow)를 **렌더 시점에만** 참조한다 — 최상위에서 쓰면 이 파일이 그쪽보다 먼저
 // 로드될 때 ReferenceError 로 스크립트가 통째로 죽는다. 첫 커밋은 모든 스크립트가 실행된 뒤라 렌더 시점 참조는
 // admin.html 의 순서와 무관하게 안전하다.
@@ -142,14 +142,6 @@ function adminTopicNormalizeContent(row) {
 // 순서까지 포함한 지문. 저장된 것과 다르면 dirty.
 function adminTopicIds(list) {
   return list.map((c) => c.content_id).join(',');
-}
-
-// adminMenuRect 는 메뉴를 버튼 **오른쪽 끝**에 맞춘다(표의 [▾] 가 맨 오른쪽 열이라서). 이 화면의 전이 버튼은
-// 왼쪽 카드 안에 있어 같은 식이면 메뉴가 화면 왼쪽 밖으로 나간다 → 세로 계산은 그대로 쓰고 가로만 버튼 왼쪽에 맞춘다.
-function adminTopicMenuRect(el, width) {
-  const rect = adminMenuRect(el, width);
-  const r = el.getBoundingClientRect();
-  return { ...rect, left: Math.max(8, Math.min(r.left, window.innerWidth - width - 8)) };
 }
 
 function adminTopicBtn(theme, kind = 'ghost', disabled = false) {
@@ -469,37 +461,32 @@ function AdminTopicList({ theme, me, onOpen, onNew }) {
 
 // ── 구성 화면 ────────────────────────────────────────────────────────────────
 
-// 전이 드롭다운. 목록 표의 [▾](AdminRowMenu) 와 같은 규약 — fixed + getBoundingClientRect + useAdminDismiss.
-// 역할이 모자란 항목도 지우지 않고 흐리게 남긴다(content-store adminTransitionsFor 주석). 판정은 서버.
+// 전이 드롭다운 — JinaDropdown(components/JinaDropdown.jsx). clampLeft: 왼쪽 카드 안 버튼에 맞춘다.
 function AdminTopicTransitionMenu({ theme, topic, me, busy, onTransition }) {
-  const [open, setOpen] = React.useState(false);
-  const [pos, setPos] = React.useState({ left: 0, width: ADMIN_TOPIC_MENU_WIDTH, top: 0, bottom: 0, dropUp: false, maxHeight: 280 });
-  const ref = React.useRef(null);
-  useAdminDismiss(open, setOpen, ref);
   const rows = adminTransitionsFor(topic, me);
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button
-        type="button"
-        data-testid="topic-transition"
-        disabled={busy}
-        onClick={(e) => {
-          const next = !open;
-          if (next) setPos(adminTopicMenuRect(e.currentTarget, ADMIN_TOPIC_MENU_WIDTH));
-          setOpen(next);
-        }}
-        style={{
-          ...adminTopicBtn(theme, 'ghost', busy), padding: '5px 10px', fontSize: 11.5,
-          border: `1px solid ${open ? theme.accent : theme.borderStrong}`, color: open ? theme.accent : theme.text,
-        }}
-      >상태 전이 <Icons.ChevronDown size={13} /></button>
-      {open && (
-        <div data-testid="topic-transition-menu" className="jina-scroll" style={{
-          position: 'fixed', zIndex: 200, left: pos.left, width: pos.width,
-          ...(pos.dropUp ? { bottom: pos.bottom } : { top: pos.top }),
-          background: theme.surfaceElev, border: `1px solid ${theme.borderStrong}`, borderRadius: 12,
-          boxShadow: theme.shadow, padding: 6, maxHeight: pos.maxHeight, overflowY: 'auto',
-        }}>
+    <JinaDropdown
+      theme={theme}
+      align="left"
+      width={ADMIN_TOPIC_MENU_WIDTH}
+      clampLeft
+      disabled={busy}
+      menuTestId="topic-transition-menu"
+      renderTrigger={({ open, toggle, disabled }) => (
+        <button
+          type="button"
+          data-testid="topic-transition"
+          disabled={disabled}
+          onClick={toggle}
+          style={{
+            ...adminTopicBtn(theme, 'ghost', disabled), padding: '5px 10px', fontSize: 11.5,
+            border: `1px solid ${open ? theme.accent : theme.borderStrong}`, color: open ? theme.accent : theme.text,
+          }}
+        >상태 전이 <Icons.ChevronDown size={13} /></button>
+      )}
+    >
+      {({ close }) => (
+        <React.Fragment>
           {rows.length === 0 && (
             <div style={{ padding: '9px 12px', fontSize: 12, color: theme.textDim }}>이 상태에서 갈 수 있는 전이가 없습니다</div>
           )}
@@ -513,12 +500,12 @@ function AdminTopicTransitionMenu({ theme, topic, me, busy, onTransition }) {
               label={t.label}
               tag={t.allowed ? null : `${t.minRole}+`}
               disabled={!t.allowed}
-              onClick={() => { setOpen(false); onTransition(t.to); }}
+              onClick={() => { close(); onTransition(t.to); }}
             />
           ))}
-        </div>
+        </React.Fragment>
       )}
-    </div>
+    </JinaDropdown>
   );
 }
 

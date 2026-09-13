@@ -13,9 +13,8 @@
 //     React 18 의 createRoot().render() 는 스케줄만 걸므로 첫 트리는 커밋되지 않는다 = 깜빡임 없음.
 //
 // ── 이름 규칙 ────────────────────────────────────────────────────────────────
-// content-store.jsx 머리말과 같다: 최상위 이름은 전부 전역이다. users.jsx 의
-// menuRect·useDismissMenu·readThemeName·fmtDate·SkeletonRows 를 여기서 다시 선언하면
-// **users.jsx 쪽이 조용히 깨진다**(함수 선언은 덮어쓴다). 그래서 전부 Admin/admin 접두사를 쓴다.
+// content-store.jsx 머리말과 같다: 최상위 이름은 전부 전역이다. users.jsx · components/JinaDropdown.jsx · JinaTable.jsx
+// 와 이름이 겹치면 조용히 깨진다(함수 선언은 덮어쓴다). Admin/admin 접두·Jina 접두로 나눈다.
 
 // 열린 드롭다운의 최대 높이. 아래 공간이 이보다 좁으면 위로 펼친다.
 const ADMIN_MENU_MAX = 280;
@@ -146,46 +145,6 @@ function adminGoto(route, id) {
   window.location.hash = `#/${ADMIN_PLAIN_ROUTES.includes(route) ? route : 'contents'}`;
 }
 
-// 열린 메뉴 닫기 — 바깥 클릭 · Esc · 리사이즈 · 스크롤.
-// position:fixed 메뉴는 표가 스크롤돼도 따라오지 않으므로 어긋나 보이기 전에 닫는다.
-// scroll 은 **capture** 로 들어야 내부 스크롤 컨테이너의 이벤트까지 잡힌다(scroll 은 버블링하지 않는다).
-function useAdminDismiss(open, setOpen, ref) {
-  React.useEffect(() => {
-    if (!open) return undefined;
-    const outside = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
-    const dismiss = () => setOpen(false);
-    document.addEventListener('mousedown', outside);
-    document.addEventListener('keydown', onKey);
-    window.addEventListener('resize', dismiss);
-    window.addEventListener('scroll', dismiss, true);
-    return () => {
-      document.removeEventListener('mousedown', outside);
-      document.removeEventListener('keydown', onKey);
-      window.removeEventListener('resize', dismiss);
-      window.removeEventListener('scroll', dismiss, true);
-    };
-  }, [open, setOpen, ref]);
-}
-
-// 열린 드롭다운의 **화면(viewport) 좌표**. position:absolute 로 두면 표의 overflow:auto 에
-// 클리핑돼 메뉴가 잘린다 — 그래서 fixed 로 띄우고 좌표를 버튼의 화면 위치에서 직접 계산한다.
-// 아래 공간이 모자라면 위로 펼친다.
-function adminMenuRect(el, width) {
-  const r = el.getBoundingClientRect();
-  const below = window.innerHeight - r.bottom - 8;
-  const above = r.top - 8;
-  const dropUp = below < Math.min(ADMIN_MENU_MAX, above);
-  return {
-    right: Math.max(8, window.innerWidth - r.right),
-    width,
-    top: r.bottom + 4,
-    bottom: window.innerHeight - r.top + 4,
-    dropUp,
-    maxHeight: Math.max(140, Math.min(ADMIN_MENU_MAX, dropUp ? above : below)),
-  };
-}
-
 // 스크롤바는 인라인 스타일로 못 만든다 — 테마 색을 넣은 규칙을 주입한다.
 // users.jsx 도 같은 클래스를 주입하지만 두 화면은 동시에 마운트되지 않는다(해시 라우팅).
 function AdminScrollStyle({ theme }) {
@@ -247,9 +206,7 @@ function AdminTopBar({ theme, me }) {
   );
 }
 
-// 화면 탭. users.jsx 는 자기 화면에 똑같은 스트립을 비활성 span 으로 그려 두었다 —
-// 그쪽을 고칠 수 없어 이 스트립은 콘텐츠 화면에만 있고, 사용자 화면에서 돌아오는 길은
-// AdminBackToContents 가 맡는다(그 주석 참조).
+// 화면 탭 — 콘텐츠·검수·토픽·사용자 공통. users.jsx 는 embedded 로 본문만 그린다.
 function AdminTabs({ theme, route, me }) {
   // 탭이 없는 라우트(레슨 에디터)는 상위 탭을 켠다 — 어느 탭도 켜지지 않으면 "어디에 있나" 를 잃는다.
   const tab = ADMIN_ROUTE_TAB[route] || route;
@@ -371,53 +328,45 @@ function AdminMenuRow({ theme, testid, disabled, tone, icon, label, tag, onClick
 }
 
 function AdminRowMenu({ theme, item, me, busy, onTransition, onPreview }) {
-  const [open, setOpen] = React.useState(false);
-  const [pos, setPos] = React.useState({ right: 0, width: 236, top: 0, bottom: 0, dropUp: false, maxHeight: ADMIN_MENU_MAX });
-  const ref = React.useRef(null);
-  useAdminDismiss(open, setOpen, ref);
   const transitions = adminTransitionsFor(item, me);
 
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button
-        data-testid="content-kebab"
-        disabled={busy}
-        onClick={(e) => {
-          const next = !open;
-          if (next) setPos(adminMenuRect(e.currentTarget, 236));
-          setOpen(next);
-        }}
-        style={{
-          width: 30, height: 30, borderRadius: 9,
-          border: `1px solid ${open ? `${theme.accent}8c` : theme.borderStrong}`,
-          background: open ? `${theme.accent}1a` : 'transparent',
-          display: 'grid', placeItems: 'center',
-          color: open ? theme.accent : theme.textMuted,
-          cursor: busy ? 'wait' : 'pointer',
-        }}
-      ><Icons.ChevronDown size={15} /></button>
-      {open && (
-        <div data-testid="content-kebab-menu" className="jina-scroll" style={{
-          // absolute 는 표의 overflow:auto 에 잘린다. fixed 는 뷰포트 기준이라 클리핑을 벗어난다.
-          position: 'fixed', zIndex: 200,
-          right: pos.right, width: pos.width,
-          ...(pos.dropUp ? { bottom: pos.bottom } : { top: pos.top }),
-          background: theme.surfaceElev, border: `1px solid ${theme.borderStrong}`,
-          borderRadius: 12, boxShadow: theme.shadow, padding: 6,
-          maxHeight: pos.maxHeight, overflowY: 'auto',
-        }}>
+    <JinaDropdown
+      theme={theme}
+      align="right"
+      width={236}
+      maxHeight={ADMIN_MENU_MAX}
+      disabled={busy}
+      menuTestId="content-kebab-menu"
+      renderTrigger={({ open, toggle, disabled }) => (
+        <button
+          data-testid="content-kebab"
+          disabled={disabled}
+          onClick={toggle}
+          style={{
+            width: 30, height: 30, borderRadius: 9,
+            border: `1px solid ${open ? `${theme.accent}8c` : theme.borderStrong}`,
+            background: open ? `${theme.accent}1a` : 'transparent',
+            display: 'grid', placeItems: 'center',
+            color: open ? theme.accent : theme.textMuted,
+            cursor: disabled ? 'wait' : 'pointer',
+          }}
+        ><Icons.ChevronDown size={15} /></button>
+      )}
+    >
+      {({ close }) => (
+        <React.Fragment>
           {transitions.map((t) => (
             <AdminMenuRow
               key={t.to}
               theme={theme}
               testid={`content-transition-${t.to}`}
               icon={t.allowed ? t.icon : null}
-              // 전이 방향을 색으로 말한다 — 올리는 것은 success, 내리는 것은 error.
               tone={t.to === 'archived' ? theme.error : t.to === 'published' ? theme.success : theme.text}
               label={t.label}
               tag={t.allowed ? null : `${t.minRole}+`}
               disabled={!t.allowed}
-              onClick={() => { setOpen(false); onTransition(t.to); }}
+              onClick={() => { close(); onTransition(t.to); }}
             />
           ))}
           <hr style={{ border: 'none', borderTop: `1px solid ${theme.border}`, margin: '5px 8px' }} />
@@ -426,10 +375,8 @@ function AdminRowMenu({ theme, item, me, busy, onTransition, onPreview }) {
             testid="content-preview"
             icon="Eye"
             label="미리보기"
-            onClick={() => { setOpen(false); onPreview(); }}
+            onClick={() => { close(); onPreview(); }}
           />
-          {/* 수정 — 레슨(editors/lc.jsx)·회화(editors/scenario.jsx)·단어(editors/vocab.jsx), 플랜 14 Phase D.
-              speaking_set 은 플랜 13 Phase C 게이트라 흐리게 남긴다: 사라지면 "이 유형은 편집이 없다" 가 아니라 "버그" 로 읽힌다. */}
           <AdminMenuRow
             theme={theme}
             testid="content-edit"
@@ -437,34 +384,12 @@ function AdminRowMenu({ theme, item, me, busy, onTransition, onPreview }) {
             label="수정"
             tag={ADMIN_EDIT_ROUTES[item.type] ? null : '플랜 13 Phase C'}
             disabled={!ADMIN_EDIT_ROUTES[item.type]}
-            onClick={() => { setOpen(false); adminGoto(ADMIN_EDIT_ROUTES[item.type], item.id); }}
+            onClick={() => { close(); adminGoto(ADMIN_EDIT_ROUTES[item.type], item.id); }}
           />
           <AdminMenuRow theme={theme} testid="content-delete" label="삭제" tag="범위 밖" disabled />
-        </div>
+        </React.Fragment>
       )}
-    </div>
-  );
-}
-
-function AdminSkeletonRows({ theme, n = 4 }) {
-  return (
-    <div data-testid="contents-skeleton">
-      {Array.from({ length: n }, (_, i) => (
-        <div key={i} style={{
-          // 본 표와 컬럼 수가 같아야 스켈레톤이 어긋나 보이지 않는다.
-          display: 'grid', gridTemplateColumns: ADMIN_CONTENT_GRID,
-          alignItems: 'center', gap: 14, padding: '0 18px', height: 57,
-          borderTop: i ? `1px solid ${theme.border}` : 'none',
-        }}>
-          {[1, 2, 3, 4, 5, 6, 7, 8].map((c) => (
-            <div key={c} style={{
-              height: 13, borderRadius: 6, background: theme.chipBg,
-              animation: 'jina-pulse 1.2s infinite',
-            }} />
-          ))}
-        </div>
-      ))}
-    </div>
+    </JinaDropdown>
   );
 }
 
@@ -518,46 +443,37 @@ const ADMIN_NEW_ITEMS = [
 ];
 
 function AdminNewMenu({ theme }) {
-  const [open, setOpen] = React.useState(false);
-  const [pos, setPos] = React.useState({ right: 0, width: 264, top: 0, bottom: 0, dropUp: false, maxHeight: ADMIN_MENU_MAX });
-  const ref = React.useRef(null);
-  useAdminDismiss(open, setOpen, ref);
   return (
-    <div ref={ref} style={{ position: 'relative', paddingBottom: 2 }}>
-      <button
-        data-testid="content-new"
-        aria-expanded={open}
-        onClick={(e) => {
-          const next = !open;
-          if (next) setPos(adminMenuRect(e.currentTarget, 264));
-          setOpen(next);
-        }}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 9,
-          fontSize: 13, fontWeight: 700, color: '#fff', background: theme.accentGrad,
-          border: 'none', boxShadow: theme.shadow, cursor: 'pointer',
-        }}
-      ><Icons.Plus size={15} />새로 만들기<Icons.ChevronDown size={13} /></button>
-      {open && (
-        <div data-testid="content-new-menu" className="jina-scroll" style={{
-          position: 'fixed', zIndex: 200, right: pos.right, width: pos.width,
-          ...(pos.dropUp ? { bottom: pos.bottom } : { top: pos.top }),
-          background: theme.surfaceElev, border: `1px solid ${theme.borderStrong}`,
-          borderRadius: 12, boxShadow: theme.shadow, padding: 6, maxHeight: pos.maxHeight, overflowY: 'auto',
-        }}>
-          {ADMIN_NEW_ITEMS.map((it) => (
-            <AdminMenuRow
-              key={it.key}
-              theme={theme}
-              testid={`content-new-${it.key}`}
-              icon={it.icon}
-              label={it.label}
-              onClick={() => { setOpen(false); adminGoto(it.route, it.id ?? null); }}
-            />
-          ))}
-        </div>
+    <JinaDropdown
+      theme={theme}
+      align="right"
+      width={264}
+      maxHeight={ADMIN_MENU_MAX}
+      menuTestId="content-new-menu"
+      renderTrigger={({ open, toggle }) => (
+        <button
+          data-testid="content-new"
+          aria-expanded={open}
+          onClick={toggle}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 9,
+            fontSize: 13, fontWeight: 700, color: '#fff', background: theme.accentGrad,
+            border: 'none', boxShadow: theme.shadow, cursor: 'pointer',
+          }}
+        ><Icons.Plus size={15} />새로 만들기<Icons.ChevronDown size={13} /></button>
       )}
-    </div>
+    >
+      {({ close }) => ADMIN_NEW_ITEMS.map((it) => (
+        <AdminMenuRow
+          key={it.key}
+          theme={theme}
+          testid={`content-new-${it.key}`}
+          icon={it.icon}
+          label={it.label}
+          onClick={() => { close(); adminGoto(it.route, it.id ?? null); }}
+        />
+      ))}
+    </JinaDropdown>
   );
 }
 
@@ -651,9 +567,6 @@ function AdminContentsScreen() {
             >{meta ? meta.label : '전체'}</button>
           );
         })}
-        <span style={{ marginLeft: 'auto', fontSize: 11.5, color: theme.textDim }}>
-          status = 생명주기 · visibility = 누가 보나 — 별개 축
-        </span>
       </div>
 
       {store.error && (
@@ -671,43 +584,43 @@ function AdminContentsScreen() {
         </div>
       )}
 
-      {/* 표 */}
-      <div className="jina-scroll" style={{
-        margin: '0 26px', flex: 1, minHeight: 0, overflow: 'auto',
-        border: `1px solid ${theme.border}`, borderRadius: 15, background: theme.surface,
-      }}>
-        <div style={{
-          display: 'grid', gridTemplateColumns: ADMIN_CONTENT_GRID, alignItems: 'center', gap: 14,
-          padding: '0 18px', height: 40, background: theme.bgSoft,
-          borderRadius: '14px 14px 0 0', fontSize: 10.5, color: theme.textDim,
-          fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
-          position: 'sticky', top: 0, zIndex: 1,
-        }}>
+      {/* 표 — JinaTable(components/JinaTable.jsx) */}
+      <JinaTable theme={theme}>
+        <JinaTableHead theme={theme} columns={ADMIN_CONTENT_GRID}>
           <span>상태</span><span>제목</span><span>공개</span><span>유형</span>
           <span style={{ textAlign: 'right' }}>문항</span><span>만든이</span><span>수정일</span><span />
-        </div>
+        </JinaTableHead>
 
         {!canAuthor ? (
           // 서버가 어차피 403 을 준다(결정 4 — 가드를 클라이언트에 맡기지 않는다).
           // 이 안내는 빈 표 대신 왜 비었는지를 말해 주기 위한 것뿐이다.
-          <div data-testid="contents-need-author" style={{
-            padding: '48px 40px', textAlign: 'center', color: theme.textMuted, fontSize: 14, lineHeight: 1.8,
-          }}>
+          <JinaTableEmpty
+            theme={theme}
+            testId="contents-need-author"
+            padding="48px 40px"
+            style={{ lineHeight: 1.8 }}
+          >
             콘텐츠 관리는 <b style={{ color: theme.accent }}>author</b> 이상만 열 수 있습니다.
             <div style={{ fontSize: 12.5, color: theme.textDim, marginTop: 6 }}>
               현재 역할: {me?.role || '—'} — 관리자에게 권한을 요청하세요.
             </div>
-          </div>
+          </JinaTableEmpty>
         ) : store.forbidden ? (
-          <div data-testid="contents-forbidden" style={{
-            padding: '48px 40px', textAlign: 'center', color: theme.textMuted, fontSize: 14,
-          }}>권한이 없습니다</div>
+          <JinaTableEmpty theme={theme} testId="contents-forbidden" padding="48px 40px">
+            권한이 없습니다
+          </JinaTableEmpty>
         ) : store.loading ? (
-          <AdminSkeletonRows theme={theme} />
+          <JinaTableSkeleton
+            theme={theme}
+            columns={ADMIN_CONTENT_GRID}
+            rows={4}
+            rowHeight={57}
+            testId="contents-skeleton"
+          />
         ) : shown === 0 ? (
-          <div data-testid="contents-empty" style={{
-            padding: '48px 40px', textAlign: 'center', color: theme.textMuted, fontSize: 14,
-          }}>조건에 맞는 콘텐츠가 없습니다</div>
+          <JinaTableEmpty theme={theme} testId="contents-empty" padding="48px 40px">
+            조건에 맞는 콘텐츠가 없습니다
+          </JinaTableEmpty>
         ) : (
           store.items.map((item) => {
             const key = adminContentKey(item);
@@ -715,12 +628,17 @@ function AdminContentsScreen() {
             const open = expanded === key;
             return (
               <div key={key}>
-                <div data-testid="content-row" data-content-key={key} style={{
-                  display: 'grid', gridTemplateColumns: ADMIN_CONTENT_GRID, alignItems: 'center', gap: 14,
-                  padding: '0 18px', height: 57, borderTop: `1px solid ${theme.border}`,
-                  background: open ? `${theme.accent}0e` : 'transparent',
-                  opacity: busy ? 0.6 : 1,
-                }}>
+                <JinaTableRow
+                  theme={theme}
+                  columns={ADMIN_CONTENT_GRID}
+                  rowHeight={57}
+                  testId="content-row"
+                  data-content-key={key}
+                  style={{
+                    background: open ? `${theme.accent}0e` : 'transparent',
+                    opacity: busy ? 0.6 : 1,
+                  }}
+                >
                   <AdminStatusBadge theme={theme} status={item.status} />
                   <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
                     <span style={{
@@ -765,7 +683,7 @@ function AdminContentsScreen() {
                     onTransition={(to) => store.transition(item, to)}
                     onPreview={() => setExpanded(open ? null : key)}
                   />
-                </div>
+                </JinaTableRow>
                 {open && <AdminPreviewPanel theme={theme} item={item} />}
               </div>
             );
@@ -775,10 +693,7 @@ function AdminContentsScreen() {
         {/* 목록이 잘렸으면 그 사실을 말하고 이어 받게 한다 — 없으면 limit(50)을 넘는 순간
             51번째부터 화면에서 조용히 사라진다. 페이지네이션은 만들지 않는다. */}
         {canAuthor && !store.loading && shown > 0 && shown < store.total && (
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: '14px 18px', borderTop: `1px solid ${theme.border}`,
-          }}>
+          <JinaTableFooter theme={theme}>
             <button
               data-testid="contents-load-more"
               disabled={store.loadingMore}
@@ -791,9 +706,9 @@ function AdminContentsScreen() {
             >{store.loadingMore
               ? '불러오는 중…'
               : `${Math.min(ADMIN_CONTENT_PAGE_SIZE, store.total - shown)}개 더 보기`}</button>
-          </div>
+          </JinaTableFooter>
         )}
-      </div>
+      </JinaTable>
 
       {/* 하단 각주 — 이 화면의 두 규범(결정 2 · 열린 질문 7 후보 A)을 화면에서 읽히게 둔다. */}
       <div style={{
@@ -806,33 +721,6 @@ function AdminContentsScreen() {
         전이마다 <b style={{ color: theme.textMuted }}>content_audit_log</b> 에 1행이 남는다.
       </div>
     </React.Fragment>
-  );
-}
-
-// 사용자 화면에서 콘텐츠 화면으로 돌아오는 유일한 길.
-//
-// users.jsx 는 자기 nav·탭 스트립·100vh 루트를 직접 그리는 완결된 화면이고 이 플랜에서는
-// 수정 대상이 아니다. 그 안의 탭 스트립은 클릭되지 않는 span 이라 콘텐츠로 나올 수가 없다.
-// 그래서 라우팅을 쥔 이쪽에서 fixed 버튼 하나를 얹는다. 좌표(top 68)는 users.jsx 의
-// nav 52 + 탭 스트립 상단 여백 16 이라 그 줄의 **빈 오른쪽**에 앉는다.
-// 이 버튼은 users.jsx 의 nav·탭 스트립이 AdminShell 로 올라오면 사라져야 한다(report 참조).
-function AdminBackToContents({ theme }) {
-  return (
-    // jina-root 로 한 번 감싼다 — users.jsx 의 루트 **바깥**에 뜨는 요소라
-    // 감싸지 않으면 이 버튼만 Pretendard 도 버튼 리셋도 못 받는다.
-    <div className="jina-root" style={{ position: 'fixed', top: 68, right: 26, zIndex: 300 }}>
-      <button
-        data-testid="admin-back-to-contents"
-        onClick={() => adminGoto('contents')}
-        title="콘텐츠 관리로 돌아가기"
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 7,
-          padding: '8px 14px', borderRadius: 9, fontSize: 13, fontWeight: 600,
-          background: theme.surface, border: `1px solid ${theme.borderStrong}`,
-          color: theme.text, boxShadow: theme.shadow, cursor: 'pointer',
-        }}
-      ><Icons.ArrowLeft size={15} />콘텐츠</button>
-    </div>
   );
 }
 
@@ -897,28 +785,6 @@ function AdminShell() {
     );
   }
 
-  // 사용자 화면은 users.jsx 가 자기 nav·탭까지 통째로 그린다. 여기서 감싸면 상단바가 두 벌이 되므로
-  // 그대로 두고 돌아오는 버튼만 얹는다.
-  if (route === 'users') {
-    // users.jsx 가 로드되지 않았거나 파싱에 실패하면 여기서 전체 트리가 죽는다(빈 화면).
-    // admin.html 의 script 순서가 어긋난 것이므로 그렇게 말해 준다.
-    if (typeof AdminUsersScreen !== 'function') {
-      return (
-        <AdminCentered theme={theme}>
-          <span style={{ color: theme.error, fontSize: 13.5 }}>
-            사용자 화면(src/admin/users.jsx)이 로드되지 않았습니다 — admin.html 의 script 순서를 확인하세요.
-          </span>
-        </AdminCentered>
-      );
-    }
-    return (
-      <React.Fragment>
-        <AdminUsersScreen />
-        <AdminBackToContents theme={theme} />
-      </React.Fragment>
-    );
-  }
-
   return (
     // jina-root — tokens.jsx 가 주입하는 기본 스타일이 이 클래스에 스코프돼 있다.
     // 빠뜨리면 box-sizing: border-box · Pretendard 폰트 · 버튼 리셋이 이 화면에만 적용되지 않는다.
@@ -933,6 +799,11 @@ function AdminShell() {
           해시가 바뀌면 폼 상태를 통째로 새로 시작한다 — 이전 레슨의 입력이 다음 레슨에 남으면 오저장이 된다.
           검수 큐는 #/review/new 로 들어오면 AI 초안 요청 패널을 열어 둔다(openAi). */}
       {route === 'review' ? <AdminReviewQueue theme={theme} me={me} openAi={nav.id === 'new'} />
+        : route === 'users' ? (
+          typeof AdminUsersScreen === 'function'
+            ? <AdminUsersScreen embedded theme={theme} />
+            : <AdminMissingScreen theme={theme} label="사용자 화면" file="src/admin/users.jsx" />
+        )
         : route === 'edit-lesson' ? (
           typeof AdminLcEditor === 'function'
             ? <AdminLcEditor key={nav.id ?? 'new'} theme={theme} me={me} lessonId={nav.id} />

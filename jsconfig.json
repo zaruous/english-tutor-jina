@@ -1,0 +1,22 @@
+{
+  // IDE 전용 — Babel standalone 런타임·admin.html script 순서에는 영향 없음.
+  // src/*.jsx 는 import/export 없이 script 로 묶여 전역 심볼(JinaDropdown 등)을 F12 로 연결한다.
+  // Vite 전환 시: tsconfig.json + vite.config 의 resolve.alias("@" → "src") 로 교체.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "checkJs": false,
+    "allowJs": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    },
+    "types": ["react", "react-dom"]
+  },
+  "include": ["src/**/*.jsx", "src/**/*.js", "src/**/*.d.ts"],
+  "exclude": ["node_modules", "api", "db", "scripts", "tests"]
+}

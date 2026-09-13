@@ -154,20 +154,6 @@ function ScenarioBar({ theme, session, onArchive, archiving }) {
             <Icons.Folder size={13} /> {archiving ? '보관 중…' : '보관'}
           </button>
         )}
-        <button style={{
-          padding: '8px 12px', borderRadius: 9,
-          background: theme.chipBg, color: theme.textMuted,
-          fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5,
-        }}>
-          <Icons.Globe size={13} /> 한↔영
-        </button>
-        <button style={{
-          padding: '8px 12px', borderRadius: 9,
-          background: theme.chipBg, color: theme.textMuted,
-          fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5,
-        }}>
-          <Icons.Settings size={13} /> 모드
-        </button>
       </div>
     </div>
   );

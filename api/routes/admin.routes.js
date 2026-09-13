@@ -2,7 +2,7 @@ import { readJson } from '../lib/body.js';
 import { CONTENT_STATUSES, VISIBILITIES } from '../lib/content-status.js';
 import { HttpError } from '../lib/errors.js';
 import { sendJson } from '../lib/respond.js';
-import { bool, oneOf, posInt, str } from '../lib/validate.js';
+import { bool, EMAIL_RE, oneOf, posInt, str } from '../lib/validate.js';
 import { requireAdmin, requireRole } from '../middleware/auth.js';
 import * as adminAuthoring from '../services/admin-authoring.service.js';
 import * as adminContents from '../services/admin-content.service.js';
@@ -39,6 +39,20 @@ async function sendAuthoring(res, status, work) {
 }
 
 export function registerAdminRoutes(router) {
+  router.post('/api/admin/users', async (req, res) => {
+    const { user } = await requireAdmin(req, res);
+    const body = await readJson(req);
+    const email = str(body.email, 'email', { min: 3, max: 254, pattern: EMAIL_RE });
+    const password = str(body.password, 'password', { min: 8, max: 200 });
+    const displayName = str(body.display_name, 'display_name', { max: 60, optional: true });
+    const role = str(body.role, 'role', { optional: true, max: 40 }) || 'learner';
+    const note = str(body.note, 'note', { optional: true, max: 500 });
+    sendJson(res, 201, {
+      ok: true,
+      ...(await adminUsers.createUser(user.id, { email, password, displayName, role, note })),
+    });
+  });
+
   router.get('/api/admin/users', async (req, res, { query }) => {
     const { user } = await requireAdmin(req, res);
     const q = str(query.get('q') || '', 'q', { optional: true, max: 200 });
