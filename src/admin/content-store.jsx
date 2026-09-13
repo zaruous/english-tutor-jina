@@ -14,11 +14,14 @@
 const ADMIN_CONTENT_PAGE_SIZE = 50;
 // 서버가 limit 을 200 에서 자른다. 더 크게 요청하면 조용히 잘리므로 조작 후 새로고침에서 이 값을 넘기지 않는다.
 const ADMIN_CONTENT_MAX_LIMIT = 200;
-// 검색어 디바운스. 목록은 사용자 목록보다 크고(콘텐츠 4종 + 토픽) 한 글자마다 왕복하면
+// 검색어 디바운스. 목록은 사용자 목록보다 크고(콘텐츠 4종) 한 글자마다 왕복하면
 // 마지막 응답이 먼저 도착한 응답에 덮이는 경합이 눈에 보인다.
 const ADMIN_CONTENT_SEARCH_DELAY = 250;
 
-// 유형 탭 — key 는 `GET /api/admin/contents?type=` 에 그대로 실린다(content_items.type + topic).
+// 유형 탭 — key 는 `GET /api/admin/contents?type=` 에 그대로 실린다(content_items.type 4종).
+// '토픽' 칩은 두지 않는다 — 토픽은 content_items 가 아니라 topics 테이블이고, 관리는 상단 '토픽' 탭
+// (/api/admin/topics, editors/topic.jsx)이 맡는다. 플랜 11 때 넣었던 { key: 'topic' } 은 서버 oneOf(CONTENT_TYPES)가
+// 400 을 돌려주는 잔재였다(플랜 14 Phase A 에서 제거). 다시 넣으려면 서버 listContents 에 topic 분기가 먼저 필요하다.
 //
 // 와이어프레임의 [리스닝] 을 [레슨] 으로 바꿨다. `리스닝`(kind='toeic_lc')과 `Part 7`(toeic_part7)은
 // 둘 다 type='lesson' 이고 목록 DTO 에는 kind 가 없다 — 탭을 '리스닝' 이라 쓰면 Part 7 레슨이
@@ -27,7 +30,6 @@ const ADMIN_CONTENT_SEARCH_DELAY = 250;
 // 빠뜨리고 있어 같은 문제를 안고 있었다.
 const ADMIN_CONTENT_TYPES = [
   { key: '', label: '전체' },
-  { key: 'topic', label: '토픽' },
   { key: 'lesson', label: '레슨' },
   { key: 'speaking_set', label: '스피킹' },
   { key: 'scenario', label: '회화' },

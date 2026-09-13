@@ -42,8 +42,13 @@ const ADMIN_TABS = [
   { key: 'users', label: '사용자', minRole: 'admin' },
 ];
 
-// 탭에 없는 라우트가 어느 탭 아래인지. 레슨 에디터는 목록의 [▾] 에서 들어오는 화면이라 콘텐츠 탭을 켜 둔다.
-const ADMIN_ROUTE_TAB = { 'edit-lesson': 'contents' };
+// 탭에 없는 라우트가 어느 탭 아래인지. 에디터 셋은 목록의 [▾]·'새로 만들기' 에서 들어오는 화면이라 콘텐츠 탭을 켜 둔다.
+const ADMIN_ROUTE_TAB = { 'edit-lesson': 'contents', 'edit-scenario': 'contents', 'edit-vocab_set': 'contents' };
+
+// 에디터가 있는 콘텐츠 유형 → 라우트 키(플랜 14 결정 A3). 해시는 DB 의 type 문자열을 그대로 쓴다(#/edit/vocab_set/…) —
+// 라우터·adminGoto·review-queue 의 '승인 전 수정'·e2e 셀렉터가 한 문자열을 공유해야 하므로 별칭(vocab)을 두지 않는다.
+// speaking_set 은 플랜 13 Phase C 게이트라 여기 없다 — 없으면 [▾] 의 '수정' 이 흐리게 남는다.
+const ADMIN_EDIT_ROUTES = { lesson: 'edit-lesson', scenario: 'edit-scenario', vocab_set: 'edit-vocab_set' };
 
 const ADMIN_TAB_BLOCKED = {
   author: '저작자(author) 이상만 열 수 있습니다',
@@ -89,8 +94,9 @@ function useAdminTheme() {
 // 결정 4 때문에 공용 라우터를 끌어올 수도 없다. 라우트는 { route, id } 객체다 — 플랜 13 이
 // id 를 싣는 화면(레슨 에디터·토픽 구성)을 더했다.
 //   #/contents · #/review · #/users     → { route, id: null }
-//   #/edit/lesson/new                   → { route: 'edit-lesson', id: null }   신규 → POST
-//   #/edit/lesson/:id                   → { route: 'edit-lesson', id }         수정 → PATCH
+//   #/edit/<type>/new                   → { route: 'edit-<type>', id: null }   신규 → POST   (type ∈ ADMIN_EDIT_ROUTES)
+//   #/edit/<type>/:id                   → { route: 'edit-<type>', id }         수정 → PATCH
+//   #/review/new                        → { route: 'review', id: 'new' }       검수 큐 + AI 초안 요청 패널 열림 (플랜 14 Phase B)
 //   #/topics · #/topics/new · #/topics/:id → { route: 'topics', id: null | 'new' | id }   (editors/topic.jsx 의 규약)
 // 모르는 경로·숫자가 아닌 id 는 콘텐츠 목록으로 떨어진다 — 빈 화면보다 낫다.
 const ADMIN_PLAIN_ROUTES = ['contents', 'review', 'users', 'topics'];
@@ -98,11 +104,13 @@ const ADMIN_PLAIN_ROUTES = ['contents', 'review', 'users', 'topics'];
 function adminRouteFromHash() {
   const raw = String(window.location.hash || '').replace(/^#\/?/, '').split('?')[0];
   const seg = raw.split('/').filter(Boolean);
-  if (seg[0] === 'edit' && seg[1] === 'lesson') {
-    if (seg[2] === 'new') return { route: 'edit-lesson', id: null };
-    if (/^\d+$/.test(seg[2] || '')) return { route: 'edit-lesson', id: seg[2] };
+  if (seg[0] === 'edit') {
+    const route = ADMIN_EDIT_ROUTES[seg[1]];
+    if (route && seg[2] === 'new') return { route, id: null };
+    if (route && /^\d+$/.test(seg[2] || '')) return { route, id: seg[2] };
     return { route: 'contents', id: null };
   }
+  if (seg[0] === 'review' && seg[1] === 'new') return { route: 'review', id: 'new' };
   if (seg[0] === 'topics' && seg.length > 1) {
     if (seg[1] === 'new' || /^\d+$/.test(seg[1])) return { route: 'topics', id: seg[1] };
     return { route: 'contents', id: null };
@@ -120,10 +128,15 @@ function useAdminRoute() {
   return nav;
 }
 
-// adminRouteFromHash 의 역함수. id 를 받는 라우트는 둘뿐이고 그 외는 id 를 버린다.
+// adminRouteFromHash 의 역함수. id 를 받는 라우트는 에디터 셋·토픽·검수(new)이고 그 외는 id 를 버린다.
 function adminGoto(route, id) {
-  if (route === 'edit-lesson') {
-    window.location.hash = `#/edit/lesson/${id == null ? 'new' : encodeURIComponent(id)}`;
+  const editType = Object.keys(ADMIN_EDIT_ROUTES).find((t) => ADMIN_EDIT_ROUTES[t] === route);
+  if (editType) {
+    window.location.hash = `#/edit/${editType}/${id == null ? 'new' : encodeURIComponent(id)}`;
+    return;
+  }
+  if (route === 'review' && id === 'new') {
+    window.location.hash = '#/review/new';
     return;
   }
   if (route === 'topics' && id != null) {
@@ -415,16 +428,16 @@ function AdminRowMenu({ theme, item, me, busy, onTransition, onPreview }) {
             label="미리보기"
             onClick={() => { setOpen(false); onPreview(); }}
           />
-          {/* 수정은 레슨만(플랜 13 Phase A 최소형 — editors/lc.jsx). 다른 유형은 경계를 보여주기 위해
-              흐리게 남긴다: 사라지면 "이 유형은 편집이 없다" 가 아니라 "버그" 로 읽힌다. */}
+          {/* 수정 — 레슨(editors/lc.jsx)·회화(editors/scenario.jsx)·단어(editors/vocab.jsx), 플랜 14 Phase D.
+              speaking_set 은 플랜 13 Phase C 게이트라 흐리게 남긴다: 사라지면 "이 유형은 편집이 없다" 가 아니라 "버그" 로 읽힌다. */}
           <AdminMenuRow
             theme={theme}
             testid="content-edit"
-            icon={item.type === 'lesson' ? 'Book' : null}
+            icon={ADMIN_EDIT_ROUTES[item.type] ? 'Book' : null}
             label="수정"
-            tag={item.type === 'lesson' ? null : '플랜 13 범위 밖'}
-            disabled={item.type !== 'lesson'}
-            onClick={() => { setOpen(false); adminGoto('edit-lesson', item.id); }}
+            tag={ADMIN_EDIT_ROUTES[item.type] ? null : '플랜 13 Phase C'}
+            disabled={!ADMIN_EDIT_ROUTES[item.type]}
+            onClick={() => { setOpen(false); adminGoto(ADMIN_EDIT_ROUTES[item.type], item.id); }}
           />
           <AdminMenuRow theme={theme} testid="content-delete" label="삭제" tag="범위 밖" disabled />
         </div>
@@ -494,6 +507,60 @@ function AdminPreviewPanel({ theme, item }) {
   );
 }
 
+// '새로 만들기' — 콘텐츠 탭의 생성 진입점(플랜 14 Phase A). 수기 에디터 셋은 #/edit/<type>/new 로,
+// AI 초안은 검수 탭의 요청 패널(#/review/new)로 보낸다. 권한 판정은 서버 몫이고(에디터·큐가 author 게이트를 그린다)
+// 이 버튼은 canAuthor 일 때만 그린다 — learner 에게 눌러도 403 만 보는 버튼을 보여 줄 이유가 없다.
+const ADMIN_NEW_ITEMS = [
+  { key: 'lesson', label: '레슨 (LC · Part 7 · Part 5)', icon: 'Book', route: 'edit-lesson' },
+  { key: 'scenario', label: '회화 시나리오', icon: 'Chat', route: 'edit-scenario' },
+  { key: 'vocab_set', label: '단어 세트', icon: 'BookOpen', route: 'edit-vocab_set' },
+  { key: 'ai', label: 'AI 초안 요청 → 검수 큐', icon: 'Sparkles', route: 'review', id: 'new' },
+];
+
+function AdminNewMenu({ theme }) {
+  const [open, setOpen] = React.useState(false);
+  const [pos, setPos] = React.useState({ right: 0, width: 264, top: 0, bottom: 0, dropUp: false, maxHeight: ADMIN_MENU_MAX });
+  const ref = React.useRef(null);
+  useAdminDismiss(open, setOpen, ref);
+  return (
+    <div ref={ref} style={{ position: 'relative', paddingBottom: 2 }}>
+      <button
+        data-testid="content-new"
+        aria-expanded={open}
+        onClick={(e) => {
+          const next = !open;
+          if (next) setPos(adminMenuRect(e.currentTarget, 264));
+          setOpen(next);
+        }}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 14px', borderRadius: 9,
+          fontSize: 13, fontWeight: 700, color: '#fff', background: theme.accentGrad,
+          border: 'none', boxShadow: theme.shadow, cursor: 'pointer',
+        }}
+      ><Icons.Plus size={15} />새로 만들기<Icons.ChevronDown size={13} /></button>
+      {open && (
+        <div data-testid="content-new-menu" className="jina-scroll" style={{
+          position: 'fixed', zIndex: 200, right: pos.right, width: pos.width,
+          ...(pos.dropUp ? { bottom: pos.bottom } : { top: pos.top }),
+          background: theme.surfaceElev, border: `1px solid ${theme.borderStrong}`,
+          borderRadius: 12, boxShadow: theme.shadow, padding: 6, maxHeight: pos.maxHeight, overflowY: 'auto',
+        }}>
+          {ADMIN_NEW_ITEMS.map((it) => (
+            <AdminMenuRow
+              key={it.key}
+              theme={theme}
+              testid={`content-new-${it.key}`}
+              icon={it.icon}
+              label={it.label}
+              onClick={() => { setOpen(false); adminGoto(it.route, it.id ?? null); }}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminContentsScreen() {
   const { user: me } = useAuth();
   const theme = useAdminTheme();
@@ -505,12 +572,11 @@ function AdminContentsScreen() {
 
   return (
     <React.Fragment>
-      {/* 유형 탭 — 카운트는 서버가 counts 를 줄 때만 붙인다. 없는 수를 0 으로 그리면
-          "0개" 와 "모른다" 를 구분할 수 없게 된다. */}
+      {/* 유형 탭 — 카운트는 붙이지 않는다. 서버 counts 는 status 별(초안·검토·공개·내림)이라 유형별 수가 없고,
+          type 키로 읽던 옛 코드는 항상 undefined 였다(플랜 14 Phase A 에서 제거). 유형별 수가 필요하면 서버부터. */}
       <div style={{ display: 'flex', gap: 7, alignItems: 'center', padding: '15px 26px 0', flexShrink: 0 }}>
         {ADMIN_CONTENT_TYPES.map((t) => {
           const active = store.filters.type === t.key;
-          const n = store.counts?.[t.key || 'all'];
           return (
             <button
               key={t.key || 'all'}
@@ -524,9 +590,6 @@ function AdminContentsScreen() {
               }}
             >
               {t.label}
-              {Number.isFinite(n) && (
-                <b style={{ marginLeft: 7, fontWeight: 800, color: active ? theme.accent : theme.textDim }}>{n}</b>
-              )}
             </button>
           );
         })}
@@ -546,10 +609,7 @@ function AdminContentsScreen() {
             </span>
           )}
         </div>
-        <div style={{ fontSize: 12, color: theme.textDim, paddingBottom: 4, textAlign: 'right' }}>
-          만들기는 플랜 13 · AI 초안 검수는 플랜 12 —
-          이 화면은 <b style={{ color: theme.textMuted }}>내리고 올리는 것</b>만 한다
-        </div>
+        {canAuthor && <AdminNewMenu theme={theme} />}
       </div>
 
       {/* 검색 + 상태 필터 */}
@@ -869,13 +929,24 @@ function AdminShell() {
       <AdminScrollStyle theme={theme} />
       <AdminTopBar theme={theme} me={me} />
       <AdminTabs theme={theme} route={route} me={me} />
-      {/* 에디터 둘(플랜 13)은 editors/*.jsx 가 전역 이름으로 내놓는다. key 에 id 를 걸어 다른 레슨·토픽으로
-          해시가 바뀌면 폼 상태를 통째로 새로 시작한다 — 이전 레슨의 입력이 다음 레슨에 남으면 오저장이 된다. */}
-      {route === 'review' ? <AdminReviewQueue theme={theme} me={me} />
+      {/* 에디터들(플랜 13·14)은 editors/*.jsx 가 전역 이름으로 내놓는다. key 에 id 를 걸어 다른 레슨·토픽으로
+          해시가 바뀌면 폼 상태를 통째로 새로 시작한다 — 이전 레슨의 입력이 다음 레슨에 남으면 오저장이 된다.
+          검수 큐는 #/review/new 로 들어오면 AI 초안 요청 패널을 열어 둔다(openAi). */}
+      {route === 'review' ? <AdminReviewQueue theme={theme} me={me} openAi={nav.id === 'new'} />
         : route === 'edit-lesson' ? (
           typeof AdminLcEditor === 'function'
             ? <AdminLcEditor key={nav.id ?? 'new'} theme={theme} me={me} lessonId={nav.id} />
             : <AdminMissingScreen theme={theme} label="LC 편집기" file="src/admin/editors/lc.jsx" />
+        )
+        : route === 'edit-scenario' ? (
+          typeof AdminScenarioEditor === 'function'
+            ? <AdminScenarioEditor key={nav.id ?? 'new'} theme={theme} me={me} scenarioId={nav.id} />
+            : <AdminMissingScreen theme={theme} label="회화 편집기" file="src/admin/editors/scenario.jsx" />
+        )
+        : route === 'edit-vocab_set' ? (
+          typeof AdminVocabEditor === 'function'
+            ? <AdminVocabEditor key={nav.id ?? 'new'} theme={theme} me={me} vocabSetId={nav.id} />
+            : <AdminMissingScreen theme={theme} label="단어 세트 편집기" file="src/admin/editors/vocab.jsx" />
         )
         : route === 'topics' ? (
           typeof AdminTopicComposer === 'function'
