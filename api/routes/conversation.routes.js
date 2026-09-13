@@ -10,9 +10,10 @@ import { requireUser } from '../middleware/auth.js';
 import * as convo from '../services/conversation.service.js';
 
 export function registerConversationRoutes(router) {
-  router.get('/api/conversations', async (req, res) => {
+  router.get('/api/conversations', async (req, res, { query }) => {
     const { user } = await requireUser(req, res);
-    sendJson(res, 200, { ok: true, ...(await convo.listSessions(user)) });
+    const archived = query.get('archived') === '1';
+    sendJson(res, 200, { ok: true, ...(await convo.listSessions(user, { archived })) });
   });
 
   router.post('/api/conversations', async (req, res) => {
@@ -97,9 +98,12 @@ export function registerConversationRoutes(router) {
     const sessionId = posInt(params.session_id, 'session_id');
     const body = await readJson(req);
     const title = str(body.title, 'title', { min: 1, max: 80, optional: true });
+    const archived = body.archived === undefined ? undefined : body.archived === true;
     sendJson(res, 200, {
       ok: true,
-      ...(await convo.patchSession(user, sessionId, { title, ended: body.ended === true })),
+      ...(await convo.patchSession(user, sessionId, {
+        title, ended: body.ended === true, archived,
+      })),
     });
   });
 

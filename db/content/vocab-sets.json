@@ -107,5 +107,2185 @@
     ],
     "source": "seed",
     "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-business-email-words",
+    "title": "비즈니스 이메일 핵심 20단어",
+    "description": "비즈니스 이메일 지문에서 자주 나오는 표현입니다.",
+    "words": [
+      {
+        "word": "accommodate",
+        "pos": "v.",
+        "meaning_ko": "accommodate (독해)"
+      },
+      {
+        "word": "finalize",
+        "pos": "v.",
+        "meaning_ko": "finalize (독해)"
+      },
+      {
+        "word": "anticipate",
+        "pos": "v.",
+        "meaning_ko": "anticipate (독해)"
+      },
+      {
+        "word": "blocker",
+        "pos": "n.",
+        "meaning_ko": "blocker (독해)"
+      },
+      {
+        "word": "deadline",
+        "pos": "n.",
+        "meaning_ko": "deadline (독해)"
+      },
+      {
+        "word": "coordinate",
+        "pos": "v.",
+        "meaning_ko": "coordinate (독해)"
+      },
+      {
+        "word": "brief",
+        "pos": "n.",
+        "meaning_ko": "brief (독해)"
+      },
+      {
+        "word": "launch",
+        "pos": "n.",
+        "meaning_ko": "launch (독해)"
+      },
+      {
+        "word": "priority",
+        "pos": "n.",
+        "meaning_ko": "priority (독해)"
+      },
+      {
+        "word": "flexibility",
+        "pos": "n.",
+        "meaning_ko": "flexibility (독해)"
+      },
+      {
+        "word": "regarding",
+        "pos": "adv.",
+        "meaning_ko": "regarding (독해)"
+      },
+      {
+        "word": "attached",
+        "pos": "n.",
+        "meaning_ko": "attached (독해)"
+      },
+      {
+        "word": "follow-up",
+        "pos": "n.",
+        "meaning_ko": "follow-up (독해)"
+      },
+      {
+        "word": "confirm",
+        "pos": "n.",
+        "meaning_ko": "confirm (독해)"
+      },
+      {
+        "word": "schedule",
+        "pos": "n.",
+        "meaning_ko": "schedule (독해)"
+      },
+      {
+        "word": "recipient",
+        "pos": "adv.",
+        "meaning_ko": "recipient (독해)"
+      },
+      {
+        "word": "cc",
+        "pos": "n.",
+        "meaning_ko": "cc (독해)"
+      },
+      {
+        "word": "action item",
+        "pos": "phr.",
+        "meaning_ko": "action item (독해)"
+      },
+      {
+        "word": "reminder",
+        "pos": "adv.",
+        "meaning_ko": "reminder (독해)"
+      },
+      {
+        "word": "accordingly",
+        "pos": "adv.",
+        "meaning_ko": "accordingly (독해)"
+      }
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-office-notice-words",
+    "title": "사내 공지·안내문 핵심 20단어",
+    "description": "사내 공지·안내문 지문에서 자주 나오는 표현입니다.",
+    "words": [
+      {
+        "word": "operational",
+        "pos": "n.",
+        "meaning_ko": "operational (독해)"
+      },
+      {
+        "word": "maintenance",
+        "pos": "n.",
+        "meaning_ko": "maintenance (독해)"
+      },
+      {
+        "word": "mobility",
+        "pos": "n.",
+        "meaning_ko": "mobility (독해)"
+      },
+      {
+        "word": "inconvenience",
+        "pos": "n.",
+        "meaning_ko": "inconvenience (독해)"
+      },
+      {
+        "word": "cooperation",
+        "pos": "n.",
+        "meaning_ko": "cooperation (독해)"
+      },
+      {
+        "word": "facility",
+        "pos": "n.",
+        "meaning_ko": "facility (독해)"
+      },
+      {
+        "word": "scheduled",
+        "pos": "n.",
+        "meaning_ko": "scheduled (독해)"
+      },
+      {
+        "word": "temporary",
+        "pos": "n.",
+        "meaning_ko": "temporary (독해)"
+      },
+      {
+        "word": "unavailable",
+        "pos": "adv.",
+        "meaning_ko": "unavailable (독해)"
+      },
+      {
+        "word": "advise",
+        "pos": "n.",
+        "meaning_ko": "advise (독해)"
+      },
+      {
+        "word": "accordingly",
+        "pos": "adv.",
+        "meaning_ko": "accordingly (독해)"
+      },
+      {
+        "word": "assistance",
+        "pos": "n.",
+        "meaning_ko": "assistance (독해)"
+      },
+      {
+        "word": "timeline",
+        "pos": "n.",
+        "meaning_ko": "timeline (독해)"
+      },
+      {
+        "word": "hydraulic",
+        "pos": "n.",
+        "meaning_ko": "hydraulic (독해)"
+      },
+      {
+        "word": "stairwell",
+        "pos": "n.",
+        "meaning_ko": "stairwell (독해)"
+      },
+      {
+        "word": "personnel",
+        "pos": "n.",
+        "meaning_ko": "personnel (독해)"
+      },
+      {
+        "word": "comply",
+        "pos": "adv.",
+        "meaning_ko": "comply (독해)"
+      },
+      {
+        "word": "restriction",
+        "pos": "adv.",
+        "meaning_ko": "restriction (독해)"
+      },
+      {
+        "word": "notify",
+        "pos": "v.",
+        "meaning_ko": "notify (독해)"
+      },
+      {
+        "word": "apologize",
+        "pos": "v.",
+        "meaning_ko": "apologize (독해)"
+      }
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-meeting-schedule-words",
+    "title": "회의 초대·일정 조율 핵심 20단어",
+    "description": "회의 초대·일정 조율 지문에서 자주 나오는 표현입니다.",
+    "words": [
+      {
+        "word": "agenda",
+        "pos": "n.",
+        "meaning_ko": "agenda (독해)"
+      },
+      {
+        "word": "reschedule",
+        "pos": "adv.",
+        "meaning_ko": "reschedule (독해)"
+      },
+      {
+        "word": "availability",
+        "pos": "n.",
+        "meaning_ko": "availability (독해)"
+      },
+      {
+        "word": "conference room",
+        "pos": "phr.",
+        "meaning_ko": "conference room (독해)"
+      },
+      {
+        "word": "attendee",
+        "pos": "n.",
+        "meaning_ko": "attendee (독해)"
+      },
+      {
+        "word": "postpone",
+        "pos": "n.",
+        "meaning_ko": "postpone (독해)"
+      },
+      {
+        "word": "tentative",
+        "pos": "adj.",
+        "meaning_ko": "tentative (독해)"
+      },
+      {
+        "word": "calendar",
+        "pos": "n.",
+        "meaning_ko": "calendar (독해)"
+      },
+      {
+        "word": "overlap",
+        "pos": "n.",
+        "meaning_ko": "overlap (독해)"
+      },
+      {
+        "word": "facilitate",
+        "pos": "v.",
+        "meaning_ko": "facilitate (독해)"
+      },
+      {
+        "word": "minutes",
+        "pos": "n.",
+        "meaning_ko": "minutes (독해)"
+      },
+      {
+        "word": "quarterly",
+        "pos": "adv.",
+        "meaning_ko": "quarterly (독해)"
+      },
+      {
+        "word": "stand-up",
+        "pos": "n.",
+        "meaning_ko": "stand-up (독해)"
+      },
+      {
+        "word": "virtual",
+        "pos": "n.",
+        "meaning_ko": "virtual (독해)"
+      },
+      {
+        "word": "in-person",
+        "pos": "n.",
+        "meaning_ko": "in-person (독해)"
+      },
+      {
+        "word": "RSVP",
+        "pos": "n.",
+        "meaning_ko": "RSVP (독해)"
+      },
+      {
+        "word": "time zone",
+        "pos": "phr.",
+        "meaning_ko": "time zone (독해)"
+      },
+      {
+        "word": "recurring",
+        "pos": "adv.",
+        "meaning_ko": "recurring (독해)"
+      },
+      {
+        "word": "slot",
+        "pos": "n.",
+        "meaning_ko": "slot (독해)"
+      },
+      {
+        "word": "confirm",
+        "pos": "n.",
+        "meaning_ko": "confirm (독해)"
+      }
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-memo-minutes-words",
+    "title": "회의록·업무 메모 핵심 20단어",
+    "description": "회의록·업무 메모 지문에서 자주 나오는 표현입니다.",
+    "words": [
+      {
+        "word": "memo",
+        "pos": "n.",
+        "meaning_ko": "memo (독해)"
+      },
+      {
+        "word": "minutes",
+        "pos": "n.",
+        "meaning_ko": "minutes (독해)"
+      },
+      {
+        "word": "action item",
+        "pos": "phr.",
+        "meaning_ko": "action item (독해)"
+      },
+      {
+        "word": "follow-up",
+        "pos": "n.",
+        "meaning_ko": "follow-up (독해)"
+      },
+      {
+        "word": "assigned",
+        "pos": "n.",
+        "meaning_ko": "assigned (독해)"
+      },
+      {
+        "word": "consensus",
+        "pos": "n.",
+        "meaning_ko": "consensus (독해)"
+      },
+      {
+        "word": "deliberate",
+        "pos": "v.",
+        "meaning_ko": "deliberate (독해)"
+      },
+      {
+        "word": "circulate",
+        "pos": "v.",
+        "meaning_ko": "circulate (독해)"
+      },
+      {
+        "word": "distribution",
+        "pos": "adv.",
+        "meaning_ko": "distribution (독해)"
+      },
+      {
+        "word": "reference",
+        "pos": "adv.",
+        "meaning_ko": "reference (독해)"
+      },
+      {
+        "word": "summary",
+        "pos": "n.",
+        "meaning_ko": "summary (독해)"
+      },
+      {
+        "word": "deadline",
+        "pos": "n.",
+        "meaning_ko": "deadline (독해)"
+      },
+      {
+        "word": "stakeholder",
+        "pos": "n.",
+        "meaning_ko": "stakeholder (독해)"
+      },
+      {
+        "word": "resolution",
+        "pos": "adv.",
+        "meaning_ko": "resolution (독해)"
+      },
+      {
+        "word": "pending",
+        "pos": "n.",
+        "meaning_ko": "pending (독해)"
+      },
+      {
+        "word": "approved",
+        "pos": "n.",
+        "meaning_ko": "approved (독해)"
+      },
+      {
+        "word": "revised",
+        "pos": "adv.",
+        "meaning_ko": "revised (독해)"
+      },
+      {
+        "word": "draft",
+        "pos": "n.",
+        "meaning_ko": "draft (독해)"
+      },
+      {
+        "word": "circulation",
+        "pos": "n.",
+        "meaning_ko": "circulation (독해)"
+      },
+      {
+        "word": "record",
+        "pos": "adv.",
+        "meaning_ko": "record (독해)"
+      }
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-job-posting-words",
+    "title": "채용 공고 핵심 20단어",
+    "description": "채용 공고 지문에서 자주 나오는 표현입니다.",
+    "words": [
+      {
+        "word": "qualification",
+        "pos": "n.",
+        "meaning_ko": "qualification (독해)"
+      },
+      {
+        "word": "requirement",
+        "pos": "adv.",
+        "meaning_ko": "requirement (독해)"
+      },
+      {
+        "word": "responsibility",
+        "pos": "adv.",
+        "meaning_ko": "responsibility (독해)"
+      },
+      {
+        "word": "benefit",
+        "pos": "n.",
+        "meaning_ko": "benefit (독해)"
+      },
+      {
+        "word": "compensation",
+        "pos": "n.",
+        "meaning_ko": "compensation (독해)"
+      },
+      {
+        "word": "applicant",
+        "pos": "n.",
+        "meaning_ko": "applicant (독해)"
+      },
+      {
+        "word": "resume",
+        "pos": "adv.",
+        "meaning_ko": "resume (독해)"
+      },
+      {
+        "word": "shortlist",
+        "pos": "n.",
+        "meaning_ko": "shortlist (독해)"
+      },
+      {
+        "word": "interview",
+        "pos": "n.",
+        "meaning_ko": "interview (독해)"
+      },
+      {
+        "word": "probation",
+        "pos": "n.",
+        "meaning_ko": "probation (독해)"
+      },
+      {
+        "word": "full-time",
+        "pos": "n.",
+        "meaning_ko": "full-time (독해)"
+      },
+      {
+        "word": "part-time",
+        "pos": "n.",
+        "meaning_ko": "part-time (독해)"
+      },
+      {
+        "word": "remote",
+        "pos": "adv.",
+        "meaning_ko": "remote (독해)"
+      },
+      {
+        "word": "on-site",
+        "pos": "n.",
+        "meaning_ko": "on-site (독해)"
+      },
+      {
+        "word": "deadline",
+        "pos": "n.",
+        "meaning_ko": "deadline (독해)"
+      },
+      {
+        "word": "submit",
+        "pos": "n.",
+        "meaning_ko": "submit (독해)"
+      },
+      {
+        "word": "eligible",
+        "pos": "n.",
+        "meaning_ko": "eligible (독해)"
+      },
+      {
+        "word": "experience",
+        "pos": "n.",
+        "meaning_ko": "experience (독해)"
+      },
+      {
+        "word": "proficiency",
+        "pos": "n.",
+        "meaning_ko": "proficiency (독해)"
+      },
+      {
+        "word": "referral",
+        "pos": "adv.",
+        "meaning_ko": "referral (독해)"
+      }
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-hr-policy-words",
+    "title": "HR·복리후생 안내 핵심 20단어",
+    "description": "HR·복리후생 안내 지문에서 자주 나오는 표현입니다.",
+    "words": [
+      {
+        "word": "benefit",
+        "pos": "n.",
+        "meaning_ko": "benefit (독해)"
+      },
+      {
+        "word": "leave",
+        "pos": "n.",
+        "meaning_ko": "leave (독해)"
+      },
+      {
+        "word": "entitlement",
+        "pos": "n.",
+        "meaning_ko": "entitlement (독해)"
+      },
+      {
+        "word": "enrollment",
+        "pos": "n.",
+        "meaning_ko": "enrollment (독해)"
+      },
+      {
+        "word": "eligible",
+        "pos": "n.",
+        "meaning_ko": "eligible (독해)"
+      },
+      {
+        "word": "policy",
+        "pos": "n.",
+        "meaning_ko": "policy (독해)"
+      },
+      {
+        "word": "procedure",
+        "pos": "n.",
+        "meaning_ko": "procedure (독해)"
+      },
+      {
+        "word": "reimbursement",
+        "pos": "adv.",
+        "meaning_ko": "reimbursement (독해)"
+      },
+      {
+        "word": "wellness",
+        "pos": "n.",
+        "meaning_ko": "wellness (독해)"
+      },
+      {
+        "word": "pension",
+        "pos": "n.",
+        "meaning_ko": "pension (독해)"
+      },
+      {
+        "word": "holiday",
+        "pos": "n.",
+        "meaning_ko": "holiday (독해)"
+      },
+      {
+        "word": "sick leave",
+        "pos": "phr.",
+        "meaning_ko": "sick leave (독해)"
+      },
+      {
+        "word": "parental",
+        "pos": "n.",
+        "meaning_ko": "parental (독해)"
+      },
+      {
+        "word": "training",
+        "pos": "n.",
+        "meaning_ko": "training (독해)"
+      },
+      {
+        "word": "orientation",
+        "pos": "n.",
+        "meaning_ko": "orientation (독해)"
+      },
+      {
+        "word": "handbook",
+        "pos": "n.",
+        "meaning_ko": "handbook (독해)"
+      },
+      {
+        "word": "compliance",
+        "pos": "n.",
+        "meaning_ko": "compliance (독해)"
+      },
+      {
+        "word": "mandatory",
+        "pos": "n.",
+        "meaning_ko": "mandatory (독해)"
+      },
+      {
+        "word": "opt-in",
+        "pos": "n.",
+        "meaning_ko": "opt-in (독해)"
+      },
+      {
+        "word": "deadline",
+        "pos": "n.",
+        "meaning_ko": "deadline (독해)"
+      }
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-product-ad-words",
+    "title": "제품·서비스 광고 핵심 20단어",
+    "description": "제품·서비스 광고 지문에서 자주 나오는 표현입니다.",
+    "words": [
+      {
+        "word": "promotion",
+        "pos": "n.",
+        "meaning_ko": "promotion (독해)"
+      },
+      {
+        "word": "discount",
+        "pos": "adv.",
+        "meaning_ko": "discount (독해)"
+      },
+      {
+        "word": "limited",
+        "pos": "n.",
+        "meaning_ko": "limited (독해)"
+      },
+      {
+        "word": "offer",
+        "pos": "n.",
+        "meaning_ko": "offer (독해)"
+      },
+      {
+        "word": "subscription",
+        "pos": "n.",
+        "meaning_ko": "subscription (독해)"
+      },
+      {
+        "word": "trial",
+        "pos": "n.",
+        "meaning_ko": "trial (독해)"
+      },
+      {
+        "word": "feature",
+        "pos": "n.",
+        "meaning_ko": "feature (독해)"
+      },
+      {
+        "word": "upgrade",
+        "pos": "n.",
+        "meaning_ko": "upgrade (독해)"
+      },
+      {
+        "word": "bundle",
+        "pos": "n.",
+        "meaning_ko": "bundle (독해)"
+      },
+      {
+        "word": "warranty",
+        "pos": "n.",
+        "meaning_ko": "warranty (독해)"
+      },
+      {
+        "word": "refund",
+        "pos": "adv.",
+        "meaning_ko": "refund (독해)"
+      },
+      {
+        "word": "guarantee",
+        "pos": "n.",
+        "meaning_ko": "guarantee (독해)"
+      },
+      {
+        "word": "exclusive",
+        "pos": "adj.",
+        "meaning_ko": "exclusive (독해)"
+      },
+      {
+        "word": "launch",
+        "pos": "n.",
+        "meaning_ko": "launch (독해)"
+      },
+      {
+        "word": "premium",
+        "pos": "n.",
+        "meaning_ko": "premium (독해)"
+      },
+      {
+        "word": "affordable",
+        "pos": "adj.",
+        "meaning_ko": "affordable (독해)"
+      },
+      {
+        "word": "redeem",
+        "pos": "adv.",
+        "meaning_ko": "redeem (독해)"
+      },
+      {
+        "word": "coupon",
+        "pos": "n.",
+        "meaning_ko": "coupon (독해)"
+      },
+      {
+        "word": "valid",
+        "pos": "n.",
+        "meaning_ko": "valid (독해)"
+      },
+      {
+        "word": "expire",
+        "pos": "n.",
+        "meaning_ko": "expire (독해)"
+      }
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-news-article-words",
+    "title": "뉴스·기사 핵심 20단어",
+    "description": "뉴스·기사 지문에서 자주 나오는 표현입니다.",
+    "words": [
+      {
+        "word": "acquisition",
+        "pos": "n.",
+        "meaning_ko": "acquisition (독해)"
+      },
+      {
+        "word": "merger",
+        "pos": "n.",
+        "meaning_ko": "merger (독해)"
+      },
+      {
+        "word": "revenue",
+        "pos": "adv.",
+        "meaning_ko": "revenue (독해)"
+      },
+      {
+        "word": "forecast",
+        "pos": "n.",
+        "meaning_ko": "forecast (독해)"
+      },
+      {
+        "word": "expansion",
+        "pos": "n.",
+        "meaning_ko": "expansion (독해)"
+      },
+      {
+        "word": "regulation",
+        "pos": "adv.",
+        "meaning_ko": "regulation (독해)"
+      },
+      {
+        "word": "investor",
+        "pos": "n.",
+        "meaning_ko": "investor (독해)"
+      },
+      {
+        "word": "quarterly",
+        "pos": "adv.",
+        "meaning_ko": "quarterly (독해)"
+      },
+      {
+        "word": "market share",
+        "pos": "phr.",
+        "meaning_ko": "market share (독해)"
+      },
+      {
+        "word": "competitor",
+        "pos": "n.",
+        "meaning_ko": "competitor (독해)"
+      },
+      {
+        "word": "announce",
+        "pos": "n.",
+        "meaning_ko": "announce (독해)"
+      },
+      {
+        "word": "executive",
+        "pos": "adj.",
+        "meaning_ko": "executive (독해)"
+      },
+      {
+        "word": "strategy",
+        "pos": "n.",
+        "meaning_ko": "strategy (독해)"
+      },
+      {
+        "word": "growth",
+        "pos": "n.",
+        "meaning_ko": "growth (독해)"
+      },
+      {
+        "word": "decline",
+        "pos": "n.",
+        "meaning_ko": "decline (독해)"
+      },
+      {
+        "word": "surge",
+        "pos": "n.",
+        "meaning_ko": "surge (독해)"
+      },
+      {
+        "word": "report",
+        "pos": "adv.",
+        "meaning_ko": "report (독해)"
+      },
+      {
+        "word": "analyst",
+        "pos": "n.",
+        "meaning_ko": "analyst (독해)"
+      },
+      {
+        "word": "sector",
+        "pos": "n.",
+        "meaning_ko": "sector (독해)"
+      },
+      {
+        "word": "outlook",
+        "pos": "n.",
+        "meaning_ko": "outlook (독해)"
+      }
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-event-invitation-words",
+    "title": "행사·세미나 안내 핵심 20단어",
+    "description": "행사·세미나 안내 지문에서 자주 나오는 표현입니다.",
+    "words": [
+      {
+        "word": "registration",
+        "pos": "adv.",
+        "meaning_ko": "registration (독해)"
+      },
+      {
+        "word": "venue",
+        "pos": "n.",
+        "meaning_ko": "venue (독해)"
+      },
+      {
+        "word": "keynote",
+        "pos": "n.",
+        "meaning_ko": "keynote (독해)"
+      },
+      {
+        "word": "workshop",
+        "pos": "n.",
+        "meaning_ko": "workshop (독해)"
+      },
+      {
+        "word": "networking",
+        "pos": "n.",
+        "meaning_ko": "networking (독해)"
+      },
+      {
+        "word": "attendee",
+        "pos": "n.",
+        "meaning_ko": "attendee (독해)"
+      },
+      {
+        "word": "badge",
+        "pos": "n.",
+        "meaning_ko": "badge (독해)"
+      },
+      {
+        "word": "catering",
+        "pos": "n.",
+        "meaning_ko": "catering (독해)"
+      },
+      {
+        "word": "seating",
+        "pos": "n.",
+        "meaning_ko": "seating (독해)"
+      },
+      {
+        "word": "capacity",
+        "pos": "n.",
+        "meaning_ko": "capacity (독해)"
+      },
+      {
+        "word": "waitlist",
+        "pos": "n.",
+        "meaning_ko": "waitlist (독해)"
+      },
+      {
+        "word": "early bird",
+        "pos": "phr.",
+        "meaning_ko": "early bird (독해)"
+      },
+      {
+        "word": "sponsor",
+        "pos": "n.",
+        "meaning_ko": "sponsor (독해)"
+      },
+      {
+        "word": "exhibit",
+        "pos": "n.",
+        "meaning_ko": "exhibit (독해)"
+      },
+      {
+        "word": "session",
+        "pos": "n.",
+        "meaning_ko": "session (독해)"
+      },
+      {
+        "word": "certificate",
+        "pos": "v.",
+        "meaning_ko": "certificate (독해)"
+      },
+      {
+        "word": "check-in",
+        "pos": "n.",
+        "meaning_ko": "check-in (독해)"
+      },
+      {
+        "word": "agenda",
+        "pos": "n.",
+        "meaning_ko": "agenda (독해)"
+      },
+      {
+        "word": "host",
+        "pos": "n.",
+        "meaning_ko": "host (독해)"
+      },
+      {
+        "word": "RSVP",
+        "pos": "n.",
+        "meaning_ko": "RSVP (독해)"
+      }
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-customer-review-words",
+    "title": "고객 리뷰·평가 핵심 20단어",
+    "description": "고객 리뷰·평가 지문에서 자주 나오는 표현입니다.",
+    "words": [
+      {
+        "word": "satisfactory",
+        "pos": "n.",
+        "meaning_ko": "satisfactory (독해)"
+      },
+      {
+        "word": "disappointing",
+        "pos": "adv.",
+        "meaning_ko": "disappointing (독해)"
+      },
+      {
+        "word": "recommend",
+        "pos": "adv.",
+        "meaning_ko": "recommend (독해)"
+      },
+      {
+        "word": "responsive",
+        "pos": "adv.",
+        "meaning_ko": "responsive (독해)"
+      },
+      {
+        "word": "courteous",
+        "pos": "n.",
+        "meaning_ko": "courteous (독해)"
+      },
+      {
+        "word": "overpriced",
+        "pos": "n.",
+        "meaning_ko": "overpriced (독해)"
+      },
+      {
+        "word": "convenient",
+        "pos": "n.",
+        "meaning_ko": "convenient (독해)"
+      },
+      {
+        "word": "reliable",
+        "pos": "adv.",
+        "meaning_ko": "reliable (독해)"
+      },
+      {
+        "word": "defective",
+        "pos": "adj.",
+        "meaning_ko": "defective (독해)"
+      },
+      {
+        "word": "refund",
+        "pos": "adv.",
+        "meaning_ko": "refund (독해)"
+      },
+      {
+        "word": "rating",
+        "pos": "n.",
+        "meaning_ko": "rating (독해)"
+      },
+      {
+        "word": "feedback",
+        "pos": "n.",
+        "meaning_ko": "feedback (독해)"
+      },
+      {
+        "word": "complaint",
+        "pos": "n.",
+        "meaning_ko": "complaint (독해)"
+      },
+      {
+        "word": "praise",
+        "pos": "n.",
+        "meaning_ko": "praise (독해)"
+      },
+      {
+        "word": "amenity",
+        "pos": "n.",
+        "meaning_ko": "amenity (독해)"
+      },
+      {
+        "word": "checkout",
+        "pos": "n.",
+        "meaning_ko": "checkout (독해)"
+      },
+      {
+        "word": "hospitality",
+        "pos": "n.",
+        "meaning_ko": "hospitality (독해)"
+      },
+      {
+        "word": "value",
+        "pos": "n.",
+        "meaning_ko": "value (독해)"
+      },
+      {
+        "word": "expectation",
+        "pos": "n.",
+        "meaning_ko": "expectation (독해)"
+      },
+      {
+        "word": "overall",
+        "pos": "n.",
+        "meaning_ko": "overall (독해)"
+      }
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-order-shipping-words",
+    "title": "주문·배송 확인 핵심 20단어",
+    "description": "주문·배송 확인 지문에서 자주 나오는 표현입니다.",
+    "words": [
+      {
+        "word": "order",
+        "pos": "n.",
+        "meaning_ko": "order (독해)"
+      },
+      {
+        "word": "shipment",
+        "pos": "n.",
+        "meaning_ko": "shipment (독해)"
+      },
+      {
+        "word": "tracking",
+        "pos": "n.",
+        "meaning_ko": "tracking (독해)"
+      },
+      {
+        "word": "delivery",
+        "pos": "n.",
+        "meaning_ko": "delivery (독해)"
+      },
+      {
+        "word": "dispatch",
+        "pos": "adv.",
+        "meaning_ko": "dispatch (독해)"
+      },
+      {
+        "word": "warehouse",
+        "pos": "n.",
+        "meaning_ko": "warehouse (독해)"
+      },
+      {
+        "word": "backorder",
+        "pos": "n.",
+        "meaning_ko": "backorder (독해)"
+      },
+      {
+        "word": "invoice",
+        "pos": "n.",
+        "meaning_ko": "invoice (독해)"
+      },
+      {
+        "word": "quantity",
+        "pos": "n.",
+        "meaning_ko": "quantity (독해)"
+      },
+      {
+        "word": "carrier",
+        "pos": "n.",
+        "meaning_ko": "carrier (독해)"
+      },
+      {
+        "word": "estimated",
+        "pos": "n.",
+        "meaning_ko": "estimated (독해)"
+      },
+      {
+        "word": "delay",
+        "pos": "n.",
+        "meaning_ko": "delay (독해)"
+      },
+      {
+        "word": "replacement",
+        "pos": "adv.",
+        "meaning_ko": "replacement (독해)"
+      },
+      {
+        "word": "return",
+        "pos": "adv.",
+        "meaning_ko": "return (독해)"
+      },
+      {
+        "word": "confirmation",
+        "pos": "n.",
+        "meaning_ko": "confirmation (독해)"
+      },
+      {
+        "word": "purchase",
+        "pos": "n.",
+        "meaning_ko": "purchase (독해)"
+      },
+      {
+        "word": "receipt",
+        "pos": "adv.",
+        "meaning_ko": "receipt (독해)"
+      },
+      {
+        "word": "status",
+        "pos": "n.",
+        "meaning_ko": "status (독해)"
+      },
+      {
+        "word": "fulfill",
+        "pos": "n.",
+        "meaning_ko": "fulfill (독해)"
+      },
+      {
+        "word": "notify",
+        "pos": "v.",
+        "meaning_ko": "notify (독해)"
+      }
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-invoice-billing-words",
+    "title": "견적·청구·결제 핵심 20단어",
+    "description": "견적·청구·결제 지문에서 자주 나오는 표현입니다.",
+    "words": [
+      {
+        "word": "invoice",
+        "pos": "n.",
+        "meaning_ko": "invoice (독해)"
+      },
+      {
+        "word": "payment",
+        "pos": "n.",
+        "meaning_ko": "payment (독해)"
+      },
+      {
+        "word": "due date",
+        "pos": "phr.",
+        "meaning_ko": "due date (독해)"
+      },
+      {
+        "word": "outstanding",
+        "pos": "n.",
+        "meaning_ko": "outstanding (독해)"
+      },
+      {
+        "word": "balance",
+        "pos": "n.",
+        "meaning_ko": "balance (독해)"
+      },
+      {
+        "word": "remittance",
+        "pos": "adv.",
+        "meaning_ko": "remittance (독해)"
+      },
+      {
+        "word": "overdue",
+        "pos": "n.",
+        "meaning_ko": "overdue (독해)"
+      },
+      {
+        "word": "installment",
+        "pos": "n.",
+        "meaning_ko": "installment (독해)"
+      },
+      {
+        "word": "tax",
+        "pos": "n.",
+        "meaning_ko": "tax (독해)"
+      },
+      {
+        "word": "subtotal",
+        "pos": "n.",
+        "meaning_ko": "subtotal (독해)"
+      },
+      {
+        "word": "discount",
+        "pos": "adv.",
+        "meaning_ko": "discount (독해)"
+      },
+      {
+        "word": "penalty",
+        "pos": "n.",
+        "meaning_ko": "penalty (독해)"
+      },
+      {
+        "word": "billing",
+        "pos": "n.",
+        "meaning_ko": "billing (독해)"
+      },
+      {
+        "word": "account",
+        "pos": "n.",
+        "meaning_ko": "account (독해)"
+      },
+      {
+        "word": "settle",
+        "pos": "n.",
+        "meaning_ko": "settle (독해)"
+      },
+      {
+        "word": "receipt",
+        "pos": "adv.",
+        "meaning_ko": "receipt (독해)"
+      },
+      {
+        "word": "transaction",
+        "pos": "n.",
+        "meaning_ko": "transaction (독해)"
+      },
+      {
+        "word": "currency",
+        "pos": "n.",
+        "meaning_ko": "currency (독해)"
+      },
+      {
+        "word": "quote",
+        "pos": "n.",
+        "meaning_ko": "quote (독해)"
+      },
+      {
+        "word": "terms",
+        "pos": "n.",
+        "meaning_ko": "terms (독해)"
+      }
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-travel-itinerary-words",
+    "title": "출장·여행 일정 핵심 20단어",
+    "description": "출장·여행 일정 지문에서 자주 나오는 표현입니다.",
+    "words": [
+      {
+        "word": "itinerary",
+        "pos": "n.",
+        "meaning_ko": "itinerary (독해)"
+      },
+      {
+        "word": "departure",
+        "pos": "n.",
+        "meaning_ko": "departure (독해)"
+      },
+      {
+        "word": "arrival",
+        "pos": "n.",
+        "meaning_ko": "arrival (독해)"
+      },
+      {
+        "word": "layover",
+        "pos": "n.",
+        "meaning_ko": "layover (독해)"
+      },
+      {
+        "word": "terminal",
+        "pos": "n.",
+        "meaning_ko": "terminal (독해)"
+      },
+      {
+        "word": "boarding",
+        "pos": "n.",
+        "meaning_ko": "boarding (독해)"
+      },
+      {
+        "word": "customs",
+        "pos": "n.",
+        "meaning_ko": "customs (독해)"
+      },
+      {
+        "word": "expense",
+        "pos": "n.",
+        "meaning_ko": "expense (독해)"
+      },
+      {
+        "word": "per diem",
+        "pos": "phr.",
+        "meaning_ko": "per diem (독해)"
+      },
+      {
+        "word": "accommodation",
+        "pos": "n.",
+        "meaning_ko": "accommodation (독해)"
+      },
+      {
+        "word": "confirmation",
+        "pos": "n.",
+        "meaning_ko": "confirmation (독해)"
+      },
+      {
+        "word": "gate",
+        "pos": "v.",
+        "meaning_ko": "gate (독해)"
+      },
+      {
+        "word": "shuttle",
+        "pos": "n.",
+        "meaning_ko": "shuttle (독해)"
+      },
+      {
+        "word": "conference",
+        "pos": "n.",
+        "meaning_ko": "conference (독해)"
+      },
+      {
+        "word": "visa",
+        "pos": "n.",
+        "meaning_ko": "visa (독해)"
+      },
+      {
+        "word": "baggage",
+        "pos": "n.",
+        "meaning_ko": "baggage (독해)"
+      },
+      {
+        "word": "connection",
+        "pos": "n.",
+        "meaning_ko": "connection (독해)"
+      },
+      {
+        "word": "rebook",
+        "pos": "adv.",
+        "meaning_ko": "rebook (독해)"
+      },
+      {
+        "word": "check-in",
+        "pos": "n.",
+        "meaning_ko": "check-in (독해)"
+      },
+      {
+        "word": "destination",
+        "pos": "n.",
+        "meaning_ko": "destination (독해)"
+      }
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-reservation-words",
+    "title": "예약 확인·변경 핵심 20단어",
+    "description": "예약 확인·변경 지문에서 자주 나오는 표현입니다.",
+    "words": [
+      {
+        "word": "reservation",
+        "pos": "adv.",
+        "meaning_ko": "reservation (독해)"
+      },
+      {
+        "word": "booking",
+        "pos": "n.",
+        "meaning_ko": "booking (독해)"
+      },
+      {
+        "word": "cancellation",
+        "pos": "n.",
+        "meaning_ko": "cancellation (독해)"
+      },
+      {
+        "word": "modify",
+        "pos": "v.",
+        "meaning_ko": "modify (독해)"
+      },
+      {
+        "word": "non-refundable",
+        "pos": "adj.",
+        "meaning_ko": "non-refundable (독해)"
+      },
+      {
+        "word": "deposit",
+        "pos": "n.",
+        "meaning_ko": "deposit (독해)"
+      },
+      {
+        "word": "availability",
+        "pos": "n.",
+        "meaning_ko": "availability (독해)"
+      },
+      {
+        "word": "suite",
+        "pos": "n.",
+        "meaning_ko": "suite (독해)"
+      },
+      {
+        "word": "confirmation number",
+        "pos": "phr.",
+        "meaning_ko": "confirmation number (독해)"
+      },
+      {
+        "word": "guest",
+        "pos": "n.",
+        "meaning_ko": "guest (독해)"
+      },
+      {
+        "word": "check-out",
+        "pos": "n.",
+        "meaning_ko": "check-out (독해)"
+      },
+      {
+        "word": "amenity",
+        "pos": "n.",
+        "meaning_ko": "amenity (독해)"
+      },
+      {
+        "word": "upgrade",
+        "pos": "n.",
+        "meaning_ko": "upgrade (독해)"
+      },
+      {
+        "word": "hold",
+        "pos": "n.",
+        "meaning_ko": "hold (독해)"
+      },
+      {
+        "word": "no-show",
+        "pos": "n.",
+        "meaning_ko": "no-show (독해)"
+      },
+      {
+        "word": "policy",
+        "pos": "n.",
+        "meaning_ko": "policy (독해)"
+      },
+      {
+        "word": "rate",
+        "pos": "v.",
+        "meaning_ko": "rate (독해)"
+      },
+      {
+        "word": "voucher",
+        "pos": "n.",
+        "meaning_ko": "voucher (독해)"
+      },
+      {
+        "word": "extend",
+        "pos": "n.",
+        "meaning_ko": "extend (독해)"
+      },
+      {
+        "word": "confirm",
+        "pos": "n.",
+        "meaning_ko": "confirm (독해)"
+      }
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-instructions-words",
+    "title": "사용 설명·조작 안내 핵심 20단어",
+    "description": "사용 설명·조작 안내 지문에서 자주 나오는 표현입니다.",
+    "words": [
+      {
+        "word": "instruction",
+        "pos": "n.",
+        "meaning_ko": "instruction (독해)"
+      },
+      {
+        "word": "manual",
+        "pos": "n.",
+        "meaning_ko": "manual (독해)"
+      },
+      {
+        "word": "step",
+        "pos": "n.",
+        "meaning_ko": "step (독해)"
+      },
+      {
+        "word": "caution",
+        "pos": "n.",
+        "meaning_ko": "caution (독해)"
+      },
+      {
+        "word": "assemble",
+        "pos": "n.",
+        "meaning_ko": "assemble (독해)"
+      },
+      {
+        "word": "configure",
+        "pos": "n.",
+        "meaning_ko": "configure (독해)"
+      },
+      {
+        "word": "troubleshoot",
+        "pos": "n.",
+        "meaning_ko": "troubleshoot (독해)"
+      },
+      {
+        "word": "indicator",
+        "pos": "n.",
+        "meaning_ko": "indicator (독해)"
+      },
+      {
+        "word": "power on",
+        "pos": "phr.",
+        "meaning_ko": "power on (독해)"
+      },
+      {
+        "word": "disconnect",
+        "pos": "adv.",
+        "meaning_ko": "disconnect (독해)"
+      },
+      {
+        "word": "compatible",
+        "pos": "n.",
+        "meaning_ko": "compatible (독해)"
+      },
+      {
+        "word": "warranty void",
+        "pos": "phr.",
+        "meaning_ko": "warranty void (독해)"
+      },
+      {
+        "word": "diagram",
+        "pos": "n.",
+        "meaning_ko": "diagram (독해)"
+      },
+      {
+        "word": "sequence",
+        "pos": "n.",
+        "meaning_ko": "sequence (독해)"
+      },
+      {
+        "word": "malfunction",
+        "pos": "n.",
+        "meaning_ko": "malfunction (독해)"
+      },
+      {
+        "word": "reset",
+        "pos": "adv.",
+        "meaning_ko": "reset (독해)"
+      },
+      {
+        "word": "install",
+        "pos": "n.",
+        "meaning_ko": "install (독해)"
+      },
+      {
+        "word": "maintain",
+        "pos": "n.",
+        "meaning_ko": "maintain (독해)"
+      },
+      {
+        "word": "properly",
+        "pos": "adv.",
+        "meaning_ko": "properly (독해)"
+      },
+      {
+        "word": "otherwise",
+        "pos": "n.",
+        "meaning_ko": "otherwise (독해)"
+      }
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-web-announcement-words",
+    "title": "웹·온라인 공지 핵심 20단어",
+    "description": "웹·온라인 공지 지문에서 자주 나오는 표현입니다.",
+    "words": [
+      {
+        "word": "maintenance",
+        "pos": "n.",
+        "meaning_ko": "maintenance (독해)"
+      },
+      {
+        "word": "downtime",
+        "pos": "n.",
+        "meaning_ko": "downtime (독해)"
+      },
+      {
+        "word": "login",
+        "pos": "n.",
+        "meaning_ko": "login (독해)"
+      },
+      {
+        "word": "password",
+        "pos": "n.",
+        "meaning_ko": "password (독해)"
+      },
+      {
+        "word": "update",
+        "pos": "v.",
+        "meaning_ko": "update (독해)"
+      },
+      {
+        "word": "browser",
+        "pos": "n.",
+        "meaning_ko": "browser (독해)"
+      },
+      {
+        "word": "compatible",
+        "pos": "n.",
+        "meaning_ko": "compatible (독해)"
+      },
+      {
+        "word": "privacy",
+        "pos": "n.",
+        "meaning_ko": "privacy (독해)"
+      },
+      {
+        "word": "cookie",
+        "pos": "n.",
+        "meaning_ko": "cookie (독해)"
+      },
+      {
+        "word": "terms",
+        "pos": "n.",
+        "meaning_ko": "terms (독해)"
+      },
+      {
+        "word": "feature",
+        "pos": "n.",
+        "meaning_ko": "feature (독해)"
+      },
+      {
+        "word": "rollout",
+        "pos": "n.",
+        "meaning_ko": "rollout (독해)"
+      },
+      {
+        "word": "beta",
+        "pos": "n.",
+        "meaning_ko": "beta (독해)"
+      },
+      {
+        "word": "patch",
+        "pos": "n.",
+        "meaning_ko": "patch (독해)"
+      },
+      {
+        "word": "outage",
+        "pos": "n.",
+        "meaning_ko": "outage (독해)"
+      },
+      {
+        "word": "restore",
+        "pos": "adv.",
+        "meaning_ko": "restore (독해)"
+      },
+      {
+        "word": "backup",
+        "pos": "n.",
+        "meaning_ko": "backup (독해)"
+      },
+      {
+        "word": "security",
+        "pos": "n.",
+        "meaning_ko": "security (독해)"
+      },
+      {
+        "word": "notification",
+        "pos": "n.",
+        "meaning_ko": "notification (독해)"
+      },
+      {
+        "word": "subscribe",
+        "pos": "n.",
+        "meaning_ko": "subscribe (독해)"
+      }
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-survey-results-words",
+    "title": "설문·조사 결과 핵심 20단어",
+    "description": "설문·조사 결과 지문에서 자주 나오는 표현입니다.",
+    "words": [
+      {
+        "word": "survey",
+        "pos": "n.",
+        "meaning_ko": "survey (독해)"
+      },
+      {
+        "word": "respondent",
+        "pos": "adv.",
+        "meaning_ko": "respondent (독해)"
+      },
+      {
+        "word": "percentage",
+        "pos": "n.",
+        "meaning_ko": "percentage (독해)"
+      },
+      {
+        "word": "satisfaction",
+        "pos": "n.",
+        "meaning_ko": "satisfaction (독해)"
+      },
+      {
+        "word": "trend",
+        "pos": "n.",
+        "meaning_ko": "trend (독해)"
+      },
+      {
+        "word": "feedback",
+        "pos": "n.",
+        "meaning_ko": "feedback (독해)"
+      },
+      {
+        "word": "participation",
+        "pos": "n.",
+        "meaning_ko": "participation (독해)"
+      },
+      {
+        "word": "margin",
+        "pos": "n.",
+        "meaning_ko": "margin (독해)"
+      },
+      {
+        "word": "highlight",
+        "pos": "n.",
+        "meaning_ko": "highlight (독해)"
+      },
+      {
+        "word": "concern",
+        "pos": "n.",
+        "meaning_ko": "concern (독해)"
+      },
+      {
+        "word": "recommendation",
+        "pos": "adv.",
+        "meaning_ko": "recommendation (독해)"
+      },
+      {
+        "word": "benchmark",
+        "pos": "n.",
+        "meaning_ko": "benchmark (독해)"
+      },
+      {
+        "word": "decline",
+        "pos": "n.",
+        "meaning_ko": "decline (독해)"
+      },
+      {
+        "word": "improvement",
+        "pos": "n.",
+        "meaning_ko": "improvement (독해)"
+      },
+      {
+        "word": "majority",
+        "pos": "n.",
+        "meaning_ko": "majority (독해)"
+      },
+      {
+        "word": "minority",
+        "pos": "n.",
+        "meaning_ko": "minority (독해)"
+      },
+      {
+        "word": "conduct",
+        "pos": "n.",
+        "meaning_ko": "conduct (독해)"
+      },
+      {
+        "word": "aggregate",
+        "pos": "v.",
+        "meaning_ko": "aggregate (독해)"
+      },
+      {
+        "word": "finding",
+        "pos": "n.",
+        "meaning_ko": "finding (독해)"
+      },
+      {
+        "word": "response rate",
+        "pos": "phr.",
+        "meaning_ko": "response rate (독해)"
+      }
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-press-release-words",
+    "title": "보도자료 핵심 20단어",
+    "description": "보도자료 지문에서 자주 나오는 표현입니다.",
+    "words": [
+      {
+        "word": "announce",
+        "pos": "n.",
+        "meaning_ko": "announce (독해)"
+      },
+      {
+        "word": "CEO",
+        "pos": "n.",
+        "meaning_ko": "CEO (독해)"
+      },
+      {
+        "word": "partnership",
+        "pos": "n.",
+        "meaning_ko": "partnership (독해)"
+      },
+      {
+        "word": "milestone",
+        "pos": "n.",
+        "meaning_ko": "milestone (독해)"
+      },
+      {
+        "word": "expansion",
+        "pos": "n.",
+        "meaning_ko": "expansion (독해)"
+      },
+      {
+        "word": "headquarters",
+        "pos": "n.",
+        "meaning_ko": "headquarters (독해)"
+      },
+      {
+        "word": "spokesperson",
+        "pos": "n.",
+        "meaning_ko": "spokesperson (독해)"
+      },
+      {
+        "word": "quote",
+        "pos": "n.",
+        "meaning_ko": "quote (독해)"
+      },
+      {
+        "word": "media",
+        "pos": "n.",
+        "meaning_ko": "media (독해)"
+      },
+      {
+        "word": "investor",
+        "pos": "n.",
+        "meaning_ko": "investor (독해)"
+      },
+      {
+        "word": "launch",
+        "pos": "n.",
+        "meaning_ko": "launch (독해)"
+      },
+      {
+        "word": "initiative",
+        "pos": "adj.",
+        "meaning_ko": "initiative (독해)"
+      },
+      {
+        "word": "commitment",
+        "pos": "n.",
+        "meaning_ko": "commitment (독해)"
+      },
+      {
+        "word": "sustainable",
+        "pos": "adj.",
+        "meaning_ko": "sustainable (독해)"
+      },
+      {
+        "word": "innovation",
+        "pos": "n.",
+        "meaning_ko": "innovation (독해)"
+      },
+      {
+        "word": "revenue",
+        "pos": "adv.",
+        "meaning_ko": "revenue (독해)"
+      },
+      {
+        "word": "appoint",
+        "pos": "n.",
+        "meaning_ko": "appoint (독해)"
+      },
+      {
+        "word": "effective",
+        "pos": "adj.",
+        "meaning_ko": "effective (독해)"
+      },
+      {
+        "word": "contact",
+        "pos": "n.",
+        "meaning_ko": "contact (독해)"
+      },
+      {
+        "word": "embargo",
+        "pos": "n.",
+        "meaning_ko": "embargo (독해)"
+      }
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-company-policy-words",
+    "title": "규정·정책 안내 핵심 20단어",
+    "description": "규정·정책 안내 지문에서 자주 나오는 표현입니다.",
+    "words": [
+      {
+        "word": "policy",
+        "pos": "n.",
+        "meaning_ko": "policy (독해)"
+      },
+      {
+        "word": "compliance",
+        "pos": "n.",
+        "meaning_ko": "compliance (독해)"
+      },
+      {
+        "word": "mandatory",
+        "pos": "n.",
+        "meaning_ko": "mandatory (독해)"
+      },
+      {
+        "word": "violation",
+        "pos": "n.",
+        "meaning_ko": "violation (독해)"
+      },
+      {
+        "word": "exception",
+        "pos": "n.",
+        "meaning_ko": "exception (독해)"
+      },
+      {
+        "word": "effective",
+        "pos": "adj.",
+        "meaning_ko": "effective (독해)"
+      },
+      {
+        "word": "revise",
+        "pos": "adv.",
+        "meaning_ko": "revise (독해)"
+      },
+      {
+        "word": "acknowledge",
+        "pos": "n.",
+        "meaning_ko": "acknowledge (독해)"
+      },
+      {
+        "word": "confidential",
+        "pos": "n.",
+        "meaning_ko": "confidential (독해)"
+      },
+      {
+        "word": "expense",
+        "pos": "n.",
+        "meaning_ko": "expense (독해)"
+      },
+      {
+        "word": "reimbursement",
+        "pos": "adv.",
+        "meaning_ko": "reimbursement (독해)"
+      },
+      {
+        "word": "approval",
+        "pos": "n.",
+        "meaning_ko": "approval (독해)"
+      },
+      {
+        "word": "prohibit",
+        "pos": "n.",
+        "meaning_ko": "prohibit (독해)"
+      },
+      {
+        "word": "permit",
+        "pos": "n.",
+        "meaning_ko": "permit (독해)"
+      },
+      {
+        "word": "disciplinary",
+        "pos": "adv.",
+        "meaning_ko": "disciplinary (독해)"
+      },
+      {
+        "word": "guideline",
+        "pos": "n.",
+        "meaning_ko": "guideline (독해)"
+      },
+      {
+        "word": "enforce",
+        "pos": "n.",
+        "meaning_ko": "enforce (독해)"
+      },
+      {
+        "word": "amendment",
+        "pos": "n.",
+        "meaning_ko": "amendment (독해)"
+      },
+      {
+        "word": "scope",
+        "pos": "n.",
+        "meaning_ko": "scope (독해)"
+      },
+      {
+        "word": "violate",
+        "pos": "v.",
+        "meaning_ko": "violate (독해)"
+      }
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-faq-support-words",
+    "title": "FAQ·고객 문의 핵심 20단어",
+    "description": "FAQ·고객 문의 지문에서 자주 나오는 표현입니다.",
+    "words": [
+      {
+        "word": "FAQ",
+        "pos": "n.",
+        "meaning_ko": "FAQ (독해)"
+      },
+      {
+        "word": "troubleshoot",
+        "pos": "n.",
+        "meaning_ko": "troubleshoot (독해)"
+      },
+      {
+        "word": "refund",
+        "pos": "adv.",
+        "meaning_ko": "refund (독해)"
+      },
+      {
+        "word": "warranty",
+        "pos": "n.",
+        "meaning_ko": "warranty (독해)"
+      },
+      {
+        "word": "contact support",
+        "pos": "phr.",
+        "meaning_ko": "contact support (독해)"
+      },
+      {
+        "word": "troubleshooting",
+        "pos": "n.",
+        "meaning_ko": "troubleshooting (독해)"
+      },
+      {
+        "word": "account",
+        "pos": "n.",
+        "meaning_ko": "account (독해)"
+      },
+      {
+        "word": "reset password",
+        "pos": "phr.",
+        "meaning_ko": "reset password (독해)"
+      },
+      {
+        "word": "shipping",
+        "pos": "n.",
+        "meaning_ko": "shipping (독해)"
+      },
+      {
+        "word": "return policy",
+        "pos": "phr.",
+        "meaning_ko": "return policy (독해)"
+      },
+      {
+        "word": "eligible",
+        "pos": "n.",
+        "meaning_ko": "eligible (독해)"
+      },
+      {
+        "word": "processing time",
+        "pos": "phr.",
+        "meaning_ko": "processing time (독해)"
+      },
+      {
+        "word": "escalate",
+        "pos": "v.",
+        "meaning_ko": "escalate (독해)"
+      },
+      {
+        "word": "ticket",
+        "pos": "n.",
+        "meaning_ko": "ticket (독해)"
+      },
+      {
+        "word": "live chat",
+        "pos": "phr.",
+        "meaning_ko": "live chat (독해)"
+      },
+      {
+        "word": "knowledge base",
+        "pos": "phr.",
+        "meaning_ko": "knowledge base (독해)"
+      },
+      {
+        "word": "workaround",
+        "pos": "n.",
+        "meaning_ko": "workaround (독해)"
+      },
+      {
+        "word": "resolve",
+        "pos": "adv.",
+        "meaning_ko": "resolve (독해)"
+      },
+      {
+        "word": "inquiry",
+        "pos": "n.",
+        "meaning_ko": "inquiry (독해)"
+      },
+      {
+        "word": "assist",
+        "pos": "n.",
+        "meaning_ko": "assist (독해)"
+      }
+    ],
+    "source": "seed",
+    "visibility": "public"
   }
 ]

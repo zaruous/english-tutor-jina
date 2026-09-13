@@ -18,8 +18,8 @@ const getJson = async (p) => (await fetch(API + p, { headers: H })).json();
 const topics = await getJson('/api/topics');
 check('GET /api/topics — eligible 토픽 1개 이상', topics.ok && topics.topics.length >= 1,
   topics.topics?.map((t) => t.slug).join(','));
-const T = topics.topics.find((t) => t.slug === 'business-interview') || topics.topics[0];
-check('비즈니스 면접 토픽 — 임계치 충족(레슨≥3·회화≥1·단어≥20)',
+const T = topics.topics.find((t) => t.slug === 'toeic-rc-business-email') || topics.topics[0];
+check('비즈니스 이메일 토픽 — 임계치 충족(레슨≥3·회화≥1·단어≥20)',
   T && T.lesson_count >= 3 && T.scenario_count >= 1 && T.vocab_count >= 20 && T.eligible === true,
   T && `${T.lesson_count}/${T.scenario_count}/${T.vocab_count}`);
 

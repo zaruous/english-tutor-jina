@@ -118,10 +118,24 @@ export function normalizeLessonGen(data) {
     skill_code: ['grammar', 'vocab', 'detail', 'inference', 'main_idea'].includes(item?.skill_code)
       ? item.skill_code : 'grammar',
   }));
-  // script: LC(part='lc') 응답에만 있는 화자 라벨 줄 배열. 정규화가 버리면 저장 단계에서
+  // script: LC(part='lc') 응답에만 있는 대사 줄 배열. 정규화가 버리면 저장 단계에서
   // "script 없음"으로 검증이 떨어진다 — 있을 때만 실어 보낸다(Part 5 응답 모양은 그대로).
+  //
+  // 줄은 {speaker, text} 객체다(플랜 10.7 §3.2). 5902ae7b 가 스키마(LESSON_GEN_SCHEMA.script)·검증기
+  // (validateLcScript)·저장(passage.body)만 객체형으로 바꾸고 이 정규화는 String(line) 으로 남겨 두어
+  // 객체 줄이 "[object Object]" 로 뭉개졌다 — 워커의 LC 생성이 항상 VALIDATION_FAILED 로 떨어진 원인
+  // (플랜 14 §1 B1). 객체면 speaker·text 를 각각 다듬고, 문자열이면 옛 포맷 그대로 넘긴다 —
+  // "M: " 라벨을 파싱해 객체로 만들지 않는다. 10.7 이 그 파싱 코드를 없앤 이유(재생·에디터가 정규식으로
+  // 화자를 떼지 않는다)를 여기서 되살리면 규칙이 두 곳이 된다. 빈 문자열 줄만 버리고 객체 줄은 남긴다 —
+  // 대사가 비었는지는 검증기가 script[i].text 로 지목해야 화면이 그 줄을 붉게 그릴 수 있다.
+  const normalizeScriptLine = (line) => (line && typeof line === 'object'
+    ? {
+      speaker: String(line.speaker ?? '').trim().toUpperCase().slice(0, 1),
+      text: String(line.text ?? '').trim().slice(0, 400),
+    }
+    : String(line || '').trim().slice(0, 400));
   const script = Array.isArray(data.script)
-    ? data.script.map((line) => String(line || '').trim().slice(0, 400)).filter(Boolean).slice(0, 8)
+    ? data.script.map(normalizeScriptLine).filter((line) => typeof line !== 'string' || line).slice(0, 8)
     : null;
   return {
     title: String(data.title || 'TOEIC Part 5 — AI 레슨').trim().slice(0, 120),

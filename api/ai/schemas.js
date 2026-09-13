@@ -185,8 +185,15 @@ export const LESSON_GEN_SCHEMA = {
 
 // LC 변형 — 같은 모양이지만 script 가 필수다. 선택 필드로 두면 모델이 통째로 빠뜨린다(실측).
 // 프롬프트 계약(schemaContract)과 응답 검증이 같은 객체를 봐야 하므로 여기서 파생한다.
+// items 는 2~4 로 덮는다 — LC 는 스크립트 하나에 문항 2~4개가 실전 규격이고 normalizeJobInput 도 count 를
+// 그 범위로 받는다(ai-job.service.js). Part 5 의 minItems 3 을 그대로 상속하면 허용된 count=2 요청이 항상
+// SCHEMA_VIOLATION 으로 떨어졌다(플랜 14 §1 B1). 정확한 count 일치는 여전히 validateGeneratedLesson 의 몫이다.
 export const LESSON_GEN_LC_SCHEMA = {
   ...LESSON_GEN_SCHEMA,
+  properties: {
+    ...LESSON_GEN_SCHEMA.properties,
+    items: { ...LESSON_GEN_SCHEMA.properties.items, minItems: 2, maxItems: 4 },
+  },
   required: ['title', 'subtitle', 'script', 'items'],
 };
 

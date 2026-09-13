@@ -760,7 +760,7 @@ function DashboardDesktop({ theme, onNavigate, withSidebar = false }) {
       {withSidebar && <Sidebar theme={theme} onNavigate={onNavigate} />}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <TopBar theme={theme} />
-        <div style={{
+        <div className="jina-scroll" style={{
           flex: 1, padding: '24px 32px 32px',
           display: 'flex', flexDirection: 'column', gap: 18,
           overflow: 'auto',

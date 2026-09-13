@@ -285,11 +285,52 @@ describe('생성 — POST /api/admin/contents/lesson', () => {
     assert.deepEqual(normalizeLessonInput(p5).passage, { type: 'PART 5', subject: 'Incomplete Sentences', body: ['Choose the best word.'] });
   });
 
-  it(':type 이 lesson 이 아니면 400 이다', async () => {
-    const { status, body } = await call('POST', '/api/admin/contents/scenario', { as: 'admin', body: lcPayload() });
+  it(':type 이 저작 유형 밖(speaking_set)이면 400 이고 scenario·vocab_set 은 400 이 아니다 (플랜 14 AUTHORING_TYPES)', async () => {
+    const { status, body } = await call('POST', '/api/admin/contents/speaking_set', { as: 'admin', body: lcPayload() });
     assert.equal(status, 400);
     assert.equal(body.code, 'BAD_REQUEST');
-    assert.equal((await call('GET', `/api/admin/contents/vocab_set/${seedId}`, { as: 'admin' })).status, 400);
+    assert.equal((await call('GET', `/api/admin/contents/speaking_set/${seedId}`, { as: 'admin' })).status, 400);
+    assert.equal((await call('GET', `/api/admin/contents/topic/${seedId}`, { as: 'admin' })).status, 400);
+    // 회화·단어는 라우트를 통과해 서비스로 간다 — 레슨 id 로 읽으면 유형 불일치 404 (400 이 아니다).
+    for (const type of ['scenario', 'vocab_set']) {
+      const read = await call('GET', `/api/admin/contents/${type}/${seedId}`, { as: 'admin' });
+      assert.equal(read.status, 404, `${type}: ${JSON.stringify(read.body)}`);
+      assert.equal(read.body.code, 'NOT_FOUND');
+    }
+  });
+
+  it('Part 5 신규는 passage 를 생략하거나 body 를 비워도 201 이고 기본 안내문이 채워진다 (플랜 14 §1 C1)', async () => {
+    const p5 = (n, passage) => {
+      const p = lcPayload(`${tag} Part 5 ${n}`);
+      p.kind = 'toeic_part5';
+      p.items = p.items.map((it, i) => ({ ...it, stem: `The manager requested a _____ review of item ${n}-${i}.`, skill_code: 'grammar' }));
+      if (passage === undefined) delete p.passage; else p.passage = passage;
+      return p;
+    };
+    const omitted = await call('POST', '/api/admin/contents/lesson', { as: 'author', body: p5('omit') });
+    assert.equal(omitted.status, 201, JSON.stringify(omitted.body));
+    assert.equal(omitted.body.lesson.kind, 'toeic_part5');
+    assert.deepEqual(omitted.body.lesson.passage, {
+      type: 'PART 5', subject: 'Incomplete Sentences', body: ['Choose the word or phrase that best completes each sentence.'],
+    });
+    const empty = await call('POST', '/api/admin/contents/lesson', { as: 'author', body: p5('empty', { body: [] }) });
+    assert.equal(empty.status, 201, JSON.stringify(empty.body));
+    assert.deepEqual(empty.body.lesson.passage.body, ['Choose the word or phrase that best completes each sentence.']);
+    const blank = await call('POST', '/api/admin/contents/lesson', { as: 'author', body: p5('blank', { body: ['   ', ''] }) });
+    assert.equal(blank.status, 201, JSON.stringify(blank.body));
+    assert.deepEqual(blank.body.lesson.passage.body, ['Choose the word or phrase that best completes each sentence.']);
+    // 직접 쓴 안내문은 그대로다 · Part 7 은 여전히 400.
+    const custom = normalizeLessonInput(p5('custom', { body: ['Pick the best word.'] }));
+    assert.deepEqual(custom.passage.body, ['Pick the best word.']);
+    const rc = p5('rc'); rc.kind = 'toeic_part7';
+    assert.throws(() => normalizeLessonInput(rc), is(400));
+    rc.passage = { body: [] };
+    assert.throws(() => normalizeLessonInput(rc), is(400));
+    // 문항 0개는 여전히 400 이다 — 라우트에서도.
+    const zero = p5('zero'); zero.items = [];
+    const rejected = await call('POST', '/api/admin/contents/lesson', { as: 'author', body: zero });
+    assert.equal(rejected.status, 400);
+    assert.equal(rejected.body.code, 'BAD_REQUEST');
   });
 });
 
@@ -353,6 +394,45 @@ describe('수정 — PATCH /api/admin/contents/lesson/:id', () => {
     assert.deepEqual([lesson.source, lesson.status, lesson.visibility], ['ai', 'review', 'private']);
     assert.equal(lesson.title, `${tag} ai 수정`);
     assert.equal((await auditOf(ai.id)).at(-1).note, '');
+  });
+
+  it('문항 수를 3→5, 5→2 로 바꾸면 position 1..n 재부여 · 행 수 · lesson_drafts.payload 가 함께 맞는다 (플랜 14 Phase C)', async () => {
+    const ai = await createReviewContent(tag, users.author);
+    const withItems = (n) => {
+      const p = lcPayload(`${tag} 문항 ${n}`);
+      p.items = Array.from({ length: n }, (_, i) => ({ ...p.items[0], stem: `Question ${i + 1} of ${n}: What does the man ask for?` }));
+      delete p.est_minutes;   // 문항 수에서 추정한다(문항당 1.2분, 최소 3분)
+      return p;
+    };
+    const draftPayload = async () => (await pool.query(
+      `SELECT payload, validation_errors FROM lesson_drafts WHERE published_content_id = $1`, [ai.id],
+    )).rows[0];
+    assert.equal((await readLesson(ai.id)).lesson.items.length, 3);
+
+    const before = await counts();
+    const five = await call('PATCH', `/api/admin/contents/lesson/${ai.id}`, { as: 'author', body: withItems(5) });
+    assert.equal(five.status, 200, JSON.stringify(five.body));
+    assert.deepEqual(five.body.lesson.items.map((i) => i.position), [1, 2, 3, 4, 5]);
+    assert.equal(five.body.lesson.est_minutes, 6);   // ceil(5 × 1.2)
+    assert.deepEqual(await counts(), { ...before, items: before.items + 2 });
+    let draft = await draftPayload();
+    assert.equal(draft.payload.items.length, 5);
+    assert.equal(draft.payload.script.length, 4);
+    assert.deepEqual(draft.validation_errors, []);
+
+    const two = await call('PATCH', `/api/admin/contents/lesson/${ai.id}`, { as: 'author', body: withItems(2) });
+    assert.equal(two.status, 200, JSON.stringify(two.body));
+    assert.deepEqual(two.body.lesson.items.map((i) => i.position), [1, 2]);
+    assert.equal(two.body.lesson.est_minutes, 3);   // max(3, ceil(2 × 1.2))
+    assert.equal(two.body.lesson.items[1].stem, 'Question 2 of 2: What does the man ask for?');
+    assert.deepEqual(await counts(), { ...before, items: before.items - 1 });
+    const { rows: positions } = await pool.query(
+      `SELECT position FROM lesson_items WHERE content_id = $1 ORDER BY position`, [ai.id],
+    );
+    assert.deepEqual(positions.map((r) => r.position), [1, 2]);
+    draft = await draftPayload();
+    assert.equal(draft.payload.items.length, 2);
+    assert.equal((await readLesson(ai.id)).lesson.items.length, 2);
   });
 
   it('검증에 걸린 수정은 문항을 하나도 지우지 않는다', async () => {

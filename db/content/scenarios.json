@@ -14,5 +14,325 @@
     ],
     "source": "seed",
     "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-business-email-scenario",
+    "title": "비즈니스 이메일 — 회화 연습",
+    "tag": "TOEIC RC",
+    "level": 3,
+    "description": "비즈니스 이메일 상황에서 영어로 요청·확인하는 연습입니다.",
+    "system_prompt": "You are a supportive English coach. Help the learner discuss business email in clear business English.",
+    "opening_message": "Let's practice a short conversation about 비즈니스 이메일. What would you like to clarify first?",
+    "objectives": [
+      "비즈니스 이메일 핵심 표현 사용하기",
+      "정중하게 요청·확인하기",
+      "후속 질문에 답하기"
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-office-notice-scenario",
+    "title": "사내 공지·안내문 — 회화 연습",
+    "tag": "TOEIC RC",
+    "level": 3,
+    "description": "사내 공지·안내문 상황에서 영어로 요청·확인하는 연습입니다.",
+    "system_prompt": "You are a supportive English coach. Help the learner discuss office notice in clear business English.",
+    "opening_message": "Let's practice a short conversation about 사내 공지·안내문. What would you like to clarify first?",
+    "objectives": [
+      "사내 공지·안내문 핵심 표현 사용하기",
+      "정중하게 요청·확인하기",
+      "후속 질문에 답하기"
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-meeting-schedule-scenario",
+    "title": "회의 초대·일정 조율 — 회화 연습",
+    "tag": "TOEIC RC",
+    "level": 3,
+    "description": "회의 초대·일정 조율 상황에서 영어로 요청·확인하는 연습입니다.",
+    "system_prompt": "You are a supportive English coach. Help the learner discuss meeting invitation in clear business English.",
+    "opening_message": "Let's practice a short conversation about 회의 초대·일정 조율. What would you like to clarify first?",
+    "objectives": [
+      "회의 초대·일정 조율 핵심 표현 사용하기",
+      "정중하게 요청·확인하기",
+      "후속 질문에 답하기"
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-memo-minutes-scenario",
+    "title": "회의록·업무 메모 — 회화 연습",
+    "tag": "TOEIC RC",
+    "level": 3,
+    "description": "회의록·업무 메모 상황에서 영어로 요청·확인하는 연습입니다.",
+    "system_prompt": "You are a supportive English coach. Help the learner discuss internal memo in clear business English.",
+    "opening_message": "Let's practice a short conversation about 회의록·업무 메모. What would you like to clarify first?",
+    "objectives": [
+      "회의록·업무 메모 핵심 표현 사용하기",
+      "정중하게 요청·확인하기",
+      "후속 질문에 답하기"
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-job-posting-scenario",
+    "title": "채용 공고 — 회화 연습",
+    "tag": "TOEIC RC",
+    "level": 3,
+    "description": "채용 공고 상황에서 영어로 요청·확인하는 연습입니다.",
+    "system_prompt": "You are a supportive English coach. Help the learner discuss job opening in clear business English.",
+    "opening_message": "Let's practice a short conversation about 채용 공고. What would you like to clarify first?",
+    "objectives": [
+      "채용 공고 핵심 표현 사용하기",
+      "정중하게 요청·확인하기",
+      "후속 질문에 답하기"
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-hr-policy-scenario",
+    "title": "HR·복리후생 안내 — 회화 연습",
+    "tag": "TOEIC RC",
+    "level": 3,
+    "description": "HR·복리후생 안내 상황에서 영어로 요청·확인하는 연습입니다.",
+    "system_prompt": "You are a supportive English coach. Help the learner discuss hr announcement in clear business English.",
+    "opening_message": "Let's practice a short conversation about hr·복리후생 안내. What would you like to clarify first?",
+    "objectives": [
+      "HR·복리후생 안내 핵심 표현 사용하기",
+      "정중하게 요청·확인하기",
+      "후속 질문에 답하기"
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-product-ad-scenario",
+    "title": "제품·서비스 광고 — 회화 연습",
+    "tag": "TOEIC RC",
+    "level": 3,
+    "description": "제품·서비스 광고 상황에서 영어로 요청·확인하는 연습입니다.",
+    "system_prompt": "You are a supportive English coach. Help the learner discuss product promotion in clear business English.",
+    "opening_message": "Let's practice a short conversation about 제품·서비스 광고. What would you like to clarify first?",
+    "objectives": [
+      "제품·서비스 광고 핵심 표현 사용하기",
+      "정중하게 요청·확인하기",
+      "후속 질문에 답하기"
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-news-article-scenario",
+    "title": "뉴스·기사 — 회화 연습",
+    "tag": "TOEIC RC",
+    "level": 3,
+    "description": "뉴스·기사 상황에서 영어로 요청·확인하는 연습입니다.",
+    "system_prompt": "You are a supportive English coach. Help the learner discuss business news in clear business English.",
+    "opening_message": "Let's practice a short conversation about 뉴스·기사. What would you like to clarify first?",
+    "objectives": [
+      "뉴스·기사 핵심 표현 사용하기",
+      "정중하게 요청·확인하기",
+      "후속 질문에 답하기"
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-event-invitation-scenario",
+    "title": "행사·세미나 안내 — 회화 연습",
+    "tag": "TOEIC RC",
+    "level": 3,
+    "description": "행사·세미나 안내 상황에서 영어로 요청·확인하는 연습입니다.",
+    "system_prompt": "You are a supportive English coach. Help the learner discuss event invitation in clear business English.",
+    "opening_message": "Let's practice a short conversation about 행사·세미나 안내. What would you like to clarify first?",
+    "objectives": [
+      "행사·세미나 안내 핵심 표현 사용하기",
+      "정중하게 요청·확인하기",
+      "후속 질문에 답하기"
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-customer-review-scenario",
+    "title": "고객 리뷰·평가 — 회화 연습",
+    "tag": "TOEIC RC",
+    "level": 3,
+    "description": "고객 리뷰·평가 상황에서 영어로 요청·확인하는 연습입니다.",
+    "system_prompt": "You are a supportive English coach. Help the learner discuss customer review in clear business English.",
+    "opening_message": "Let's practice a short conversation about 고객 리뷰·평가. What would you like to clarify first?",
+    "objectives": [
+      "고객 리뷰·평가 핵심 표현 사용하기",
+      "정중하게 요청·확인하기",
+      "후속 질문에 답하기"
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-order-shipping-scenario",
+    "title": "주문·배송 확인 — 회화 연습",
+    "tag": "TOEIC RC",
+    "level": 3,
+    "description": "주문·배송 확인 상황에서 영어로 요청·확인하는 연습입니다.",
+    "system_prompt": "You are a supportive English coach. Help the learner discuss order confirmation in clear business English.",
+    "opening_message": "Let's practice a short conversation about 주문·배송 확인. What would you like to clarify first?",
+    "objectives": [
+      "주문·배송 확인 핵심 표현 사용하기",
+      "정중하게 요청·확인하기",
+      "후속 질문에 답하기"
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-invoice-billing-scenario",
+    "title": "견적·청구·결제 — 회화 연습",
+    "tag": "TOEIC RC",
+    "level": 3,
+    "description": "견적·청구·결제 상황에서 영어로 요청·확인하는 연습입니다.",
+    "system_prompt": "You are a supportive English coach. Help the learner discuss invoice notice in clear business English.",
+    "opening_message": "Let's practice a short conversation about 견적·청구·결제. What would you like to clarify first?",
+    "objectives": [
+      "견적·청구·결제 핵심 표현 사용하기",
+      "정중하게 요청·확인하기",
+      "후속 질문에 답하기"
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-travel-itinerary-scenario",
+    "title": "출장·여행 일정 — 회화 연습",
+    "tag": "TOEIC RC",
+    "level": 3,
+    "description": "출장·여행 일정 상황에서 영어로 요청·확인하는 연습입니다.",
+    "system_prompt": "You are a supportive English coach. Help the learner discuss travel itinerary in clear business English.",
+    "opening_message": "Let's practice a short conversation about 출장·여행 일정. What would you like to clarify first?",
+    "objectives": [
+      "출장·여행 일정 핵심 표현 사용하기",
+      "정중하게 요청·확인하기",
+      "후속 질문에 답하기"
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-reservation-scenario",
+    "title": "예약 확인·변경 — 회화 연습",
+    "tag": "TOEIC RC",
+    "level": 3,
+    "description": "예약 확인·변경 상황에서 영어로 요청·확인하는 연습입니다.",
+    "system_prompt": "You are a supportive English coach. Help the learner discuss reservation details in clear business English.",
+    "opening_message": "Let's practice a short conversation about 예약 확인·변경. What would you like to clarify first?",
+    "objectives": [
+      "예약 확인·변경 핵심 표현 사용하기",
+      "정중하게 요청·확인하기",
+      "후속 질문에 답하기"
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-instructions-scenario",
+    "title": "사용 설명·조작 안내 — 회화 연습",
+    "tag": "TOEIC RC",
+    "level": 3,
+    "description": "사용 설명·조작 안내 상황에서 영어로 요청·확인하는 연습입니다.",
+    "system_prompt": "You are a supportive English coach. Help the learner discuss user guide in clear business English.",
+    "opening_message": "Let's practice a short conversation about 사용 설명·조작 안내. What would you like to clarify first?",
+    "objectives": [
+      "사용 설명·조작 안내 핵심 표현 사용하기",
+      "정중하게 요청·확인하기",
+      "후속 질문에 답하기"
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-web-announcement-scenario",
+    "title": "웹·온라인 공지 — 회화 연습",
+    "tag": "TOEIC RC",
+    "level": 3,
+    "description": "웹·온라인 공지 상황에서 영어로 요청·확인하는 연습입니다.",
+    "system_prompt": "You are a supportive English coach. Help the learner discuss website notice in clear business English.",
+    "opening_message": "Let's practice a short conversation about 웹·온라인 공지. What would you like to clarify first?",
+    "objectives": [
+      "웹·온라인 공지 핵심 표현 사용하기",
+      "정중하게 요청·확인하기",
+      "후속 질문에 답하기"
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-survey-results-scenario",
+    "title": "설문·조사 결과 — 회화 연습",
+    "tag": "TOEIC RC",
+    "level": 3,
+    "description": "설문·조사 결과 상황에서 영어로 요청·확인하는 연습입니다.",
+    "system_prompt": "You are a supportive English coach. Help the learner discuss survey summary in clear business English.",
+    "opening_message": "Let's practice a short conversation about 설문·조사 결과. What would you like to clarify first?",
+    "objectives": [
+      "설문·조사 결과 핵심 표현 사용하기",
+      "정중하게 요청·확인하기",
+      "후속 질문에 답하기"
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-press-release-scenario",
+    "title": "보도자료 — 회화 연습",
+    "tag": "TOEIC RC",
+    "level": 3,
+    "description": "보도자료 상황에서 영어로 요청·확인하는 연습입니다.",
+    "system_prompt": "You are a supportive English coach. Help the learner discuss press release in clear business English.",
+    "opening_message": "Let's practice a short conversation about 보도자료. What would you like to clarify first?",
+    "objectives": [
+      "보도자료 핵심 표현 사용하기",
+      "정중하게 요청·확인하기",
+      "후속 질문에 답하기"
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-company-policy-scenario",
+    "title": "규정·정책 안내 — 회화 연습",
+    "tag": "TOEIC RC",
+    "level": 3,
+    "description": "규정·정책 안내 상황에서 영어로 요청·확인하는 연습입니다.",
+    "system_prompt": "You are a supportive English coach. Help the learner discuss company policy in clear business English.",
+    "opening_message": "Let's practice a short conversation about 규정·정책 안내. What would you like to clarify first?",
+    "objectives": [
+      "규정·정책 안내 핵심 표현 사용하기",
+      "정중하게 요청·확인하기",
+      "후속 질문에 답하기"
+    ],
+    "source": "seed",
+    "visibility": "public"
+  },
+  {
+    "slug": "toeic-rc-faq-support-scenario",
+    "title": "FAQ·고객 문의 — 회화 연습",
+    "tag": "TOEIC RC",
+    "level": 3,
+    "description": "FAQ·고객 문의 상황에서 영어로 요청·확인하는 연습입니다.",
+    "system_prompt": "You are a supportive English coach. Help the learner discuss customer support faq in clear business English.",
+    "opening_message": "Let's practice a short conversation about faq·고객 문의. What would you like to clarify first?",
+    "objectives": [
+      "FAQ·고객 문의 핵심 표현 사용하기",
+      "정중하게 요청·확인하기",
+      "후속 질문에 답하기"
+    ],
+    "source": "seed",
+    "visibility": "public"
   }
 ]

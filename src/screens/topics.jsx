@@ -81,7 +81,7 @@ function TopicsScreen({ theme, onNavigate }) {
   const card = { border: `1px solid ${theme.border}`, background: theme.card, borderRadius: 15 };
 
   return (
-    <main className="jina-root" style={{ height: '100%', overflow: 'auto', background: theme.bg, padding: mobile ? '18px 14px 100px' : '28px 32px 44px' }}>
+    <main className="jina-root jina-scroll" style={{ height: '100%', overflow: 'auto', background: theme.bg, padding: mobile ? '18px 14px 100px' : '28px 32px 44px' }}>
       <div style={{ maxWidth: 1120, margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 22 }}>
           <div style={{ width: 42, height: 42, borderRadius: 13, background: theme.accent + '18', color: theme.accent, display: 'grid', placeItems: 'center' }}>

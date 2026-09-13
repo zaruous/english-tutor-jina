@@ -117,10 +117,11 @@ function PassageColumn({ theme, highlighted, setHighlighted }) {
   });
 
   return (
-    <div style={{
+    <div className="jina-scroll" style={{
       padding: 32, overflow: 'auto', position: 'relative',
       background: theme.surface,
-      borderRight: `1px solid ${theme.border}`,
+      height: '100%',
+      boxSizing: 'border-box',
     }}>
       {/* Email header */}
       <div style={{
@@ -268,10 +269,12 @@ function QuestionsColumn({ theme, onNext }) {
   const allAnswered = lesson.questions.every((q) => answers[q.n]);
 
   return (
-    <div style={{
+    <div className="jina-scroll" style={{
       padding: 24, overflow: 'auto',
       display: 'flex', flexDirection: 'column', gap: 14,
       background: theme.bg,
+      height: '100%',
+      boxSizing: 'border-box',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
         <h3 style={{ fontSize: 14, color: theme.text, margin: 0, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>문제</h3>
@@ -495,7 +498,7 @@ function LessonQaChat({ theme, aiConfig, compact = false, active = true }) {
         )}
       </div>
 
-      <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', padding: compact ? '12px 12px 4px' : '14px 16px 4px', display: 'flex', flexDirection: 'column', gap: compact ? 12 : 14 }}>
+      <div ref={scrollRef} className="jina-scroll" style={{ flex: 1, overflow: 'auto', padding: compact ? '12px 12px 4px' : '14px 16px 4px', display: 'flex', flexDirection: 'column', gap: compact ? 12 : 14 }}>
         {messages.length === 0 && (
           <div>
             <div style={{ fontSize: compact ? 11 : 12, color: compact ? theme.textDim : theme.textMuted, marginBottom: compact ? 6 : 10, lineHeight: 1.5, padding: compact ? '0 4px' : 0 }}>
@@ -685,8 +688,7 @@ function JinaSidePanel({ theme, aiConfig, onClose }) {
   const { result } = useLesson();
   return (
     <div style={{
-      width: 380, flex: '0 0 auto',
-      borderLeft: `1px solid ${theme.border}`,
+      width: '100%', height: '100%', minHeight: 0,
       background: theme.bgSoft,
       display: 'flex', flexDirection: 'column',
       animation: 'jina-rise .25s ease-out',
@@ -725,6 +727,14 @@ function LessonPlaceholder({ theme, loading, error }) {
   );
 }
 
+// 데스크탑 3열(지문·문제·Jina) 초기 폭 — 이전 고정 380px Jina 레이아웃과 맞춘 상대 비율
+const LESSON_COL_PASSAGE = 359;
+const LESSON_COL_QUESTIONS = 356;
+const LESSON_COL_JINA = 380;
+const LESSON_RATIO_2COL = 1.2 / 2.2;
+const LESSON_RATIO_3COL_PASSAGE = LESSON_COL_PASSAGE / (LESSON_COL_PASSAGE + LESSON_COL_QUESTIONS + LESSON_COL_JINA);
+const LESSON_RATIO_QA = LESSON_COL_QUESTIONS / (LESSON_COL_QUESTIONS + LESSON_COL_JINA);
+
 function LessonDesktop({ theme, aiConfig, onNavigate }) {
   const [askingAI, setAskingAI] = React.useState(true);
   const [highlighted, setHighlighted] = React.useState(null);
@@ -755,16 +765,26 @@ function LessonDesktop({ theme, aiConfig, onNavigate }) {
             <LessonListView theme={theme} onPick={openStudy} onClose={openStudy} />
           </div>
         ) : (
-          <div style={{
-            flex: 1, display: 'grid',
-            gridTemplateColumns: askingAI ? '1.2fr 1fr 380px' : '1.2fr 1fr',
-            minHeight: 0,
-          }}>
-            <PassageColumn theme={theme} highlighted={highlighted} setHighlighted={setHighlighted} />
-            {/* key로 리마운트해도 답/결과는 스토어에 있어 소실되지 않는다 */}
-            <QuestionsColumn key={currentLesson.id} theme={theme} onNext={onNext} />
-            {/* Q&A 대화는 지문 단위 — 지문이 바뀌면 key 로 새 대화 (QuestionsColumn 과 형제라 키 접두어로 구분) */}
-            {askingAI && <JinaSidePanel key={`qa-${currentLesson.id}`} theme={theme} aiConfig={aiConfig} onClose={() => setAskingAI(false)} />}
+          <div style={{ flex: 1, display: 'flex', minHeight: 0, minWidth: 0 }}>
+            <SplitPane
+              key={askingAI ? 'lesson-3col' : 'lesson-2col'}
+              theme={theme}
+              initialRatio={askingAI ? LESSON_RATIO_3COL_PASSAGE : LESSON_RATIO_2COL}
+              minRight={askingAI ? 540 : 320}
+              left={<PassageColumn theme={theme} highlighted={highlighted} setHighlighted={setHighlighted} />}
+              right={askingAI ? (
+                <SplitPane
+                  theme={theme}
+                  initialRatio={LESSON_RATIO_QA}
+                  minLeft={260}
+                  minRight={280}
+                  left={<QuestionsColumn key={currentLesson.id} theme={theme} onNext={onNext} />}
+                  right={<JinaSidePanel key={`qa-${currentLesson.id}`} theme={theme} aiConfig={aiConfig} onClose={() => setAskingAI(false)} />}
+                />
+              ) : (
+                <QuestionsColumn key={currentLesson.id} theme={theme} onNext={onNext} />
+              )}
+            />
           </div>
         )}
       </div>
@@ -836,7 +856,7 @@ function LessonMobile({ theme, aiConfig, onNavigate }) {
       </div>
 
       {/* Tab content */}
-      <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+      <div className="jina-scroll" style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
         {tab === 'list' && (
           <LessonListView theme={theme} compact onPick={() => { setTab('passage'); setHighlighted(null); }} />
         )}

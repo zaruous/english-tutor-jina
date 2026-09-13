@@ -11,6 +11,7 @@ import { getScenarioForSession } from './topic.service.js';
 
 const SESSION_SELECT = `
   SELECT s.id, s.title, s.scenario_id, s.scenario, s.status, s.started_at, s.ended_at, s.last_message_at,
+         s.archived_at,
          (SELECT count(*)::int FROM conversation_messages m
            WHERE m.session_id = s.id)                                          AS message_count,
          (SELECT round(avg(v.value::numeric))::int
@@ -53,6 +54,8 @@ function sessionDto(row) {
     message_count: row.message_count,
     avg_score: row.avg_score,
     last_user_text: row.last_user_text,
+    archived: row.archived_at != null,
+    archived_at: row.archived_at,
   };
 }
 
@@ -96,9 +99,12 @@ export function correctionDto(row) {
   };
 }
 
-export async function listSessions(user) {
+export async function listSessions(user, { archived = false } = {}) {
+  const archivedFilter = archived
+    ? ' AND s.archived_at IS NOT NULL'
+    : ' AND s.archived_at IS NULL';
   const { rows } = await pool.query(
-    `${SESSION_SELECT} ORDER BY COALESCE(s.last_message_at, s.started_at) DESC LIMIT 50`,
+    `${SESSION_SELECT}${archivedFilter} ORDER BY COALESCE(s.last_message_at, s.started_at) DESC LIMIT 50`,
     [user.id],
   );
   return { sessions: rows.map(sessionDto) };
@@ -159,15 +165,21 @@ export async function getSessionWithMessages(user, sessionId) {
   return { session, messages: rows.map(messageDto) };
 }
 
-export async function patchSession(user, sessionId, { title, ended }) {
+export async function patchSession(user, sessionId, { title, ended, archived }) {
   const { rowCount } = await pool.query(
     `UPDATE conversation_sessions
         SET title  = COALESCE($3, title),
             status = CASE WHEN $4 THEN 'ended' ELSE status END,
             ended_at = CASE WHEN $4 AND ended_at IS NULL THEN now() ELSE ended_at END,
+            archived_at = CASE
+              WHEN $5 IS TRUE  THEN now()
+              WHEN $5 IS FALSE THEN NULL
+              ELSE archived_at
+            END,
             updated_at = now()
       WHERE id = $1 AND user_id = $2`,
-    [sessionId, user.id, title ?? null, Boolean(ended)],
+    [sessionId, user.id, title ?? null, Boolean(ended),
+      archived === undefined ? null : Boolean(archived)],
   );
   if (rowCount === 0) throw new HttpError(404, 'NOT_FOUND', '세션을 찾을 수 없습니다.');
   return { session: await getSessionDto(user, sessionId) };
@@ -209,7 +221,7 @@ export async function findReplay(user, sessionId, clientRequestId, client = pool
 // 세션 로드 + 소유권/상태 검사 (전송 전).
 export async function loadSessionForSend(user, sessionId) {
   const { rows: [session] } = await pool.query(
-    `SELECT s.id, s.title, s.status, s.provider_ref, s.provider_ref_provider,
+    `SELECT s.id, s.title, s.status, s.archived_at, s.provider_ref, s.provider_ref_provider,
             s.scenario_id, cs.system_prompt AS scenario_system_prompt,
             cs.opening_message AS scenario_opening_message
        FROM conversation_sessions s
@@ -218,6 +230,10 @@ export async function loadSessionForSend(user, sessionId) {
     [sessionId, user.id],
   );
   if (!session) throw new HttpError(404, 'NOT_FOUND', '세션을 찾을 수 없습니다.');
+  if (session.archived_at) {
+    throw new HttpError(409, 'SESSION_ARCHIVED', '보관된 세션입니다.',
+      { hint: '보관된 세션에는 메시지를 보낼 수 없습니다. 새 회화를 시작하세요.' });
+  }
   if (session.status === 'ended') {
     throw new HttpError(409, 'SESSION_ENDED', '종료된 세션입니다.',
       { hint: '종료된 세션입니다. 새 회화를 시작하세요.' });

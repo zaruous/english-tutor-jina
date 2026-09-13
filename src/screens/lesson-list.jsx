@@ -179,7 +179,7 @@ function LessonListView({ theme, compact = false, onPick, onClose }) {
   };
 
   return (
-    <div style={{ height: '100%', overflow: 'auto', background: theme.bg, padding: compact ? '14px 14px 80px' : '24px 28px 40px' }}>
+    <div className="jina-scroll" style={{ height: '100%', overflow: 'auto', background: theme.bg, padding: compact ? '14px 14px 80px' : '24px 28px 40px' }}>
       <div style={{ maxWidth: compact ? '100%' : 860, margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: compact ? 12 : 16 }}>
           <div style={{ flex: 1, minWidth: 0 }}>

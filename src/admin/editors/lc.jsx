@@ -1,8 +1,19 @@
-// editors/lc.jsx — 관리자 · LC 에디터 최소형 (플랜 13 Phase A)
+// editors/lc.jsx — 관리자 · LC 에디터 (플랜 13 Phase A 최소형 → 플랜 14 Phase C 확장)
 // 목업 시각 기준: docs/plan/mockups/13-lc-editor.html — CSS 는 복사하지 않고 theme.* 인라인 스타일.
 //
-// 이 화면의 일은 **AI 가 만든 것을 고치는 것**이다(플랜 13 §0). 그래서 줄 추가/삭제만 있고
-// 순서 드래그·문항 추가/삭제는 없다 — 문항 수는 불러온 그대로, 신규는 3 고정.
+// 이 화면의 일은 **AI 가 만든 것을 고치는 것**(플랜 13 §0)에 더해, 플랜 14 부터는 **빈 레슨을 손으로
+// 채우는 것**이다. 그래서 줄 추가/삭제에 이어 문항 추가/삭제와 kind `toeic_part5` 가 붙었다.
+// 순서 드래그·Part 7 복수 지문은 여전히 없다(플랜 14 "먼저 하지 말 것").
+//
+// ── 문항 수의 규범(플랜 14 결정 C2·C3) ─────────────────────────────────────
+// 서버 상·하한(1~50)은 lesson_items_position_ck 의 범위이고 그대로다 — 0개도 51개도 400. 화면은 마지막
+// 1개의 [×] 를 막고 50개에서 [＋ 문항] 을 끈다(서버가 거부할 요청을 만들지 않는다). LC 2~4 · Part 5 3~10 ·
+// Part 7 2~10 같은 **실전 규격은 비차단 경고 칩**으로만 보인다 — 규칙의 단일 소스는 검증기(결정 2)인데
+// 거기 넣으면 생성 프롬프트가 같은 지시를 모르는 AI 초안이 전부 422 로 떨어진다. Part 5 stem 의 `_____`
+// (빈칸 관례)도 같은 이유로 카드 안의 경고일 뿐이다. 신규 폼의 문항 수는 kind 기본값(LC 3 · Part 5 5 ·
+// Part 7 3)으로 시작하고, 불러온 레슨은 불러온 수 그대로다. published/archived 레슨에서 문항 수가 달라지면
+// 저장 버튼 옆에 경고를 둔다 — user_lesson_attempts.answers 가 position 키라 옛 오답이 다른 stem 에 붙을 수
+// 있다. 서버는 막지 않는다(플랜 14 follow_up).
 //
 // ── 세 가지 규범 ─────────────────────────────────────────────────────────────
 // 1. 스크립트 편집 단위는 **화자 토글 + 대사**다(설계 검토 D1). passage.body 가 [{speaker,text}] 라서
@@ -22,18 +33,42 @@ const ADMIN_LC_SPEAKERS = ['M', 'W'];
 const ADMIN_LC_OPTION_IDS = ['A', 'B', 'C', 'D'];
 // lesson_items_skill_ck 와 같은 집합. '' 는 NULL(없음)로 보낸다.
 const ADMIN_LC_SKILLS = ['grammar', 'vocab', 'detail', 'inference', 'main_idea'];
-// 에디터가 만들 수 있는 kind. toeic_lc 만 화자 토글 스크립트이고, 그 외는 passage.body 가
-// 문자열 배열이라 textarea 하나로 편집한다(플랜 13 Phase A "Part 7 — 같은 폼, 지문 필드가 본문 하나").
+// 에디터가 만들 수 있는 kind. toeic_lc 만 화자 토글 스크립트이고, toeic_part7 은 passage.body 가 문단 문자열
+// 배열이라 textarea 하나, toeic_part5 는 body 가 안내문 한 줄짜리 문자열 배열이라 input 하나로 편집한다.
+// 서버(LESSON_KINDS·PASSAGE_DEFAULTS)는 셋을 이미 받는다 — 막혀 있던 곳은 이 목록뿐이었다(플랜 14 §0).
 const ADMIN_LC_KINDS = [
   { key: 'toeic_lc', label: '리스닝 · toeic_lc' },
   { key: 'toeic_part7', label: 'Part 7 · toeic_part7' },
+  { key: 'toeic_part5', label: 'Part 5 · toeic_part5' },
 ];
 // 빈 폼의 줄 수 — validateLcScript 하한(4)과 같다. 처음부터 규칙 안에서 시작하게 한다.
 const ADMIN_LC_NEW_LINES = 4;
-// 신규 문항 수. 문항 추가/삭제 UI 가 없으므로(§0) 이 값이 곧 새 레슨의 문항 수다.
-const ADMIN_LC_NEW_ITEMS = 3;
+// 신규 폼의 문항 수 — kind 별 기본값(플랜 14 결정 C2), 생성 요청(normalizeJobInput)의 기본과 같다.
+// 신규 폼에서 kind 를 바꾸면 **문항이 전부 비어 있을 때만** 이 수로 맞춘다 — 입력한 문항을 지우지 않는다.
+const ADMIN_LC_NEW_ITEMS = { toeic_lc: 3, toeic_part5: 5, toeic_part7: 3 };
+// 문항 수 권장 범위 — 실전 규격(LC 2~4 · Part 5 3~10 · Part 7 2~10). 밖이면 **비차단** 경고 칩(머리말).
+const ADMIN_LC_ITEM_RANGE = { toeic_lc: [2, 4], toeic_part5: [3, 10], toeic_part7: [2, 10] };
+// 문항 수 상한 — 서버 normalizeLessonInput 의 max 50(lesson_items_position_ck). 여기서 [＋ 문항] 을 끈다.
+const ADMIN_LC_MAX_ITEMS = 50;
+// Part 5 신규 폼의 안내문 기본값 — 생성 경로·서버 기본값과 같은 문장. 편집할 수 있고, 비워서 저장하면
+// body 를 [] 로 보내 서버(normalizePassage)의 Part 5 기본값에 맡긴다(플랜 14 결정 C1).
+const ADMIN_LC_PART5_INSTRUCTION = 'Choose the word or phrase that best completes each sentence.';
+// Part 5 stem 의 빈칸 관례 — 언더스코어 5개 연속. 없으면 문항 카드 안 경고(비차단, 결정 C3).
+const ADMIN_LC_BLANK = '_____';
 // Part 7 지문의 문단 구분. textarea 의 빈 줄 하나가 passage.body 배열의 원소 하나다.
 const ADMIN_LC_PARAGRAPH_SEP = '\n\n';
+
+// 문항·줄의 React key. 인덱스를 key 로 쓰면 가운데 문항을 지웠을 때 뒤 문항의 DOM 상태(포커스·IME 조합·라디오)가
+// 앞 카드에 옮겨 붙는다. data-testid 는 인덱스 기준을 유지한다(lc-item-N-*) — e2e 가 삭제 뒤 당겨진 인덱스를 기대한다.
+let adminLcUidSeq = 0;
+function adminLcUid() { adminLcUidSeq += 1; return adminLcUidSeq; }
+
+// 지문 편집 방식은 kind 마다 다르다 — 'lc' 화자 토글 스크립트 · 'part5' 안내문 한 줄 · 'rc' 문단 textarea.
+function adminLcFamily(kind) {
+  if (kind === 'toeic_lc') return 'lc';
+  if (kind === 'toeic_part5') return 'part5';
+  return 'rc';
+}
 
 // admin-app.jsx 의 adminTint 와 같은 규칙 — hex 색에만 알파 2자리를 덧붙인다. rgba 에 붙이면
 // `rgba(...)29` 라는 파싱 불가 값이 되어 선언이 통째로 무시된다. admin-app 이 뒤에 로드되므로 따로 둔다.
@@ -48,15 +83,26 @@ function adminLcNextSpeaker(lines) {
 
 function adminLcBlankScript() {
   const lines = [];
-  for (let i = 0; i < ADMIN_LC_NEW_LINES; i += 1) lines.push({ speaker: adminLcNextSpeaker(lines), text: '' });
+  for (let i = 0; i < ADMIN_LC_NEW_LINES; i += 1) lines.push({ uid: adminLcUid(), speaker: adminLcNextSpeaker(lines), text: '' });
   return lines;
 }
 
 function adminLcBlankItem() {
   return {
+    uid: adminLcUid(),
     stem: '', answer: '', explanation: '', skill_code: '',
     options: ADMIN_LC_OPTION_IDS.map((id) => ({ id, text: '' })),
   };
+}
+
+function adminLcBlankItems(kind) {
+  return Array.from({ length: ADMIN_LC_NEW_ITEMS[kind] || 3 }, adminLcBlankItem);
+}
+
+// 아무것도 입력하지 않은 문항인가 — kind 를 바꿀 때 기본 문항 수로 다시 맞춰도 되는지의 기준.
+function adminLcItemIsBlank(item) {
+  return !item.stem.trim() && !item.answer && !item.explanation.trim() && !item.skill_code
+    && item.options.every((o) => !o.text.trim());
 }
 
 // 서버가 준 줄 하나를 폼 모양으로. 화자가 M/W 가 아니면 비워 둔다 — 토글이 "지정 안 됨" 으로 보이고
@@ -64,15 +110,16 @@ function adminLcBlankItem() {
 // 10.7 이 정규식으로 라벨을 파싱하는 코드를 없앤 이유를 화면에서 되살리지 않는다.
 function adminLcLineFromServer(line) {
   if (line && typeof line === 'object') {
-    return { speaker: ADMIN_LC_SPEAKERS.includes(line.speaker) ? line.speaker : '', text: String(line.text ?? '') };
+    return { uid: adminLcUid(), speaker: ADMIN_LC_SPEAKERS.includes(line.speaker) ? line.speaker : '', text: String(line.text ?? '') };
   }
-  return { speaker: '', text: String(line ?? '') };
+  return { uid: adminLcUid(), speaker: '', text: String(line ?? '') };
 }
 
 // 보기는 A~D 순서로 고정해 그린다. 서버 행에 빠진 id 가 있으면 빈 칸으로 채워 폼이 무너지지 않게 한다.
 function adminLcItemFromServer(item) {
   const options = Array.isArray(item?.options) ? item.options : [];
   return {
+    uid: adminLcUid(),
     stem: String(item?.stem ?? ''),
     answer: ADMIN_LC_OPTION_IDS.includes(item?.answer) ? item.answer : '',
     explanation: String(item?.explanation ?? ''),
@@ -83,19 +130,22 @@ function adminLcItemFromServer(item) {
   };
 }
 
-// 폼 상태 하나가 두 kind 의 지문을 다 들고 있다 — kind 셀렉트를 바꿨다가 되돌려도 입력이 사라지지 않게.
-// passageMeta 는 body 를 뺀 passage 의 나머지(type·subject, Part 7 이메일이면 from·to·cc·date)다.
+// 폼 상태 하나가 세 kind 의 지문(script · instruction · passageText)을 다 들고 있다 — kind 셀렉트를 바꿨다가
+// 되돌려도 입력이 사라지지 않게. passageMeta 는 body 를 뺀 passage 의 나머지(type·subject, Part 7 이메일이면 from·to·cc·date)다.
 // vocab·faq 는 이 화면이 편집하지 않지만 **반드시 들고 다닌다** — 서버 PATCH 가 lesson_details 를 통째로
 // 갈아 끼우므로(admin-authoring.service normalizeLessonInput: 안 보내면 []) 빠뜨리면 시드 Part 7 의
 // 어휘·FAQ 가 저장 한 번에 사라진다.
+// loadedItemCount 는 서버에서 온 문항 수(신규는 null) — published/archived 레슨의 문항 수 변경 경고의 기준.
 function adminLcBlankForm() {
   return {
     kind: 'toeic_lc', title: '', subtitle: '', difficulty: 3, est_minutes: 4,
     script: adminLcBlankScript(),
     passageMeta: { type: '', subject: '' },
     passageText: '',
+    instruction: ADMIN_LC_PART5_INSTRUCTION,
     vocab: [], faq: [],
-    items: Array.from({ length: ADMIN_LC_NEW_ITEMS }, adminLcBlankItem),
+    items: adminLcBlankItems('toeic_lc'),
+    loadedItemCount: null,
     status: 'draft', visibility: 'private', source: null,
   };
 }
@@ -104,7 +154,7 @@ function adminLcFormFromServer(lesson) {
   const passage = lesson?.passage && typeof lesson.passage === 'object' ? lesson.passage : {};
   const { body, ...passageMeta } = passage;
   const lines = Array.isArray(body) ? body : body ? [body] : [];
-  const isLc = lesson?.kind === 'toeic_lc';
+  const family = adminLcFamily(lesson?.kind);
   const items = Array.isArray(lesson?.items) ? lesson.items : [];
   return {
     kind: lesson?.kind || 'toeic_lc',
@@ -112,15 +162,22 @@ function adminLcFormFromServer(lesson) {
     subtitle: String(lesson?.subtitle ?? ''),
     difficulty: lesson?.difficulty ?? 3,
     est_minutes: lesson?.est_minutes ?? 4,
-    script: isLc && lines.length ? lines.map(adminLcLineFromServer) : adminLcBlankScript(),
+    script: family === 'lc' && lines.length ? lines.map(adminLcLineFromServer) : adminLcBlankScript(),
     // LC 도 서버의 passage 메타(type·subject)를 그대로 들고 다닌다 — 버리면 저장 한 번에 서버 기본값
     // (LISTENING/Short Conversation)으로 덮여 시드 'Short Talk' 가 'Short Conversation' 이 된다(라운드 05 리뷰).
-    // LC ↔ Part 7/5 를 오가는 순간에만 비운다(kind 셀렉트의 onChange) — 'LISTENING' 이 Part 7 지문 종류로 딸려 가지 않게.
+    // Part 5 도 같다(PART 5 / Incomplete Sentences 를 화면이 만들지 않고 서버 값을 보존한다).
+    // 지문 편집 방식이 바뀌는 순간에만 비운다(kind 셀렉트의 onChange) — 'LISTENING' 이 Part 7 지문 종류로 딸려 가지 않게.
     passageMeta,
-    passageText: isLc ? '' : lines.map((p) => String(p ?? '')).join(ADMIN_LC_PARAGRAPH_SEP),
+    passageText: family === 'rc' ? lines.map((p) => String(p ?? '')).join(ADMIN_LC_PARAGRAPH_SEP) : '',
+    // Part 5 의 body 는 안내문 한 줄짜리 배열이다. 둘 이상이면 공백으로 이어 한 줄로 보인다(저장하면 원소 하나가 된다).
+    // Part 5 가 아니면 기본 안내문을 들고 있다 — kind 를 Part 5 로 바꾸는 순간 채워진 채 보이게.
+    instruction: family === 'part5'
+      ? lines.map((p) => String(p ?? '').trim()).filter(Boolean).join(' ')
+      : ADMIN_LC_PART5_INSTRUCTION,
     vocab: Array.isArray(lesson?.vocab) ? lesson.vocab : [],
     faq: Array.isArray(lesson?.faq) ? lesson.faq : [],
-    items: items.length ? items.map(adminLcItemFromServer) : Array.from({ length: ADMIN_LC_NEW_ITEMS }, adminLcBlankItem),
+    items: items.length ? items.map(adminLcItemFromServer) : adminLcBlankItems(lesson?.kind),
+    loadedItemCount: items.length,
     status: lesson?.status || 'draft',
     visibility: lesson?.visibility || 'private',
     source: lesson?.source || null,
@@ -128,24 +185,27 @@ function adminLcFormFromServer(lesson) {
 }
 
 // 저장 페이로드 — admin-authoring.service normalizeLessonInput 이 받는 모양. passage.body 가 지문이다:
-//   LC   → passage: { body: [{speaker,text}] }          type·subject 는 서버 기본값(LISTENING/Short Conversation)
-//   그 외 → passage: { type·subject·from…, body: [문단…] }  textarea 를 빈 줄 기준으로 쪼갠다(시드 Part 7 과 같은 모양)
+//   LC     → passage: { body: [{speaker,text}] }          type·subject 는 서버 기본값(LISTENING/Short Conversation)
+//   Part 5 → passage: { body: [안내문] }                   비우면 [] — 서버 기본 안내문(PART 5/Incomplete Sentences 도 서버)
+//   Part 7 → passage: { type·subject·from…, body: [문단…] }  textarea 를 빈 줄 기준으로 쪼갠다(시드 Part 7 과 같은 모양)
 // 서버는 LC 의 body 를 검증기의 script 로 넘기므로(D3) 여기서 "M: " 접두를 만들 일이 없다.
 // 공백 정리만 하고 규칙 판단은 하지 않는다. 비어 있으면 빈 채로 보내 서버 오류 문구를 받는다.
+// 문항·줄의 uid 는 화면 전용이라 페이로드에 싣지 않는다(필드를 하나씩 골라 담는다).
 function adminLcPayload(form) {
   const num = (v) => (v === '' || v == null ? null : Number(v));
   const passage = {};
-  if (form.kind === 'toeic_lc') {
-    // 불러온 type·subject 는 그대로 보낸다(비어 있으면 서버 기본값). 화면에는 입력이 없다 — LC 의 메타는 고칠 일이 없다.
-    Object.entries(form.passageMeta || {}).forEach(([k, v]) => {
-      if (typeof v === 'string' && v.trim()) passage[k] = v.trim();
-    });
+  // 불러온 type·subject(Part 7 은 from·to·cc·date 도)는 비어 있지 않은 것만 그대로 보낸다 — '' 는 서버가 "없다" 로
+  // 읽어 기본값을 채우게 두는 편이 낫다. LC·Part 5 는 화면에 메타 입력이 없다 — 고칠 일이 없고 기본값은 서버 몫이다.
+  Object.entries(form.passageMeta || {}).forEach(([k, v]) => {
+    if (typeof v === 'string' && v.trim()) passage[k] = v.trim();
+  });
+  const family = adminLcFamily(form.kind);
+  if (family === 'lc') {
     passage.body = form.script.map((l) => ({ speaker: l.speaker, text: l.text.trim() }));
+  } else if (family === 'part5') {
+    const instruction = form.instruction.trim();
+    passage.body = instruction ? [instruction] : [];
   } else {
-    // 빈 머리 필드는 보내지 않는다 — 서버가 '' 를 "없다" 로 읽어 기본값을 채우게 두는 편이 낫다.
-    Object.entries(form.passageMeta).forEach(([k, v]) => {
-      if (typeof v === 'string' && v.trim()) passage[k] = v.trim();
-    });
     passage.body = form.passageText.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
   }
   return {
@@ -284,9 +344,22 @@ function AdminLcLine({ theme, index, line, error, canRemove, onChange, onRemove 
   );
 }
 
-function AdminLcItem({ theme, index, item, error, onChange }) {
+// 비차단 경고의 공통 모양 — warning 톤 칩. 오류 띠(error)와 색을 달리해 "저장은 된다" 가 눈에 읽히게 한다.
+function adminLcWarnStyle(theme, extra) {
+  return {
+    display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999,
+    fontSize: 11, fontWeight: 700, lineHeight: 1.4, color: theme.warning,
+    background: adminLcTint(theme.warning, '1f', theme.chipBg), border: `1px solid ${adminLcTint(theme.warning, '66', theme.warning)}`,
+    ...extra,
+  };
+}
+
+// part5 — stem 에 `_____` 이 없으면 카드 안 경고(비차단). canRemove 가 false 인 마지막 문항은 [×] 를 끈다:
+// 서버가 items 0개를 400 으로 거부하므로 화면이 그 요청을 만들지 않는다.
+function AdminLcItem({ theme, index, item, error, part5, canRemove, onChange, onRemove }) {
   const setOption = (id, text) => onChange({ options: item.options.map((o) => (o.id === id ? { ...o, text } : o)) });
   const small = (extra) => adminLcInputStyle(theme, { fontSize: 12, padding: '7px 11px', borderRadius: 8, ...extra });
+  const blankWarn = Boolean(part5) && !item.stem.includes(ADMIN_LC_BLANK);
   return (
     <div data-testid={`lc-item-${index}`} data-error={error ? 'true' : undefined} style={{
       border: `1px solid ${error ? theme.error : theme.border}`, borderRadius: 12,
@@ -298,11 +371,28 @@ function AdminLcItem({ theme, index, item, error, onChange }) {
         <input
           data-testid={`lc-item-${index}-stem`}
           value={item.stem}
-          placeholder="질문(stem)"
+          placeholder={part5 ? `문장 — 빈칸은 ${ADMIN_LC_BLANK}` : '질문(stem)'}
           onChange={(e) => onChange({ stem: e.target.value })}
           style={small({ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 12.5 })}
         />
+        <button
+          type="button"
+          data-testid={`lc-remove-item-${index}`}
+          title={canRemove ? '이 문항 삭제' : '마지막 문항은 지울 수 없습니다'}
+          disabled={!canRemove}
+          onClick={onRemove}
+          style={{
+            width: 30, height: 32, borderRadius: 8, flexShrink: 0, display: 'grid', placeItems: 'center',
+            border: `1px solid ${theme.border}`, background: 'transparent',
+            color: theme.textDim, cursor: canRemove ? 'pointer' : 'not-allowed', opacity: canRemove ? 1 : 0.4,
+          }}
+        ><Icons.X size={14} /></button>
       </div>
+      {blankWarn && (
+        <div data-testid={`lc-item-${index}-blank-warn`} role="note" style={{ marginTop: 7 }}>
+          <span style={adminLcWarnStyle(theme)}>⚠ 빈칸 {ADMIN_LC_BLANK} 없음 — Part 5 관례, 저장은 됩니다</span>
+        </div>
+      )}
       {item.options.map((o) => {
         const correct = item.answer === o.id;
         return (
@@ -455,9 +545,12 @@ function AdminLcEditor({ theme, me, lessonId }) {
 
   const patch = (p) => setForm((f) => ({ ...f, ...p }));
   const setLine = (i, p) => setForm((f) => ({ ...f, script: f.script.map((l, j) => (j === i ? { ...l, ...p } : l)) }));
-  const addLine = () => setForm((f) => ({ ...f, script: [...f.script, { speaker: adminLcNextSpeaker(f.script), text: '' }] }));
+  const addLine = () => setForm((f) => ({ ...f, script: [...f.script, { uid: adminLcUid(), speaker: adminLcNextSpeaker(f.script), text: '' }] }));
   const removeLine = (i) => setForm((f) => ({ ...f, script: f.script.filter((_, j) => j !== i) }));
   const setItem = (i, p) => setForm((f) => ({ ...f, items: f.items.map((it, j) => (j === i ? { ...it, ...p } : it)) }));
+  // 상·하한은 서버(1~50)의 것이다 — 버튼도 disabled 지만 상태 갱신에서 한 번 더 막아 같은 규칙을 두 곳에 두지 않는다.
+  const addItem = () => setForm((f) => (f.items.length >= ADMIN_LC_MAX_ITEMS ? f : { ...f, items: [...f.items, adminLcBlankItem()] }));
+  const removeItem = (i) => setForm((f) => (f.items.length <= 1 ? f : { ...f, items: f.items.filter((_, j) => j !== i) }));
 
   // 라우팅 형식은 admin-app.jsx adminRouteFromHash 의 것이다. adminGoto 는 뒤에 로드되는 파일의 이름이라
   // 여기서는 해시를 직접 쓴다 — 클릭 시점에는 있겠지만 이 파일이 그 존재에 기대지 않게.
@@ -531,13 +624,21 @@ function AdminLcEditor({ theme, me, lessonId }) {
     fontSize: 13.5, fontWeight: 600, cursor: 'pointer',
   };
   const targets = adminLcErrorTargets(errors?.kind === 'validation' ? errors.list : null);
-  const isLc = form?.kind === 'toeic_lc';
+  const family = adminLcFamily(form?.kind);
+  const isLc = family === 'lc';
   const statusMeta = form ? (ADMIN_STATUS_META[form.status] || { label: form.status, tone: 'textMuted' }) : null;
-  // 불러온 kind 가 셀렉트 목록에 없으면(toeic_part5) 그 값을 옵션으로 얹어 조용히 바뀌지 않게 한다.
+  // 불러온 kind 가 셀렉트 목록에 없으면(서버가 kind 를 더 받게 된 뒤) 그 값을 옵션으로 얹어 조용히 바뀌지 않게 한다.
   const kindOptions = form && !ADMIN_LC_KINDS.some((k) => k.key === form.kind)
     ? [...ADMIN_LC_KINDS, { key: form.kind, label: `${ADMIN_KIND_LABELS[form.kind] || '레슨'} · ${form.kind}` }]
     : ADMIN_LC_KINDS;
-  const paragraphs = form && !isLc ? form.passageText.split(/\n\s*\n/).filter((p) => p.trim()).length : 0;
+  const paragraphs = form && family === 'rc' ? form.passageText.split(/\n\s*\n/).filter((p) => p.trim()).length : 0;
+  // 문항 수 경고 셋 — 전부 비차단(머리말). 권장 범위는 kind 별, 모르는 kind 면 경고 없음.
+  const itemRange = form ? ADMIN_LC_ITEM_RANGE[form.kind] : null;
+  const itemCount = form ? form.items.length : 0;
+  const countWarn = Boolean(itemRange) && (itemCount < itemRange[0] || itemCount > itemRange[1]);
+  const countChanged = Boolean(form) && ['published', 'archived'].includes(form.status)
+    && form.loadedItemCount != null && form.loadedItemCount !== itemCount;
+  const canAddItem = itemCount < ADMIN_LC_MAX_ITEMS;
 
   return (
     <div data-testid="lc-editor" data-lesson-id={currentId ?? 'new'} style={{
@@ -588,10 +689,15 @@ function AdminLcEditor({ theme, me, lessonId }) {
             disabled={!form}
             onChange={(e) => {
               const next = e.target.value;
-              const wasLc = form?.kind === 'toeic_lc';
-              const isLc = next === 'toeic_lc';
-              // LC ↔ 독해를 오가면 passage 껍데기(type·subject)는 다른 종류의 것이다 — 비워서 서버 기본값을 받게 한다.
-              patch(wasLc === isLc ? { kind: next } : { kind: next, passageMeta: { type: '', subject: '' } });
+              setForm((f) => {
+                const p = { kind: next };
+                // 지문 편집 방식(LC 스크립트 · Part 5 안내문 · Part 7 문단)이 바뀌면 passage 껍데기(type·subject…)는 다른
+                // 종류의 것이다 — 비워서 서버 기본값을 받게 한다. Part 7 의 'EMAIL' 이 Part 5 안내문 폼 뒤에 숨어 딸려 가지 않게.
+                if (adminLcFamily(f.kind) !== adminLcFamily(next)) p.passageMeta = { type: '', subject: '' };
+                // 신규 폼(저장 전)에서 문항이 **전부** 비어 있으면 kind 기본 문항 수로 맞춘다. 무엇이든 입력했으면 그대로 둔다.
+                if (currentId == null && f.items.every(adminLcItemIsBlank)) p.items = adminLcBlankItems(next);
+                return { ...f, ...p };
+              });
             }}
             style={adminLcInputStyle(theme, { width: 168, fontFamily: 'ui-monospace, Consolas, monospace', fontSize: 12.5 })}
           >
@@ -634,7 +740,7 @@ function AdminLcEditor({ theme, me, lessonId }) {
         </AdminLcField>
         <div style={{ marginLeft: 'auto', textAlign: 'right', fontSize: 12, color: theme.textDim, lineHeight: 1.6 }}>
           <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 2 }}>
-            플랜 13 Phase A · 최소형
+            플랜 13 Phase A · 14 Phase C
           </div>
           {form?.source === 'seed'
             ? <span>시드 행 — 저장하면 source 가 <b style={{ color: theme.textMuted }}>curated</b> 로 바뀌어 재시드가 덮어쓰지 않는다</span>
@@ -683,7 +789,7 @@ function AdminLcEditor({ theme, me, lessonId }) {
                 </div>
                 {form.script.map((line, i) => (
                   <AdminLcLine
-                    key={i}
+                    key={line.uid}
                     theme={theme}
                     index={i}
                     line={line}
@@ -697,6 +803,29 @@ function AdminLcEditor({ theme, me, lessonId }) {
                   재생은 <b style={{ color: theme.textMuted }}>jinaSpeak</b> 브라우저 TTS — 화자 라벨은 읽지 않는다(기존 규범).
                   {typeof window.jinaSpeak !== 'function' && ' 이 페이지에는 speech.jsx 가 로드되지 않아 미리듣기 버튼이 없다.'}
                   <br />오디오 파일 업로드는 범위 밖(결정 3) — 파일 저장소가 없다.
+                </div>
+              </React.Fragment>
+            ) : family === 'part5' ? (
+              <React.Fragment>
+                <div style={secHead}>
+                  <span style={secTitle}>안내문</span>
+                  <span style={secCount}>Part 5 · 지문 대신 한 줄 · 비우면 서버 기본 문장</span>
+                </div>
+                <input
+                  data-testid="lc-part5-instruction"
+                  value={form.instruction}
+                  placeholder={ADMIN_LC_PART5_INSTRUCTION}
+                  onChange={(e) => patch({ instruction: e.target.value })}
+                  style={adminLcInputStyle(theme, {
+                    width: '100%', fontSize: 12.5, background: theme.card, border: `1px solid ${theme.border}`,
+                  })}
+                />
+                <div style={footNote}>
+                  Part 5 는 문장 완성이라 지문이 없다 — passage.body 는 이 안내문 한 줄이고, 종류·제목(type·subject)은
+                  서버 기본값(<b style={{ color: theme.textMuted }}>PART 5 · Incomplete Sentences</b>)이다.
+                  문제(stem)의 빈칸은 <b style={{ color: theme.textMuted }}>{ADMIN_LC_BLANK}</b>(언더스코어 5개) 관례 —
+                  없으면 문항 카드에 경고만 뜨고 저장은 된다(플랜 14 결정 C3).
+                  어휘(vocab {form.vocab.length})·FAQ({form.faq.length})는 불러온 값을 그대로 보존해 저장한다.
                 </div>
               </React.Fragment>
             ) : (
@@ -744,20 +873,42 @@ function AdminLcEditor({ theme, me, lessonId }) {
             )}
           </section>
 
-          {/* 오른쪽: 문항. 추가/삭제 없음(§0) — 개수는 불러온 그대로, 신규는 3. */}
+          {/* 오른쪽: 문항. 추가/삭제는 서버 상·하한(1~50) 안에서, 권장 범위 밖은 경고 칩만(머리말). */}
           <section className="jina-scroll" data-testid="lc-items" style={sec}>
-            <div style={secHead}>
+            <div style={{ ...secHead, flexWrap: 'wrap' }}>
               <span style={secTitle}>문항</span>
-              <span style={secCount}>{form.items.length}개 · 4지선다 · 추가/삭제는 최소형 범위 밖</span>
+              <span style={secCount}>
+                {itemCount}개 · 4지선다{itemRange ? ` · 권장 ${itemRange[0]}~${itemRange[1]}개` : ''}
+              </span>
+              {countWarn && (
+                <span data-testid="lc-item-count-warn" role="note" style={adminLcWarnStyle(theme)}>
+                  ⚠ 권장 {itemRange[0]}~{itemRange[1]}개 — 저장은 됩니다
+                </span>
+              )}
+              <button
+                type="button"
+                data-testid="lc-add-item"
+                disabled={!canAddItem}
+                title={canAddItem ? '문항 추가' : `문항은 최대 ${ADMIN_LC_MAX_ITEMS}개입니다`}
+                onClick={addItem}
+                style={{
+                  marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 5,
+                  fontSize: 11.5, color: theme.textMuted, cursor: canAddItem ? 'pointer' : 'not-allowed', background: 'transparent',
+                  border: `1px solid ${theme.borderStrong}`, padding: '6px 11px', borderRadius: 9, opacity: canAddItem ? 1 : 0.4,
+                }}
+              ><Icons.Plus size={12} />문항 추가</button>
             </div>
             {form.items.map((item, i) => (
               <AdminLcItem
-                key={i}
+                key={item.uid}
                 theme={theme}
                 index={i}
                 item={item}
                 error={targets.items.has(i)}
+                part5={family === 'part5'}
+                canRemove={itemCount > 1}
                 onChange={(p) => setItem(i, p)}
+                onRemove={() => removeItem(i)}
               />
             ))}
           </section>
@@ -792,6 +943,13 @@ function AdminLcEditor({ theme, me, lessonId }) {
             </span>
           )}
         </div>
+        {countChanged && (
+          <span data-testid="lc-count-change-warn" role="note" style={adminLcWarnStyle(theme, {
+            maxWidth: 320, padding: '7px 12px', borderRadius: 10, fontWeight: 600, fontSize: 11.5, flexShrink: 1,
+          })}>
+            ⚠ 문항 {form.loadedItemCount} → {itemCount}개 — 이미 푼 학습자의 기록은 문항 번호(position) 기준이라 어긋날 수 있습니다
+          </span>
+        )}
         {canSpeak && (
           <button type="button" data-testid="lc-tts" onClick={speak} aria-pressed={speaking} style={{
             ...ghostBtn, color: speaking ? theme.accent : theme.text,

@@ -16,6 +16,7 @@ import { listTopics as learnerListTopics } from '../api/services/topic.service.j
 import { ELIGIBLE_THRESHOLDS } from '../api/services/admin-topic.service.js';
 import { createReviewUser } from '../scripts/lib/draft-review-fixtures.mjs';
 import { closeDb, pool, setupDb } from './helpers/db.mjs';
+import { loadTopicSeedIds, topicEligibleContents } from './helpers/topic-fixtures.mjs';
 
 const tag = `utp-${Date.now()}`;
 const users = {};
@@ -32,13 +33,7 @@ before(async () => {
     const { token } = await createSession(users[role].id, { userAgent: 'test' });
     cookies[role] = `${config.cookieName}=${token}`;
   }
-  const { rows } = await pool.query(
-    `SELECT id, slug FROM content_items WHERE slug = ANY($1::text[])`,
-    [['toeic-part7-set23', 'toeic-part7-set24', 'business-interview-part5-grammar',
-      'business-interview-star', 'business-interview-core-20']],
-  );
-  for (const r of rows) seed[r.slug] = r.id;
-  assert.equal(rows.length, 5, '시드 콘텐츠 5건이 있어야 한다');
+  Object.assign(seed, await loadTopicSeedIds(pool));
 
   const router = new Router();
   registerAdminTopicRoutes(router);
@@ -75,12 +70,7 @@ async function api(role, method, path, body) {
   return { status: res.status, body: await res.json() };
 }
 
-const lessons = () => ['toeic-part7-set23', 'toeic-part7-set24', 'business-interview-part5-grammar'].map((s) => seed[s]);
-const fullSet = () => [
-  ...lessons().map((id, i) => ({ content_id: id, position: i + 1 })),
-  { content_id: seed['business-interview-star'], position: 10 },
-  { content_id: seed['business-interview-core-20'], position: 20 },
-];
+const fullSet = () => topicEligibleContents(seed);
 
 async function createTopic(role = 'author', body = {}) {
   const res = await api(role, 'POST', '/api/admin/topics', { label_ko: `${tag} 토픽`, description: '검증용', ...body });

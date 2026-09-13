@@ -22,16 +22,23 @@ function Waveform({ theme, active = false, height = 28, bars = 14 }) {
   );
 }
 
+// 데스크탑 3열(세션·대화·피드백) 초기 폭 — 기존 고정 px 레이아웃과 맞춘 상대 비율
+const CONVO_COL_SIDEBAR = 280;
+const CONVO_COL_MAIN = 546;
+const CONVO_COL_FEEDBACK = 340;
+const CONVO_RATIO_SIDEBAR = CONVO_COL_SIDEBAR / (CONVO_COL_SIDEBAR + CONVO_COL_MAIN + CONVO_COL_FEEDBACK);
+const CONVO_RATIO_MAIN = CONVO_COL_MAIN / (CONVO_COL_MAIN + CONVO_COL_FEEDBACK);
+
 // Mini conversation sidebar — 서버 SessionDto 목록을 소비
 function ConvoSidebar({ theme, sessions, activeId, onSessionChange, onNewSession, formatTime, sessionsLoading, onBack }) {
   return (
-    <aside aria-label="회화 세션" style={{
-      width: 280, padding: '20px 16px',
-      borderRight: `1px solid ${theme.border}`,
+    <aside aria-label="회화 세션" className="jina-scroll" style={{
+      width: '100%', height: '100%', minHeight: 0,
+      padding: '20px 16px',
       background: theme.bgSoft,
       display: 'flex', flexDirection: 'column', gap: 8,
-      flex: '0 0 auto',
       overflowY: 'auto',
+      boxSizing: 'border-box',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 4px 8px' }}>
         <button type="button" onClick={onBack} aria-label="대시보드로 돌아가기" title="대시보드" style={{
@@ -98,7 +105,7 @@ function ConvoSidebar({ theme, sessions, activeId, onSessionChange, onNewSession
 }
 
 // Scenario header — 활성 세션의 scenario 메타(없으면 자유 회화)
-function ScenarioBar({ theme, session }) {
+function ScenarioBar({ theme, session, onArchive, archiving }) {
   const scenario = session?.scenario;
   return (
     <div style={{
@@ -106,6 +113,7 @@ function ScenarioBar({ theme, session }) {
       borderBottom: `1px solid ${theme.border}`,
       display: 'flex', alignItems: 'center', gap: 14,
       background: theme.bg,
+      flexShrink: 0,
     }}>
       <div style={{
         width: 40, height: 40, borderRadius: 11,
@@ -128,7 +136,24 @@ function ScenarioBar({ theme, session }) {
           {scenario?.description ?? 'Jina에게 어떤 주제로 연습할지 말해보세요.'}
         </div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+        {session?.id && onArchive && (
+          <button
+            type="button"
+            data-testid="convo-archive"
+            onClick={onArchive}
+            disabled={archiving}
+            title="이 대화를 보관함으로 이동합니다. 첨삭·통계는 유지됩니다."
+            style={{
+              padding: '8px 12px', borderRadius: 9,
+              background: theme.chipBg, color: theme.textMuted,
+              fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5,
+              opacity: archiving ? 0.55 : 1,
+              cursor: archiving ? 'not-allowed' : 'pointer',
+            }}>
+            <Icons.Folder size={13} /> {archiving ? '보관 중…' : '보관'}
+          </button>
+        )}
         <button style={{
           padding: '8px 12px', borderRadius: 9,
           background: theme.chipBg, color: theme.textMuted,
@@ -161,13 +186,13 @@ function FeedbackPane({ theme, lastScored }) {
   const dueCard = cards.find((c) => c.status === 'due');
   const corrections = lastScored?.corrections ?? [];
   return (
-    <aside aria-label="실시간 피드백" style={{
-      width: 340, padding: 24,
-      borderLeft: `1px solid ${theme.border}`,
+    <aside aria-label="실시간 피드백" className="jina-scroll" style={{
+      width: '100%', height: '100%', minHeight: 0,
+      padding: 24,
       background: theme.bgSoft,
       display: 'flex', flexDirection: 'column', gap: 16,
       overflowY: 'auto',
-      flex: '0 0 auto',
+      boxSizing: 'border-box',
     }}>
       {/* Live score */}
       <div style={{
@@ -266,13 +291,89 @@ function FeedbackPane({ theme, lastScored }) {
   );
 }
 
+// 중앙 패널 — 시나리오 헤더 + 메시지 + 입력을 한 덩어리로 묶어 split-pane 오른쪽과 맞닿게 한다
+function ConvoMainPanel({ theme, session, messages, loading, send, scrollRef, aiConfig, modelInfo, onArchive, archiving }) {
+  return (
+    <div style={{
+      width: '100%', height: '100%', minHeight: 0,
+      display: 'flex', flexDirection: 'column',
+      background: theme.bg,
+    }}>
+      <ScenarioBar theme={theme} session={session} onArchive={onArchive} archiving={archiving} />
+      <div ref={scrollRef} className="jina-scroll" style={{
+        flex: 1, minHeight: 0, overflow: 'auto',
+        padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 22,
+      }}>
+        {messages.length === 0 && !loading ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 20, paddingTop: 40 }}>
+            <JinaAvatar size={64} theme={theme} />
+            <div style={{ textAlign: 'center' }}>
+              <div className="jina-serif" style={{ fontSize: 28, fontStyle: 'italic', color: theme.text, marginBottom: 8 }}>새 회화를 시작해요!</div>
+              <div style={{ fontSize: 14, color: theme.textMuted, lineHeight: 1.6 }}>
+                Jina에게 어떤 주제로 연습하고 싶은지 말해보세요.<br/>
+                TOEIC Speaking, 비즈니스 영어, 일상 회화 모두 가능해요.
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
+              {['TOEIC Speaking Q11 연습', '비즈니스 이메일 작성', '카페에서 주문하기', '면접 영어 연습'].map((t) => (
+                <button key={t} onClick={() => send(t)} style={{
+                  padding: '9px 14px', borderRadius: 999,
+                  background: theme.chipBg, border: `1px solid ${theme.border}`,
+                  color: theme.text, fontSize: 13, fontWeight: 500,
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  cursor: 'pointer',
+                }}>
+                  <Icons.Sparkle size={12} style={{ color: theme.accent }} /> {t}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          messages.map((m, i) => (
+            m.role === 'user'
+              ? <LiveUserMessage key={m.id != null ? `srv-${m.id}` : `local-${i}`} theme={theme} msg={m} />
+              : <LiveJinaMessage key={m.id != null ? `srv-${m.id}` : `local-${i}`} theme={theme} msg={m} />
+          ))
+        )}
+
+        {loading && (
+          <div style={{ display: 'flex', gap: 12 }}>
+            <JinaAvatar size={36} theme={theme} pulsing />
+            <div style={{
+              padding: '12px 16px', borderRadius: 16, borderTopLeftRadius: 4,
+              background: theme.chipBg, border: `1px solid ${theme.border}`,
+              display: 'inline-flex', alignItems: 'center', gap: 4, alignSelf: 'flex-start',
+            }}>
+              {[0, 1, 2].map((i) => (
+                <span key={i} style={{
+                  width: 6, height: 6, borderRadius: '50%', background: theme.textMuted,
+                  animation: `jina-pulse 1.2s ease-in-out ${i * 0.15}s infinite`,
+                }} />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      <JinaInputBar
+        theme={theme}
+        onSend={send}
+        loading={loading}
+        provider={aiConfig?.provider || 'ollama'}
+        modelInfo={modelInfo}
+        suggestions={['I would recommend OfficeMart because...', 'Could you elaborate on that?', 'Can you correct my last sentence?']}
+      />
+    </div>
+  );
+}
+
 function ConversationDesktop({ theme, aiConfig, onNavigate }) {
   const {
     messages, loading, send,
     sessions, activeSessionId, sessionsLoading,
-    selectSession, newSession, activeSession, lastScored, formatSessionTime,
+    selectSession, newSession, archiveSession, activeSession, lastScored, formatSessionTime,
   } = useConversation();
   const scrollRef = React.useRef(null);
+  const [archiving, setArchiving] = React.useState(false);
 
   React.useEffect(() => {
     if (scrollRef.current) {
@@ -282,6 +383,13 @@ function ConversationDesktop({ theme, aiConfig, onNavigate }) {
 
   const modelInfo = window.JINA_AI.modelLabel(aiConfig);
 
+  const handleArchive = async () => {
+    if (!activeSessionId || archiving) return;
+    setArchiving(true);
+    await archiveSession(activeSessionId);
+    setArchiving(false);
+  };
+
   return (
     <div className="jina-root" style={{
       width: '100%', height: '100%',
@@ -289,73 +397,40 @@ function ConversationDesktop({ theme, aiConfig, onNavigate }) {
       display: 'flex',
       overflow: 'hidden',
     }}>
-      <ConvoSidebar theme={theme} sessions={sessions} activeId={activeSessionId} onBack={() => onNavigate && onNavigate('dashboard')}
-        onSessionChange={selectSession} onNewSession={newSession}
-        formatTime={formatSessionTime} sessionsLoading={sessionsLoading} />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        <ScenarioBar theme={theme} session={activeSession} />
-        <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 22 }}>
-
-          {messages.length === 0 && !loading ? (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 20, paddingTop: 40 }}>
-              <JinaAvatar size={64} theme={theme} />
-              <div style={{ textAlign: 'center' }}>
-                <div className="jina-serif" style={{ fontSize: 28, fontStyle: 'italic', color: theme.text, marginBottom: 8 }}>새 회화를 시작해요!</div>
-                <div style={{ fontSize: 14, color: theme.textMuted, lineHeight: 1.6 }}>
-                  Jina에게 어떤 주제로 연습하고 싶은지 말해보세요.<br/>
-                  TOEIC Speaking, 비즈니스 영어, 일상 회화 모두 가능해요.
-                </div>
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
-                {['TOEIC Speaking Q11 연습', '비즈니스 이메일 작성', '카페에서 주문하기', '면접 영어 연습'].map((t) => (
-                  <button key={t} onClick={() => send(t)} style={{
-                    padding: '9px 14px', borderRadius: 999,
-                    background: theme.chipBg, border: `1px solid ${theme.border}`,
-                    color: theme.text, fontSize: 13, fontWeight: 500,
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                    cursor: 'pointer',
-                  }}>
-                    <Icons.Sparkle size={12} style={{ color: theme.accent }} /> {t}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            messages.map((m, i) => (
-              m.role === 'user'
-                ? <LiveUserMessage key={m.id != null ? `srv-${m.id}` : `local-${i}`} theme={theme} msg={m} />
-                : <LiveJinaMessage key={m.id != null ? `srv-${m.id}` : `local-${i}`} theme={theme} msg={m} />
-            ))
-          )}
-
-          {loading && (
-            <div style={{ display: 'flex', gap: 12 }}>
-              <JinaAvatar size={36} theme={theme} pulsing />
-              <div style={{
-                padding: '12px 16px', borderRadius: 16, borderTopLeftRadius: 4,
-                background: theme.chipBg, border: `1px solid ${theme.border}`,
-                display: 'inline-flex', alignItems: 'center', gap: 4, alignSelf: 'flex-start',
-              }}>
-                {[0, 1, 2].map((i) => (
-                  <span key={i} style={{
-                    width: 6, height: 6, borderRadius: '50%', background: theme.textMuted,
-                    animation: `jina-pulse 1.2s ease-in-out ${i * 0.15}s infinite`,
-                  }} />
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-        <JinaInputBar
-          theme={theme}
-          onSend={send}
-          loading={loading}
-          provider={aiConfig?.provider || 'ollama'}
-          modelInfo={modelInfo}
-          suggestions={['I would recommend OfficeMart because...', 'Could you elaborate on that?', 'Can you correct my last sentence?']}
-        />
-      </div>
-      <FeedbackPane theme={theme} lastScored={lastScored} />
+      <SplitPane
+        theme={theme}
+        initialRatio={CONVO_RATIO_SIDEBAR}
+        minLeft={220}
+        minRight={620}
+        left={(
+          <ConvoSidebar theme={theme} sessions={sessions} activeId={activeSessionId} onBack={() => onNavigate && onNavigate('dashboard')}
+            onSessionChange={selectSession} onNewSession={newSession}
+            formatTime={formatSessionTime} sessionsLoading={sessionsLoading} />
+        )}
+        right={(
+          <SplitPane
+            theme={theme}
+            initialRatio={CONVO_RATIO_MAIN}
+            minLeft={360}
+            minRight={260}
+            left={(
+              <ConvoMainPanel
+                theme={theme}
+                session={activeSession}
+                messages={messages}
+                loading={loading}
+                send={send}
+                scrollRef={scrollRef}
+                aiConfig={aiConfig}
+                modelInfo={modelInfo}
+                onArchive={handleArchive}
+                archiving={archiving}
+              />
+            )}
+            right={<FeedbackPane theme={theme} lastScored={lastScored} />}
+          />
+        )}
+      />
     </div>
   );
 }

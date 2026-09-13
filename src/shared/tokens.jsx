@@ -121,8 +121,93 @@ function useJinaTheme() {
   return { ...JINA_THEMES[key], key };
 }
 
+function jinaUiChromeCss(theme) {
+  return `
+    .jina-scroll {
+      scrollbar-width: thin;
+      scrollbar-color: ${theme.borderStrong} transparent;
+    }
+    .jina-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+    .jina-scroll::-webkit-scrollbar-track { background: transparent; }
+    .jina-scroll::-webkit-scrollbar-corner { background: transparent; }
+    .jina-scroll::-webkit-scrollbar-thumb {
+      background: ${theme.borderStrong};
+      border-radius: 999px;
+      border: 3px solid transparent;
+      background-clip: content-box;
+      min-height: 48px;
+    }
+    .jina-scroll::-webkit-scrollbar-thumb:hover {
+      background: ${theme.textDim};
+      background-clip: content-box;
+    }
+    .jina-scroll::-webkit-scrollbar-thumb:active {
+      background: ${theme.accent};
+      background-clip: content-box;
+    }
+
+    .jina-split-handle {
+      flex: 0 0 14px;
+      position: relative;
+      cursor: col-resize;
+      touch-action: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+    }
+    .jina-split-handle::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 50%;
+      width: 1px;
+      transform: translateX(-50%);
+      background: ${theme.border};
+      pointer-events: none;
+    }
+    .jina-split-handle__grip {
+      position: relative;
+      z-index: 1;
+      width: 4px;
+      height: 40px;
+      border-radius: 999px;
+      background: ${theme.borderStrong};
+      transition: height .18s ease, background .15s ease, box-shadow .15s ease;
+    }
+    .jina-split-handle.is-hover .jina-split-handle__grip,
+    .jina-split-handle:hover .jina-split-handle__grip {
+      height: 52px;
+      background: ${theme.textDim};
+    }
+    .jina-split-handle.is-active .jina-split-handle__grip {
+      height: 56px;
+      background: ${theme.accent};
+      box-shadow: 0 0 16px ${theme.accent}44;
+    }
+  `;
+}
+
+function syncJinaUiChrome(theme) {
+  if (typeof document === 'undefined') return;
+  let el = document.getElementById('jina-ui-chrome');
+  if (!el) {
+    el = document.createElement('style');
+    el.id = 'jina-ui-chrome';
+    document.head.appendChild(el);
+  }
+  el.textContent = jinaUiChromeCss(theme);
+}
+
+function JinaUiChrome({ theme }) {
+  React.useEffect(() => { syncJinaUiChrome(theme); }, [theme]);
+  return null;
+}
+
 function setJinaTheme(k) {
   window.__JINA_THEME = k;
+  syncJinaUiChrome(JINA_THEMES[k] || JINA_THEMES.aurora);
   window.dispatchEvent(new CustomEvent('jina-theme-change', { detail: { theme: k } }));
 }
 
@@ -159,3 +244,9 @@ if (typeof document !== 'undefined' && !document.getElementById('jina-fonts')) {
 window.JINA_THEMES = JINA_THEMES;
 window.useJinaTheme = useJinaTheme;
 window.setJinaTheme = setJinaTheme;
+window.syncJinaUiChrome = syncJinaUiChrome;
+window.JinaUiChrome = JinaUiChrome;
+
+if (typeof document !== 'undefined') {
+  syncJinaUiChrome(JINA_THEMES[window.__JINA_THEME || 'aurora']);
+}

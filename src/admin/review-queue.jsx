@@ -1,6 +1,10 @@
 // 검수 큐 — 상태 판정은 서버가 맡고 화면은 생성 결과와 자동 검증 근거를 보여준다.
 // Babel standalone 전역 이름 충돌을 피하려고 AdminReview 접두사를 쓴다.
 const ADMIN_REVIEW_PAGE_SIZE = 50;
+// '승인 전 수정' 이 에디터로 보낼 수 있는 유형 — admin-app.jsx 의 ADMIN_EDIT_ROUTES 키와 같은 집합이어야 한다
+// (해시 `#/edit/<type>/:id` 의 <type> 은 DB type 문자열 그대로, 플랜 14 결정 A3). admin-app 은 이 파일 뒤에
+// 로드되므로 그 표를 직접 읽지 못해 여기 다시 적는다. speaking_set 만 빠진다(플랜 13 Phase C 게이트).
+const ADMIN_REVIEW_EDITABLE_TYPES = ['lesson', 'scenario', 'vocab_set'];
 
 function AdminReviewResult({ theme, item }) {
   const data = item.generated_content;
@@ -109,16 +113,17 @@ function AdminReviewDetail({ theme, item, busy, onReview, separateReviewer }) {
         </div>
       </div>}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        {/* 승인 전 수정 — 레슨만 LC 에디터(플랜 13 Phase A, editors/lc.jsx)로 보낸다. 해시 형식은 admin-app.jsx
-            adminRouteFromHash 의 것인데, adminGoto 는 이 파일 뒤에 로드되는 이름이라 해시를 직접 쓴다.
-            다른 유형은 흐리게 남긴다 — 사라지면 "이 유형은 편집이 없다" 가 아니라 "버그" 로 읽힌다. */}
-        {item.type === 'lesson'
-          ? <button type="button" data-testid="review-edit" disabled={busy} title="LC 에디터에서 고친 뒤 다시 검수합니다"
-            onClick={() => { window.location.hash = `#/edit/lesson/${encodeURIComponent(item.id)}?from=review`; }}   // 에디터의 '목록' 이 검수 큐로 돌아오게
+        {/* 승인 전 수정 — 레슨·회화·단어를 각 에디터(editors/lc·scenario·vocab.jsx, 플랜 13 A·14 D)로 보낸다.
+            해시 형식은 admin-app.jsx adminRouteFromHash 의 것인데, adminGoto 는 이 파일 뒤에 로드되는 이름이라
+            해시를 직접 쓴다. ?from=review 는 에디터의 '목록' 이 검수 큐로 돌아오게 하는 표식이다.
+            스피킹 세트는 흐리게 남긴다 — 사라지면 "이 유형은 편집이 없다" 가 아니라 "버그" 로 읽힌다. */}
+        {ADMIN_REVIEW_EDITABLE_TYPES.includes(item.type)
+          ? <button type="button" data-testid="review-edit" disabled={busy} title={`${ADMIN_TYPE_LABELS[item.type] || item.type} 에디터에서 고친 뒤 다시 검수합니다`}
+            onClick={() => { window.location.hash = `#/edit/${item.type}/${encodeURIComponent(item.id)}?from=review`; }}
             style={{ ...button, color: theme.text, background: 'transparent', cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.5 : 1 }}>
             <Icons.Book size={13} /> 승인 전 수정
           </button>
-          : <button type="button" data-testid="review-edit" disabled title="레슨만 편집할 수 있습니다(플랜 13 최소형)"
+          : <button type="button" data-testid="review-edit" disabled title="스피킹 세트 에디터는 플랜 13 Phase C 뒤에 열립니다"
             style={{ ...button, color: theme.textDim, background: 'transparent', cursor: 'not-allowed', opacity: 0.5 }}>
             <Icons.Book size={13} /> 승인 전 수정
           </button>}
@@ -141,7 +146,8 @@ function AdminReviewDetail({ theme, item, busy, onReview, separateReviewer }) {
   </section>;
 }
 
-function AdminReviewQueue({ theme, me }) {
+// openAi — #/review/new 로 들어오면 AI 초안 요청 패널을 펼친 채 시작한다(admin-app 이 nav.id === 'new' 로 넘긴다).
+function AdminReviewQueue({ theme, me, openAi }) {
   const [state, setState] = React.useState({ loading: true, drafts: [], total: 0, error: null, separateReviewer: false });
   const [selectedId, setSelectedId] = React.useState(null);
   const [query, setQuery] = React.useState('');
@@ -149,8 +155,15 @@ function AdminReviewQueue({ theme, me }) {
   const [offset, setOffset] = React.useState(0);
   const [notice, setNotice] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
+  const [aiOpen, setAiOpen] = React.useState(Boolean(openAi));
   const requestSeq = React.useRef(0);
   const actionPending = React.useRef(false);
+  // AI 초안이 성공하면 다음 load 가 이 id 를 선택한다. load 는 기존 선택을 유지하는 규칙이라 그냥 부르면 새 행이
+  // 선택되지 않고, load 뒤에 setSelectedId 를 따로 부르면 새 행이 현재 페이지·검색 밖일 때 빈 상세가 뜬다 —
+  // 그래서 목록을 받은 자리에서 "있으면 선택" 으로 판정한다.
+  const pendingSelect = React.useRef(null);
+  // 패널이 열린 채 #/review → #/review/new 로 바뀌면(같은 컴포넌트가 살아 있다) 다시 펼친다. 닫는 쪽은 사용자 몫.
+  React.useEffect(() => { if (openAi) setAiOpen(true); }, [openAi]);
   React.useEffect(() => {
     const timer = setTimeout(() => { setOffset(0); setQ(query.trim()); }, 250);
     return () => clearTimeout(timer);
@@ -169,8 +182,22 @@ function AdminReviewQueue({ theme, me }) {
     // 마지막 페이지의 마지막 행을 처리했으면 앞 페이지로 이동한다.
     if (!res.drafts.length && offset > 0) { setOffset(Math.max(0, offset - ADMIN_REVIEW_PAGE_SIZE)); return; }
     setState({ loading: false, drafts: res.drafts, total: res.total, error: null, separateReviewer: res.require_separate_reviewer });
-    setSelectedId((id) => res.drafts.some((item) => item.id === id) ? id : res.drafts[0]?.id ?? null);
+    const wanted = pendingSelect.current;
+    pendingSelect.current = null;
+    setSelectedId((id) => {
+      if (wanted != null && res.drafts.some((item) => item.id === wanted)) return wanted;
+      return res.drafts.some((item) => item.id === id) ? id : res.drafts[0]?.id ?? null;
+    });
   }, [me?.can_author, q, offset]);
+  // AI 초안 패널의 onSucceeded(job) — job.result 의 새 콘텐츠 id(lesson_id|scenario_id|vocab_set_id)를 큐에서 선택한다.
+  // 실패(VALIDATION_FAILED 포함)는 패널이 스스로 보여 주고 여기로 오지 않는다 — 그 초안은 큐에 없기 때문이다.
+  const onAiSucceeded = async (job) => {
+    const result = job?.result || {};
+    const id = result.lesson_id ?? result.scenario_id ?? result.vocab_set_id ?? null;
+    pendingSelect.current = id;
+    await load();
+    setNotice({ error: false, text: `AI 초안이 검수 큐에 들어왔습니다${id != null ? ` (#${id})` : ''}.` });
+  };
   React.useEffect(() => { load(); return () => { requestSeq.current += 1; }; }, [load]);
   const review = async (item, action, body) => {
     if (actionPending.current) return;
@@ -198,7 +225,20 @@ function AdminReviewQueue({ theme, me }) {
         placeholder="제목 검색" maxLength={200} style={{ marginLeft: 'auto', padding: '8px 11px', borderRadius: 8, background: theme.surface, color: theme.text, border: `1px solid ${theme.borderStrong}` }} />
       <button type="button" data-testid="review-refresh" disabled={busy || state.loading} onClick={load}
         style={{ color: theme.textMuted, background: theme.chipBg, borderRadius: 8, padding: '8px 12px' }}><Icons.Refresh size={13} /> 새로고침</button>
+      <button type="button" data-testid="review-ai-toggle" aria-pressed={aiOpen} aria-expanded={aiOpen} onClick={() => setAiOpen((open) => !open)}
+        title={aiOpen ? 'AI 초안 요청 패널을 닫습니다(진행 중인 작업은 서버에서 계속됩니다)' : 'AI 초안을 요청해 검수 큐에 넣습니다'}
+        style={{ color: aiOpen ? theme.bg : theme.accent, background: aiOpen ? theme.accent : theme.chipBg, border: `1px solid ${theme.accent}`, borderRadius: 8, padding: '8px 12px', fontWeight: 700 }}>
+        <Icons.Sparkles size={13} /> AI 초안 요청
+      </button>
     </header>
+    {/* AI 초안 요청 패널(ai-draft.jsx, 플랜 14 Phase B). 파일이 빠져도 큐는 살아야 하므로 typeof 로 확인한다 —
+        admin-app 의 AdminMissingScreen 은 이 파일 뒤에 로드돼 여기서 못 쓰고, 같은 testid 의 간단한 div 를 그린다.
+        닫으면 언마운트라 폴링도 멈춘다(패널 안 alive 플래그). 작업은 서버에서 이어지고 새로고침으로 결과가 보인다. */}
+    {aiOpen && (typeof AdminAiDraftPanel === 'function'
+      ? <AdminAiDraftPanel theme={theme} me={me} onSucceeded={onAiSucceeded} />
+      : <div data-testid="admin-missing-screen" data-file="src/admin/ai-draft.jsx" style={{ padding: '14px 26px', color: theme.error, fontSize: 13 }}>
+        AI 초안 요청 패널(src/admin/ai-draft.jsx)이 로드되지 않았습니다 — admin.html 의 script 순서를 확인하세요.
+      </div>)}
     {notice && <div data-testid="review-notice" role="status" style={{ padding: '10px 26px', color: notice.error ? theme.error : theme.success, fontSize: 13 }}>{notice.text}</div>}
     {state.error && <div data-testid="review-error" role="alert" style={{ padding: '10px 26px', color: theme.error }}>{state.error}</div>}
     <main className="admin-review-layout" data-testid="review-queue" aria-busy={state.loading} style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 310px) minmax(0, 1fr)', gap: 18, padding: '18px 26px', flex: 1, minHeight: 0 }}>

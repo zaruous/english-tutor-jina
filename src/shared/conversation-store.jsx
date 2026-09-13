@@ -158,6 +158,26 @@ function ConversationProvider({ children }) {
     setError(null);
   }, []);
 
+  const archiveSession = React.useCallback(async (id) => {
+    const res = await window.JINA_API.patch(`/api/conversations/${id}`, { archived: true });
+    if (!res.ok) {
+      setError(res.hint ? `${res.error} — ${res.hint}` : res.error);
+      return res;
+    }
+    setSessions((prev) => {
+      const next = prev.filter((s) => s.id !== id);
+      try { localStorage.setItem(CONVO_CACHE_KEY, JSON.stringify({ sessions: next })); } catch {}
+      return next;
+    });
+    if (activeSessionId === id) {
+      setActiveSessionId(null);
+      setMessages([]);
+      setLoading(false);
+    }
+    setError(null);
+    return res;
+  }, [activeSessionId]);
+
   const startScenario = React.useCallback(async (scenarioId) => {
     const created = await window.JINA_API.post('/api/conversations', { scenario_id: scenarioId });
     if (!created.ok) {
@@ -223,9 +243,11 @@ function ConversationProvider({ children }) {
   const value = React.useMemo(() => ({
     messages, loading, error, send, reset,
     sessions, activeSessionId, sessionsLoading,
-    selectSession, newSession, startScenario, activeSession, lastScored, formatSessionTime,
+    selectSession, newSession, startScenario, archiveSession,
+    activeSession, lastScored, formatSessionTime,
   }), [messages, loading, error, send, reset, sessions, activeSessionId,
-       sessionsLoading, selectSession, newSession, startScenario, activeSession, lastScored]);
+       sessionsLoading, selectSession, newSession, startScenario, archiveSession,
+       activeSession, lastScored]);
 
   return <ConversationContext.Provider value={value}>{children}</ConversationContext.Provider>;
 }
@@ -245,6 +267,7 @@ const FALLBACK_SESSIONS = [
     last_message_at: new Date(Date.now() - 5 * 60e3).toISOString(),
     ended_at: null, message_count: 4, avg_score: 83,
     last_user_text: 'Sure! They also offer next-day delivery.',
+    archived: false, archived_at: null,
   },
   {
     id: 2, title: '카페에서 주문하기', status: 'ended', scenario: null,
@@ -253,6 +276,7 @@ const FALLBACK_SESSIONS = [
     ended_at: new Date(Date.now() - 24 * 3600e3).toISOString(),
     message_count: 2, avg_score: null,
     last_user_text: 'Can I get a iced americano, please?',
+    archived: false, archived_at: null,
   },
 ];
 
@@ -317,6 +341,7 @@ function useConversationFallback() {
     sessions: FALLBACK_SESSIONS, activeSessionId, sessionsLoading: false,
     selectSession, newSession,
     startScenario: () => Promise.resolve({ ok: false, code: 'READONLY', error: '캔버스에서는 새 시나리오를 저장할 수 없습니다.' }),
+    archiveSession: () => Promise.resolve({ ok: false, code: 'READONLY', error: '캔버스에서는 보관할 수 없습니다.' }),
     activeSession, lastScored, formatSessionTime,
   };
 }

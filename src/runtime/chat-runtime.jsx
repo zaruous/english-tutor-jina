@@ -242,6 +242,7 @@ function JinaInputBar({ theme, onSend, loading, suggestions, provider, modelInfo
 
 // Live AI message bubble — renders parsed JSON response
 function LiveJinaMessage({ theme, msg, compact = false }) {
+  const SpeakBtn = typeof window.SpeakButton === 'function' ? window.SpeakButton : null;
   if (msg.kind === 'jina-error') {
     return (
       <div style={{ display: 'flex', gap: compact ? 8 : 12 }}>
@@ -283,8 +284,20 @@ function LiveJinaMessage({ theme, msg, compact = false }) {
           padding: compact ? '11px 13px' : '14px 16px', borderRadius: 16, borderTopLeftRadius: 4,
           background: theme.chipBg, border: `1px solid ${theme.border}`,
         }}>
-          <div style={{ fontSize: compact ? 13.5 : 14.5, color: theme.text, lineHeight: 1.55 }}>
-            {msg.reply_en}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            <div style={{ flex: 1, fontSize: compact ? 13.5 : 14.5, color: theme.text, lineHeight: 1.55 }}>
+              {msg.reply_en}
+            </div>
+            {SpeakBtn && msg.reply_en && (
+              <SpeakBtn
+                text={msg.reply_en}
+                theme={theme}
+                size={compact ? 13 : 14}
+                rate={0.95}
+                label="AI 응답 듣기"
+                style={{ flexShrink: 0, marginTop: 1, color: theme.textMuted }}
+              />
+            )}
           </div>
           {msg.reply_ko && (
             <div style={{ fontSize: 12, color: theme.textMuted, lineHeight: 1.5, marginTop: 8, paddingTop: 8, borderTop: `1px dashed ${theme.border}` }}>

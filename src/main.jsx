@@ -265,7 +265,7 @@ function SettingsPanel({ theme, themeName, setThemeName, aiConfig, setAiConfig, 
           </button>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+        <div className="jina-scroll" style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
           {/* 계정 — 표시 이름 변경(PATCH /api/me) + 로그아웃 */}
           {user && (
             <React.Fragment>
@@ -546,8 +546,7 @@ function JinaApp() {
   // 전역 설정 동기화
   React.useEffect(() => { window.__JINA_AI_CONFIG = aiConfig; }, [aiConfig]);
   React.useEffect(() => {
-    window.__JINA_THEME = themeName;
-    window.dispatchEvent(new CustomEvent('jina-theme-change', { detail: { theme: themeName } }));
+    setJinaTheme(themeName);
   }, [themeName]);
   React.useEffect(() => {
     window.__JINA_STT_MODE = sttMode;
@@ -622,13 +621,14 @@ function JinaApp() {
   };
 
   return (
-    <div style={{
+    <div className="jina-root" style={{
       width: '100vw', height: '100vh',
       background: theme.bg, color: theme.text,
       display: 'flex', flexDirection: 'column',
       overflow: 'hidden',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Pretendard Variable", system-ui, sans-serif',
     }}>
+      <JinaUiChrome theme={theme} />
       {/* 데스크탑 상단 네비 */}
       {!isMobile && (
         <TopNav

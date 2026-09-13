@@ -2,7 +2,7 @@
 // 요청은 짧은 HTTP 안에서 queued로 저장하고, 느린 CLI 호출은 ai-job-worker.js가 처리한다.
 import { createHash } from 'node:crypto';
 import { discoverable } from '../lib/content-scope.js';
-import { HttpError } from '../lib/errors.js';
+import { HttpError, hintFor } from '../lib/errors.js';
 import { pool } from '../lib/pool.js';
 import { atLeast, loadRoles } from '../lib/roles.js';
 import { withTx } from '../lib/tx.js';
@@ -97,7 +97,13 @@ export function jobDto(row) {
     model: row.model,
     status: row.status,
     result: row.result,
-    error: row.error_code ? { code: row.error_code, message: row.error_message } : null,
+    // hint 는 안내 문구의 단일 소스를 서버(errors.js hintFor)에 두기 위한 것이다(플랜 14 §1 B2) —
+    // Ollama 미기동(CLI_NOT_FOUND)이 화면에서 "fetch failed" 로만 보이지 않게. 화면은 code→문구 표를 따로
+    // 만들지 않고 이 값을 그대로 그린다. 해당 문구가 없는 코드는 null 이다(sendError 처럼 키를 빼지 않는다 —
+    // 화면이 error.hint 를 늘 같은 자리에서 읽을 수 있게).
+    error: row.error_code
+      ? { code: row.error_code, message: row.error_message, hint: hintFor(row.error_code, row.provider) ?? null }
+      : null,
     attempts: row.attempts,
     created_at: row.created_at,
     started_at: row.started_at,
@@ -381,9 +387,60 @@ export async function saveGeneratedLesson(job, data, aiMeta) {
   });
 }
 
+// ── 회화·단어 세트 검증기 (플랜 14 §1 D1) ─────────────────────────────────────────────
+// 생성 경로(saveGenerated* → 502 VALIDATION_FAILED)와 저작 경로(admin-authoring.service → 422)가 **같은 함수**를
+// 부른다 — 레슨의 validateGeneratedLesson 과 같은 규범(플랜 13 결정 2: 규칙의 단일 소스는 검증기). 문구는 플랜 14
+// §3 표 그대로다. 접두 `objectives[N]` · `words[N].<field>` 는 에디터가 /^(objectives|words)\[(\d+)\]/ 로 줄을
+// 붉게 칠하는 키라 바꾸면 화면이 깨진다. 접두 없는 문구(title·system_prompt·opening_message·개수)는 하단 띠에 그린다.
+const blank = (value) => !String(value ?? '').trim();
+
+export function validateGeneratedScenario(data) {
+  const errors = [];
+  if (blank(data?.title)) errors.push('title이 비어 있습니다.');
+  if (blank(data?.system_prompt)) errors.push('system_prompt 가 비어 있습니다.');
+  if (blank(data?.opening_message)) errors.push('opening_message 가 비어 있습니다.');
+  // 2~5 는 SCENARIO_GEN_SCHEMA.objectives 와 같은 범위다 — 학습 화면이 목표 칩을 그 수만큼 그린다.
+  const objectives = Array.isArray(data?.objectives) ? data.objectives : [];
+  if (objectives.length < 2 || objectives.length > 5) errors.push('objectives 는 2~5개여야 합니다.');
+  objectives.forEach((objective, i) => {
+    if (blank(objective)) errors.push(`objectives[${i}] 이 비어 있습니다.`);
+  });
+  return errors;
+}
+
+// expectedCount 는 생성 경로만 넘긴다(20 — 토픽 임계·'20단어 담기' 라벨). 저작은 1~50 이고 20 이 아닌 것은
+// 화면의 비차단 경고다(플랜 14 §1 D4). 중복은 lower(trim) 기준이고 **뒤에 나온 쪽**을 지목한다 — 앞 행은
+// 정상이고 뒤 행이 "다른 단어와" 겹친 것이라, 화면이 지울 행을 바로 가리킬 수 있다. 진행률 분모가 DISTINCT lower
+// 라 중복이 있으면 eligible 배지와 어긋나므로 저작에서도 422 다.
+export function validateGeneratedVocabSet(data, { expectedCount } = {}) {
+  const errors = [];
+  if (blank(data?.title)) errors.push('title이 비어 있습니다.');
+  const words = Array.isArray(data?.words) ? data.words : [];
+  if (expectedCount !== undefined) {
+    if (words.length !== expectedCount) errors.push(`words 는 ${expectedCount}개여야 합니다.`);
+  } else if (words.length < 1 || words.length > 50) {
+    errors.push('words 는 1~50개여야 합니다.');
+  }
+  const seen = new Set();
+  words.forEach((entry, i) => {
+    const word = String(entry?.word ?? '').trim();
+    if (!word) errors.push(`words[${i}].word 가 비어 있습니다.`);
+    if (blank(entry?.meaning_ko)) errors.push(`words[${i}].meaning_ko 가 비어 있습니다.`);
+    if (!word) return;
+    const key = word.toLowerCase();
+    if (seen.has(key)) errors.push(`words[${i}].word 가 다른 단어와 중복됩니다.`);
+    seen.add(key);
+  });
+  return errors;
+}
+
 export async function saveGeneratedScenario(job, data) {
-  if (!data.title || !data.system_prompt || !data.opening_message || data.objectives.length < 2) {
-    throw new HttpError(502, 'VALIDATION_FAILED', '생성된 회화 시나리오의 필수 내용이 부족합니다.');
+  // 검증 실패는 지금까지와 같은 502 VALIDATION_FAILED 다 — 워커가 code·message 를 ai_jobs 에 적고, 예전 문구를
+  // 앞에 그대로 둬서 이 문구를 보는 스크립트·로그가 깨지지 않게 한다. 세부 항목은 뒤에 붙인다.
+  const errors = validateGeneratedScenario(data);
+  if (errors.length) {
+    throw new HttpError(502, 'VALIDATION_FAILED',
+      `생성된 회화 시나리오의 필수 내용이 부족합니다. ${errors.join(' ')}`, { validation_errors: errors });
   }
   return withTx(async (client) => {
     const slug = `ai-scenario-${job.user_id}-${job.id}`;
@@ -413,8 +470,11 @@ export async function saveGeneratedScenario(job, data) {
 }
 
 export async function saveGeneratedVocabSet(job, data) {
-  if (!data.title || !Array.isArray(data.words) || data.words.length !== 20) {
-    throw new HttpError(502, 'VALIDATION_FAILED', '생성된 단어 세트는 중복 없는 단어 20개여야 합니다.');
+  // normalizeVocabSet 이 빈 단어·중복을 이미 걸러 내므로 여기서 걸리는 것은 사실상 개수(20)뿐이다.
+  const errors = validateGeneratedVocabSet(data, { expectedCount: 20 });
+  if (errors.length) {
+    throw new HttpError(502, 'VALIDATION_FAILED',
+      `생성된 단어 세트는 중복 없는 단어 20개여야 합니다. ${errors.join(' ')}`, { validation_errors: errors });
   }
   const result = await withTx(async (client) => {
     const slug = `ai-vocab-set-${job.user_id}-${job.id}`;

@@ -20,7 +20,7 @@ const CURATED_LESSON = 'toeic-lc-short-conversation-1';
 const SEED_LESSON = 'toeic-part7-set23';
 const SCENARIO = 'business-interview-star';
 const VOCAB_SET = 'business-interview-core-20';
-const TOPIC = 'business-interview';
+const TOPIC = 'toeic-rc-business-email';
 
 async function reseed() {
   const client = await pool.connect();
