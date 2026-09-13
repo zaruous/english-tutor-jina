@@ -59,12 +59,16 @@ function LessonProvider({ children }) {
 
   React.useEffect(() => { refresh(); }, [refresh]);
 
-  const select = React.useCallback(async (lessonId) => {
+  // fromHistory: 오답 노트·통계처럼 **이미 푼 것**에서 들어오는 경로. 서버에 scope=resolvable 을
+  // 요구해 관리자가 내린(archived) 레슨도 열 수 있게 한다 — 안 하면 오답 카드의 [다시 풀기]가
+  // 404 로 죽고 사용자의 오답이 사라진 것처럼 보인다(플랜 11 §3 표 · 결정 2).
+  const select = React.useCallback(async (lessonId, { fromHistory = false } = {}) => {
     if (!lessonId) return;
     setCurrentId(lessonId);
     if (details[lessonId]) return; // detail 캐시 재사용 (localStorage에는 저장 안 함 — 본문이 크다)
     setCurrentLoading(true);
-    const res = await window.JINA_API.get(`/api/lessons/${lessonId}`);
+    const res = await window.JINA_API.get(
+      `/api/lessons/${lessonId}${fromHistory ? '?scope=resolvable' : ''}`);
     if (res.ok) {
       setError(null);
       setDetails((prev) => ({ ...prev, [lessonId]: normalizeLessonDetail(res.lesson) }));

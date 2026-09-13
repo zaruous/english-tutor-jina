@@ -23,7 +23,9 @@ check('비즈니스 면접 토픽 — 임계치 충족(레슨≥3·회화≥1·�
   T && T.lesson_count >= 3 && T.scenario_count >= 1 && T.vocab_count >= 20 && T.eligible === true,
   T && `${T.lesson_count}/${T.scenario_count}/${T.vocab_count}`);
 
-// 임계치 미만 토픽은 기본 목록에서 숨김 — 빈 임시 토픽을 넣어 검증
+// 임계치 미만 토픽도 기본 목록에 나온다(플랜 11 결정 3) — 빈 임시 토픽을 넣어 검증.
+// 예전에는 숨겼는데, 그러면 관리자가 토픽을 새로 만들어도 콘텐츠를 다 채우기 전까지
+// 화면에 안 보여 저작이 막혔다. 지금은 eligible=false 로 나가고 관리 화면이 배지로 경고한다.
 await pool.query(`DELETE FROM topics WHERE slug = 'e2e-temp-topic'`);
 // status 축 도입 후(플랜 10.7 Phase 2)에는 공개 상태를 명시해야 목록에 뜬다 —
 // 이 픽스처가 검증하려는 것은 "draft 라서 숨김"이 아니라 "임계치 미만이라 숨김"이다.
@@ -31,12 +33,13 @@ await pool.query(
   `INSERT INTO topics (slug, label_ko, description, status, visibility)
    VALUES ('e2e-temp-topic', '임시 검증 토픽', 'e2e', 'published', 'public')`);
 try {
-  const hidden = await getJson('/api/topics');
-  check('임계치 미만 토픽 — 기본 목록에서 숨김',
-    hidden.ok && !hidden.topics.some((t) => t.slug === 'e2e-temp-topic'));
-  const all = await getJson('/api/topics?all=1');
-  const temp = all.topics?.find((t) => t.slug === 'e2e-temp-topic');
-  check('?all=1 — 임계치 미만 토픽 노출 · eligible=false', Boolean(temp) && temp.eligible === false);
+  const listed = await getJson('/api/topics');
+  const temp = listed.topics?.find((t) => t.slug === 'e2e-temp-topic');
+  check('임계치 미만 토픽도 기본 목록에 노출 (필터 → 배지)',
+    listed.ok && Boolean(temp), temp ? temp.slug : '(없음)');
+  check('임계치 미만 토픽의 eligible=false (계산은 그대로 유지)',
+    Boolean(temp) && temp.eligible === false && temp.lesson_count === 0,
+    temp && `eligible=${temp.eligible} lesson=${temp.lesson_count}`);
 } finally {
   await pool.query(`DELETE FROM topics WHERE slug = 'e2e-temp-topic'`);
 }

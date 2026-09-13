@@ -55,6 +55,7 @@ export function registerVocabRoutes(router) {
       const abort = new AbortController();
       res.on('close', () => { if (!res.writableEnded) abort.abort(); });
       const ai = await askAI({
+        userId: user.id, // 사용자당 동기 요청 1건 — 초과분은 429 (플랜 10.5 S7)
         task: 'vocab_entry',
         providerId: body.provider || defaultProviderId(),
         model: str(body.model, 'model', { max: 100, optional: true }) ?? null,
@@ -84,6 +85,7 @@ export function registerVocabRoutes(router) {
     const abort = new AbortController();
     res.on('close', () => { if (!res.writableEnded) abort.abort(); });
     const ai = await askAI({
+      userId: user.id, // 사용자당 동기 요청 1건 — 초과분은 429 (플랜 10.5 S7)
       task: 'vocab_quiz',
       providerId, model,
       userMessage: renderQuizRequest({ kind, keyword, exclude }),

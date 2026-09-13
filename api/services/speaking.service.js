@@ -3,8 +3,12 @@
 //  - 회화 시나리오 opening_message: 자연스러운 영어 첫 질문.
 //  - 레슨 vocab 예문: 문장 형태인 것만(시드 데이터에는 구 조각도 섞여 있다).
 // 문장이 없으면 빈 배열을 주고, 화면이 고정 시드 20문장으로 폴백한다.
+import { discoverable } from '../lib/content-scope.js';
 import { pool } from '../lib/pool.js';
 
+// 문장 은행은 "지금 읽기 연습할 것" 을 고르는 자리라 세 파생 쿼리 모두 discoverable 이다
+// (플랜 11 §3 표). 조건만 헬퍼로 옮겼을 뿐 쿼리 자체는 그대로다 — 내린(archived) 콘텐츠의 문장이
+// 계속 연습 목록에 뜨는 것을 막는 것이 이 교체의 전부다.
 const MAX_SENTENCES = 40;
 
 // 읽기 연습에 쓸 만한 문장인가 — 4단어 이상, 알파벳으로 시작, 200자 이하.
@@ -24,8 +28,7 @@ export async function listSpeakingSentences(user, { limit = 20 } = {}) {
       `SELECT c.title, jsonb_array_elements(d.passage -> 'body') ->> 'text' AS line
          FROM content_items c
          JOIN lesson_details d ON d.content_id = c.id
-        WHERE d.kind = 'toeic_lc' AND c.type = 'lesson' AND c.status = 'published'
-          AND (c.visibility = 'public' OR c.created_by = $1)
+        WHERE d.kind = 'toeic_lc' AND c.type = 'lesson' AND ${discoverable('c', '$1')}
           AND jsonb_typeof(d.passage -> 'body') = 'array'`,
       [user.id],
     ),
@@ -33,16 +36,14 @@ export async function listSpeakingSentences(user, { limit = 20 } = {}) {
       `SELECT c.title, sd.opening_message
          FROM content_items c
          JOIN scenario_details sd ON sd.content_id = c.id
-        WHERE c.type = 'scenario' AND c.status = 'published'
-          AND (c.visibility = 'public' OR c.created_by = $1)`,
+        WHERE c.type = 'scenario' AND ${discoverable('c', '$1')}`,
       [user.id],
     ),
     pool.query(
       `SELECT c.title, jsonb_array_elements(d.vocab) ->> 'ex' AS ex
          FROM content_items c
          JOIN lesson_details d ON d.content_id = c.id
-        WHERE c.type = 'lesson' AND c.status = 'published'
-          AND (c.visibility = 'public' OR c.created_by = $1)
+        WHERE c.type = 'lesson' AND ${discoverable('c', '$1')}
           AND jsonb_typeof(d.vocab) = 'array'`,
       [user.id],
     ),

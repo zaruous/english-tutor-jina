@@ -12,16 +12,32 @@
 <body>
   <div id="root"></div>
 
+  <!-- .env 설정값 주입 (server.js가 /config.js 동적 생성) -->
   <script src="/config.js"></script>
 
   <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 
+  <!-- Shared: tokens → icons → api-client → auth-store
+       빌드 단계가 없다(결정 4의 비용). 순서를 손으로 맞춰야 하고 index.html·canvas.html 과 같은 규약을 쓴다:
+         - tokens 는 JINA_THEMES·jina-root 기본 스타일을 주입하므로 항상 첫 번째
+         - icons 는 Icons.* 를 쓰는 모든 화면보다 앞
+         - api-client(window.JINA_API) 는 auth-store 보다 앞
+         - auth-store(AuthProvider·useAuth) 는 이것을 쓰는 모든 화면보다 앞
+       학습 화면(src/screens/**)·speech·app-nav 는 여기서 로드하지 않는다 — admin 은 별도 엔트리다. -->
   <script type="text/babel" src="src/shared/tokens.jsx"></script>
   <script type="text/babel" src="src/shared/icons.jsx"></script>
   <script type="text/babel" src="src/shared/api-client.jsx"></script>
   <script type="text/babel" src="src/shared/auth-store.jsx"></script>
+
+  <!-- Admin: content-store → users → admin-app
+       admin-app 이 **반드시 마지막**이다. users.jsx 는 자기 root 를 만들어 스스로 render 하는
+       완결된 엔트리이고 이 플랜에서 수정 대상이 아니라서, admin-app 이 그 root 를 넘겨받아
+       다시 render 하는 방식으로 화면 전환(#/contents ↔ #/users)을 얹는다.
+       순서가 뒤집히면 users.jsx 의 render 가 마지막에 이겨 콘텐츠 화면이 뜨지 않는다. -->
+  <script type="text/babel" src="src/admin/content-store.jsx"></script>
   <script type="text/babel" src="src/admin/users.jsx"></script>
+  <script type="text/babel" src="src/admin/admin-app.jsx"></script>
 </body>
 </html>

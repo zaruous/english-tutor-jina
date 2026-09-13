@@ -11,13 +11,14 @@ export function registerAiRoutes(router) {
   // 채팅 프록시. 요청이 끊기면(탭 닫기/Enter 연타 취소) CLI 프로세스까지 죽인다 —
   // 이게 없으면 고아 프로세스가 세마포어 슬롯을 물고 앉아 앱이 잠긴다.
   router.post('/api/ai/chat', async (req, res) => {
-    await requireUser(req, res);
+    const { user } = await requireUser(req, res);
     const body = await readJson(req);
 
     const abort = new AbortController();
     res.on('close', () => { if (!res.writableEnded) abort.abort(); });
 
     const result = await askAI({
+      userId: user.id, // 사용자당 동기 요청 1건 — 초과분은 429 (플랜 10.5 S7)
       task: body.task === 'vocab_entry' ? 'vocab_entry' : 'tutor',
       providerId: body.provider || defaultProviderId(),
       model: str(body.model, 'model', { max: 100, optional: true }) ?? null,

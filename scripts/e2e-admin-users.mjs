@@ -234,6 +234,10 @@ try {
   }]);
   await pg.goto(`${BASE}/admin.html`);
   await pg.waitForTimeout(9000);
+  // admin.html 의 기본 탭은 콘텐츠 관리다(플랜 11 Phase 2 — 설정 패널 링크 이름도 '콘텐츠 관리').
+  // 사용자 관리는 해시 라우트 #/users 로 들어간다.
+  await pg.locator('[data-testid="admin-tab-users"]').click().catch(() => {});
+  await pg.waitForTimeout(2500);
   const hasTable = (await pg.locator('[data-testid="user-row"]').count()) >= 1;
   const hasDropdown = (await pg.locator('[data-testid="role-select"]').count()) >= 1;
   const hasLock = (await pg.locator('[data-testid="role-locked"]').count()) >= 1;

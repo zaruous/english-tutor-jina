@@ -34,10 +34,15 @@ export function registerLessonRoutes(router) {
     sendJson(res, 200, { ok: true, lessons: await lessons.recommendLessons(user, { limit }) });
   });
 
-  router.get('/api/lessons/:id', async (req, res, { params }) => {
+  // ?scope=resolvable — 오답 노트·Q&A 처럼 **이미 푼 것의 근거**를 여는 경로다(플랜 11 §3 표).
+  // 기본은 discoverable(= 지금 새로 풀 수 있는 것)이라 내린(archived) 레슨은 404 인데,
+  // 그것이 오답 카드의 [다시 풀기]·[Jina에게 물어보기]까지 막으면 **사용자의 오답이 사라진다.**
+  // 넓히는 쪽을 명시적으로 요구하게 두는 이유: 기본값이 넓으면 새 시도 경로가 조용히 내린 레슨을 연다.
+  router.get('/api/lessons/:id', async (req, res, { params, query }) => {
     const { user } = await requireUser(req, res);
     const lessonId = posInt(params.id, 'id');
-    sendJson(res, 200, { ok: true, ...(await lessons.getLesson(user, lessonId)) });
+    const scope = query.get('scope') === 'resolvable' ? 'resolvable' : 'discoverable';
+    sendJson(res, 200, { ok: true, ...(await lessons.getLesson(user, lessonId, { scope })) });
   });
 
   router.post('/api/lessons/:id/attempts', async (req, res, { params }) => {
@@ -97,6 +102,7 @@ export function registerLessonRoutes(router) {
     const abort = new AbortController();
     res.on('close', () => { if (!res.writableEnded) abort.abort(); });
     const ai = await askAI({
+      userId: user.id, // 사용자당 동기 요청 1건 — 초과분은 429 (플랜 10.5 S7)
       task: 'lesson_qa',
       providerId, model,
       history: [],

@@ -1,6 +1,7 @@
 // AI 생성 작업 상태/게시 서비스 — docs/plan/07 Phase 2~3.
 // 요청은 짧은 HTTP 안에서 queued로 저장하고, 느린 CLI 호출은 ai-job-worker.js가 처리한다.
 import { createHash } from 'node:crypto';
+import { discoverable } from '../lib/content-scope.js';
 import { HttpError } from '../lib/errors.js';
 import { pool } from '../lib/pool.js';
 import { withTx } from '../lib/tx.js';
@@ -97,11 +98,14 @@ export function jobDto(row) {
   };
 }
 
+// 생성물을 담을 토픽에 접근할 수 있는지 — discoverable 이다(플랜 11 §3 표).
+// "지금 새로 콘텐츠를 넣을 자리를 고르는" 조회라, 관리자가 내린(archived) 토픽에는 넣지 못한다.
+// $1 = topic_id, $2 = user_id 순서라 헬퍼에 넘기는 자리표시자는 $2 다(바꾸면 소유자 판정이 뒤집힌다).
 async function assertTopicAccess(client, userId, topicId) {
   if (!topicId) return;
   const { rowCount } = await client.query(
-    `SELECT 1 FROM topics
-      WHERE id = $1 AND (visibility = 'public' OR created_by = $2)`,
+    `SELECT 1 FROM topics t
+      WHERE t.id = $1 AND ${discoverable('t', '$2')}`,
     [topicId, userId],
   );
   if (rowCount === 0) throw new HttpError(404, 'NOT_FOUND', '토픽을 찾을 수 없습니다.');
@@ -318,6 +322,11 @@ export async function saveGeneratedLesson(job, data, aiMeta) {
       ? ['이 대화의 핵심 표현을 정리해 주세요', '놓치기 쉬운 발음·연음을 짚어 주세요']
       : ['틀린 보기의 문법적 차이를 설명해 주세요', '이 문항과 비슷한 예문을 만들어 주세요'];
     // 카탈로그 상위 + 타입별 detail 1:1 (플랜 10.7 Phase 2). 생성물은 공개 상태이되 본인에게만 보인다.
+    // ★ status 를 반드시 **명시**한다(플랜 11 §2 결정 1 의 기본값 함정). content_items.status 의 DB
+    //   기본값은 'draft' 라, 지금처럼 visibility 만 적고 status 를 빼면 생성물이 draft 로 저장되고
+    //   discoverable(= status='published')에 걸려 **사용자가 방금 만든 자기 콘텐츠를 못 본다**.
+    //   'published' + 'private' = "정식 콘텐츠이되 만든 사람에게만 보인다" — 지금 동작 그대로다.
+    //   검수를 거쳐 카탈로그(public)로 올리는 publish_target 은 플랜 12 다. 여기서 넓히지 말 것.
     const { rows: [lesson] } = await client.query(
       `INSERT INTO content_items (type, slug, title, difficulty, status, visibility, source, created_by)
        VALUES ('lesson', $1, $2, $3, 'published', 'private', 'ai', $4)
@@ -363,6 +372,7 @@ export async function saveGeneratedScenario(job, data) {
   }
   return withTx(async (client) => {
     const slug = `ai-scenario-${job.user_id}-${job.id}`;
+    // status 명시는 saveGeneratedLesson 과 같은 이유다(결정 1 기본값 함정) — 빼면 draft 로 저장된다.
     const { rows: [row] } = await client.query(
       `INSERT INTO content_items (type, slug, title, description, difficulty, status, visibility, source, created_by)
        VALUES ('scenario', $1, $2, $3, $4, 'published', 'private', 'ai', $5)
@@ -393,6 +403,7 @@ export async function saveGeneratedVocabSet(job, data) {
   }
   const result = await withTx(async (client) => {
     const slug = `ai-vocab-set-${job.user_id}-${job.id}`;
+    // status 명시는 saveGeneratedLesson 과 같은 이유다(결정 1 기본값 함정) — 빼면 draft 로 저장된다.
     const { rows: [row] } = await client.query(
       `INSERT INTO content_items (type, slug, title, description, status, visibility, source, created_by)
        VALUES ('vocab_set', $1, $2, $3, 'published', 'private', 'ai', $4)

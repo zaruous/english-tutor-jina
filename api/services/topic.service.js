@@ -1,13 +1,17 @@
 // 토픽 서비스 — 콘텐츠 수와 진행률은 저장하지 않고 관계/이벤트 테이블에서 매 요청 계산한다.
+import { discoverable } from '../lib/content-scope.js';
 import { HttpError } from '../lib/errors.js';
 import { pool } from '../lib/pool.js';
 import { withTx } from '../lib/tx.js';
 
-// 콘텐츠 가시성 판정은 타입과 무관하게 같다 — content_items 한 곳만 본다 (플랜 10.7 Phase 2).
-// $1 은 항상 user_id: 소유자는 자기 비공개 콘텐츠도 본다.
-const VISIBLE = (a) => `${a}.status = 'published' AND (${a}.visibility = 'public' OR ${a}.created_by = $1)`;
+// 이 파일의 쿼리는 전부 "지금 학습할 수 있는 것" 을 고르는 자리다 — 목록·상세·진행률 분모까지
+// 하나도 빠짐없이 discoverable 이다(플랜 11 §3 표). 그래서 가시성 조건을 여기서 다시 적지 않고
+// content-scope.js 만 부른다: 규칙이 바뀌는 날 이 파일만 안 바뀌는 사고가 그렇게 생겨 왔다.
+// 특히 진행률 CTE 의 분모가 빠지면 관리자가 내린(archived) 콘텐츠가 분모에 남아 100% 가 안 된다.
+// topics 도 content_items 와 같은 status/visibility/created_by 3종을 가지므로 같은 헬퍼를 쓴다.
+// $1 은 이 파일의 모든 쿼리에서 user_id: 소유자는 자기 비공개 콘텐츠도 본다.
 // 토픽 구성은 (topic_id, content_id) 단일 FK 다 — 배타 FK 3종과 부분 UNIQUE 가 사라졌다.
-const OF_TYPE = (a, type) => `${a}.type = '${type}' AND ${VISIBLE(a)}`;
+const OF_TYPE = (a, type) => `${a}.type = '${type}' AND ${discoverable(a, '$1')}`;
 
 const TOPIC_SUMMARY = `
   SELECT t.id, t.slug, t.label_ko, t.description, t.visibility,
@@ -25,8 +29,14 @@ const TOPIC_SUMMARY = `
             JOIN vocab_set_details vd ON vd.content_id = v.id
            WHERE tc.topic_id = t.id AND ${OF_TYPE('v', 'vocab_set')}) AS vocab_count
     FROM topics t
-   WHERE ${VISIBLE('t')}`;
+   WHERE ${discoverable('t', '$1')}`;
 
+// eligible = 임계치(레슨 3 + 시나리오 1 + 단어 20)를 채웠는가. **필터가 아니라 배지다**(플랜 11 결정 3).
+// 예전에는 listTopics 가 이 값이 false 인 토픽을 목록에서 통째로 숨겼는데, 그러면 관리자가 토픽을
+// 새로 만들어도 콘텐츠를 다 채우기 전까지 화면에 뜨지 않아 저작을 시작할 수가 없었다.
+// 노출 여부는 이제 status 가 정하고(위 discoverable), 이 값은 관리 화면의 경고 배지 재료로만 남는다.
+// 계산은 그대로 둔다 — 집계 3개는 화면에서 여전히 쓸모가 있다.
+// 학습 앱(src/screens/topics.jsx)은 이 필드를 렌더하지 않는다.
 function topicDto(row) {
   const eligible = row.lesson_count >= 3 && row.scenario_count >= 1 && row.vocab_count >= 20;
   return {
@@ -36,10 +46,11 @@ function topicDto(row) {
   };
 }
 
-export async function listTopics(user, { includeIneligible = false } = {}) {
+// 옛 두 번째 인자 { includeIneligible } 은 사라졌다 — 이제 걸러내는 것이 없으니 켤 것도 없다.
+// 남아 있는 호출부가 그대로 넘겨도 무시될 뿐 깨지지 않는다(topic.routes.js 의 `?all=1` 정리는 별건).
+export async function listTopics(user) {
   const { rows } = await pool.query(`${TOPIC_SUMMARY} ORDER BY t.created_at, t.id`, [user.id]);
-  const topics = rows.map(topicDto);
-  return includeIneligible ? topics : topics.filter((t) => t.eligible);
+  return rows.map(topicDto);
 }
 
 async function getTopicRow(user, topicId) {

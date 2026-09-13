@@ -12,7 +12,7 @@
 import { config } from '../config.js';
 import { HttpError } from '../lib/errors.js';
 import { extractJson } from '../lib/cli/json.js';
-import { Semaphore } from '../lib/semaphore.js';
+import { KeyedSemaphore, Semaphore } from '../lib/semaphore.js';
 import { NORMALIZERS } from './normalize.js';
 import { LIMITS, renderChatMessages, renderCliPrompt, renderRepairPrompt } from './prompts.js';
 import { LESSON_GEN_LC_SCHEMA, TASK_SCHEMAS, validateAgainst } from './schemas.js';
@@ -33,6 +33,33 @@ function providerSemaphore(id) {
   return providerSemaphores.get(id);
 }
 
+// 사용자당 동기 요청 1건 (플랜 10.5 S7). provider 2 · 전역 4 한도만 있던 시절에는 한 사용자가
+// 30분짜리 요청 두 건으로 provider 슬롯을 통째로 물 수 있었고, 그동안 나머지 전원은 대기열(8)에서
+// 20초를 기다린 뒤 503 BUSY 를 받았다. 그래서 사용자 단위로 Semaphore(1) 을 하나씩 둔다.
+// queueMax:0 — 두 번째 요청은 기다리지 않고 즉시 429. 30분을 물 수 있는 경로에서 20초를 기다려 봐야
+// 사용자는 아무것도 얻지 못하고 연결만 붙잡는다.
+// 코드가 RATE_LIMITED 인 이유: 플랜은 QUEUE_FULL 을 적었지만 errors.js 의 CODE_STATUS 에 그 코드가 없고
+// errors.js 는 이번 작업 범위 밖이다. 429 로 매핑되는 기존 코드를 그대로 쓴다.
+const userSemaphores = new KeyedSemaphore(1, {
+  onFull: () => new HttpError(429, 'RATE_LIMITED',
+    '이미 처리 중인 AI 요청이 있습니다. 끝난 뒤에 다시 시도하세요.'),
+});
+
+// userId 가 없으면 게이트를 건너뛴다 — ai_jobs 워커(api/services/ai-job-worker.js)가 그 경로다.
+// 워커는 사용자를 대신해 도는 백그라운드 실행이고, 사용자당 제한은 큐 적재 시점에 이미 걸려 있다
+// (queued 3건). 여기서 또 막으면 학습자가 동기 요청 하나를 쥐고 있는 동안 그 사람의 생성 job 이
+// 워커에서 429 로 죽는다 — 서로 다른 자원인데 같은 한도를 나눠 쓰게 되는 셈이다.
+// 라우트 5곳은 requireUser 로 얻은 user.id 를 넘긴다.
+export async function acquireUserSlot(userId, signal) {
+  if (userId === null || userId === undefined) return null;
+  return userSemaphores.acquire(userId, signal);
+}
+
+// 진단·테스트용 — 지금 슬롯을 쥔(또는 기다리는) 사용자 수. 항상 0 으로 돌아와야 누수가 없는 것이다.
+export function userSlotCount() {
+  return userSemaphores.size;
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const jitter = (ms) => Math.round(ms * (0.75 + Math.random() * 0.5));
 
@@ -46,6 +73,8 @@ export async function askAI({
   // ollamaUrl 인자는 없다 — Ollama 엔드포인트는 서버 설정(config.ai.ollamaUrl)이 유일한 출처다.
   // 예전에는 라우트가 클라이언트 본문의 ollamaUrl 을 여기로 실어 날랐고, 그게 그대로 fetch 대상이 돼
   // 사내망·사이드카(:8000)·API 자기 자신에 임의 POST 를 보낼 수 있는 SSRF 였다(플랜 10.5 S2).
+  // userId(선택): 사용자당 동기 요청 1건 게이트의 키. 생략하면 게이트를 건너뛴다(워커 경로).
+  userId = null,
   sessionRef = null, signal,
 }) {
   if (!TASK_SCHEMAS[task]) throw new HttpError(400, 'BAD_REQUEST', `알 수 없는 task: ${task}`);
@@ -63,9 +92,14 @@ export async function askAI({
   const schema = task === 'lesson_gen' && promptVariant === 'lc' ? LESSON_GEN_LC_SCHEMA : TASK_SCHEMAS[task];
   const deadline = Date.now() + HTTP_BUDGET_MS;
 
-  const globalSlot = await globalSemaphore.acquire(signal);
+  // 사용자 게이트를 전역·provider 세마포어보다 **먼저** 건다. 뒤에 걸면 같은 사용자의 두 번째 요청이
+  // 전역 대기열(8) 자리를 먼저 차지한 채 20초를 기다리다 거절돼, 정작 막으려던 "한 사용자가 남의 자리를
+  // 밀어낸다" 를 그대로 재현한다.
+  const userSlot = await acquireUserSlot(userId, signal);
+  let globalSlot;
   let providerSlot;
   try {
+    globalSlot = await globalSemaphore.acquire(signal);
     providerSlot = await providerSemaphore(provider.id).acquire(signal);
     const queuedMs = globalSlot.queuedMs + providerSlot.queuedMs;
 
@@ -162,7 +196,8 @@ export async function askAI({
     };
   } finally {
     providerSlot?.release();
-    globalSlot.release();
+    globalSlot?.release();
+    userSlot?.release();
   }
 }
 
