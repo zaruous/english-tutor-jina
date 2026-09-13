@@ -2,21 +2,21 @@
 # status: draft | in_progress | done · phase.status: done | pending_verification | todo
 plan: "12"
 title: "관리자 콘텐츠 ② — AI 초안 → 검수 → 카탈로그 공개"
-status: draft
+status: in_progress
 group:
   id: admin-content
   title: "관리자 콘텐츠 저작·관리"
   members: ["11", "12", "13"]
   order: 2
 created: 2026-09-03
-updated: 2026-09-03
+updated: 2026-09-05
 depends_on: ["11", "07"]     # 11 의 status 축 · requireAdmin · admin.html 뼈대, 07 의 ai_jobs 파이프라인
 blocks: ["13"]               # 13 의 에디터는 이 플랜의 검수 화면에서 "승인 전 수정" 으로 열린다
 migrations: []               # lesson_drafts.review_status(0012) 를 그대로 쓴다
 phases:
-  - { id: "1", name: "publish_target · 워커 저장 분기 · 검수 API", status: todo }
-  - { id: "2", name: "검수 화면 — 생성 결과 + validation_errors, 승인/반려", status: todo }
-verify: ["scripts/verify-lesson-gen.mjs (확장)", "scripts/verify-content-status.mjs (확장)"]
+  - { id: "1", name: "publish_target · 워커 저장 분기 · 검수 API", status: done, done_at: 2026-09-05, note: "Codex gpt-6-astra 위임(라운드 04). 큐는 content_items(status=review) LEFT JOIN lesson_drafts — 세 쿼리 합치기 불필요(10.7 통합). :id 는 content_items.id. review_status 는 부기로만 쓰고 판정에서 배제" }
+  - { id: "2", name: "검수 화면 — 생성 결과 + validation_errors, 승인/반려", status: done, done_at: 2026-09-05, note: "src/admin/review-queue.jsx + admin.html #/review 탭 + 레슨 생성 패널의 대상 라디오. 브라우저 실조작 12/12 확인(docs/reviews/04-*/03-verification.md §4)" }
+verify: ["scripts/verify-draft-review.mjs (신규, 74건)", "tests/draft-review.test.mjs", "scripts/verify-lesson-gen.mjs (확장)"]
 follow_ups:
   - "승인 전 초안 수정 → 플랜 13 에디터"
   - "교차 채점(다른 provider 로 풀어보기) — 플랜 07 follow_up 을 검수 단계의 자동 필터로"
@@ -111,4 +111,8 @@ reject → `lessons` 행 수 불변, `review_status='rejected'`. `review_status`
 
 1. 승인과 공개를 한 번에 하는 체크박스의 기본값 — off 로 시작(결정 2). 관리자가 매번 켠다면 on 으로.
 2. 반려 사유를 생성 프롬프트에 되먹일지(반려 → 같은 입력 + 사유로 재생성). 파이프라인 변경이 필요해 v1 밖.
-3. 시나리오·단어 세트의 검수를 레슨과 같은 큐에 둘지, `status='review'` 목록(11 Phase 2 화면)의 필터로 충분한지.
+3. ~~시나리오·단어 세트의 검수를 레슨과 같은 큐에 둘지~~ → **같은 큐로 해소 (2026-09-05)**.
+   10.7 Phase 2 가 콘텐츠 3종을 `content_items` 한 테이블로 합쳤으므로 큐는
+   `content_items WHERE status='review'` 하나이고, 레슨만 `LEFT JOIN lesson_drafts` 로
+   `payload`·`validation_errors` 가 붙는다. 구현자 메모의 "세 쿼리를 서비스에서 합친다" 는
+   그 통합 전의 전제였다.

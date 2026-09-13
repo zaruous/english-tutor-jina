@@ -15,7 +15,8 @@
 //   (3) 검수 큐(12)와 토픽 구성(13)은 본질적으로 남이 만든 것을 봐야 하는 화면이다.
 //       지금 소유 필터를 넣으면 두 플랜이 곧바로 그것을 뜯어내야 한다.
 // 소유 개념이 필요해지는 날 붙을 자리는 `buildFilters` 의 WHERE 한 줄이다.
-import { CONTENT_STATUSES, assertSetVisibility, assertTransition } from '../lib/content-status.js';
+import { config } from '../config.js';
+import { CONTENT_STATUSES, assertSetVisibility, assertTransition, canTransition } from '../lib/content-status.js';
 import { HttpError } from '../lib/errors.js';
 import { pool } from '../lib/pool.js';
 import { loadRoles } from '../lib/roles.js';
@@ -32,13 +33,6 @@ export const CONTENT_TYPES = Object.freeze(['lesson', 'scenario', 'vocab_set', '
 //   - `note` 앞(뒤가 아니라)에 붙이는 이유: 사유가 길어 잘려도 표식은 살아남는다.
 // 상수로 내보내는 이유는 판정을 문자열 리터럴로 두 곳에 쓰지 않기 위해서다 — 12 와 관리 UI 가 이것을 본다.
 export const SELF_REVIEW_TAG = '[self_review]';
-
-// REQUIRE_SEPARATE_REVIEWER — 켜면 자가 승인이 403 (결정 9. 기본값 off = 1인 운영에서 지금처럼 동작).
-// TODO(그룹 밖): `api/config.js` 로 옮길 것. 이 그룹의 배정 파일이 아니라 여기서 직접 읽는다.
-// 매 호출마다 읽는다 — 모듈 로드 시점에 고정하면 검증 스크립트가 값을 바꿔도 반영되지 않는다.
-function requireSeparateReviewer() {
-  return process.env.REQUIRE_SEPARATE_REVIEWER === '1';
-}
 
 // 문항 수 — 타입마다 세는 대상이 다르다. 시나리오·스피킹 세트는 "문항" 이라 부를 것이 없어 NULL 이고
 // 화면은 그것을 '—' 로 그린다(0 으로 뭉개면 "문항이 없는 레슨" 과 구분되지 않는다).
@@ -98,7 +92,7 @@ async function lockContent(client, type, contentId) {
        FROM content_items WHERE id = $1 FOR UPDATE`,
     [contentId],
   );
-  if (!row || row.type !== type) {
+  if (!row || (type && row.type !== type)) {
     throw new HttpError(404, 'NOT_FOUND', '콘텐츠를 찾을 수 없습니다.');
   }
   return row;
@@ -182,30 +176,41 @@ export async function listContents(actor, { type, status, q, limit = 50, offset 
 // 되올리면 원래 보이던 사람에게 그대로 돌아온다. 공개 여닫기는 setVisibility 로 따로 간다.
 // (published+public → archived 가 DB CHECK 를 통과하려면 `0018_content_archived_public.sql` 이
 //  적용돼 있어야 한다. 적용 뒤에는 draft·review 가 public 일 수 없으므로 전이로 23514 가 나올 경로가 없다.)
+// 두 API 가 트랜잭션 안의 같은 함수를 호출한다. 검수 전용 API 가 changeStatus 를 다시 호출하면
+// 별도 트랜잭션이 열려 승인만 커밋되고 공개가 실패할 수 있다.
+async function transitionContent(client, actor, row, { to, note = '' }) {
+  assertTransition(row.status, to, actor.role);
+  const selfReview = to === 'published' && row.created_by !== null && row.created_by === actor.id;
+  if (selfReview && config.requireSeparateReviewer) {
+    throw new HttpError(403, 'FORBIDDEN',
+      '본인이 만든 콘텐츠는 본인이 승인할 수 없습니다. 다른 검수자에게 요청하세요.',
+      { self_review: true });
+  }
+  await client.query(
+    `UPDATE content_items SET status = $1, updated_at = now(), updated_by = $2 WHERE id = $3`,
+    [to, actor.id, row.id],
+  );
+  // 생명주기 판정은 content_items.status 만 읽는다. review_status 는 생성 산출물의 검수 결과를
+  // 남기는 부기다. 일반 전이 API 로 검수해도 함께 기록하지만 큐·권한·가시성의 조건으로 읽지 않는다.
+  if (row.type === 'lesson' && row.status === 'review' && ['published', 'draft'].includes(to)) {
+    await client.query(
+      `UPDATE lesson_drafts SET review_status = $1, updated_at = now() WHERE published_content_id = $2`,
+      [to === 'published' ? 'approved' : 'rejected', row.id],
+    );
+  }
+  await writeAudit(client, {
+    contentId: row.id, actorId: actor.id, action: 'status_change', from: row.status, to,
+    note: selfReview ? `${SELF_REVIEW_TAG} ${note}`.trim() : note,
+  });
+  row.status = to;
+  return selfReview;
+}
+
 export async function changeStatus(actor, type, contentId, { to, note = '' } = {}) {
-  await loadRoles();                       // assertTransition 은 동기다 — 역할 캐시는 여기서 채운다
+  await loadRoles();
   return withTx(async (client) => {
     const row = await lockContent(client, type, contentId);
-    assertTransition(row.status, to, actor.role);   // 금지 전이 409 · 역할 부족 403 · from===to 도 409
-
-    // 자가 승인(결정 9) — 만든 사람이 자기 것을 승인하는 것. 기본은 허용하되 사실을 남긴다.
-    // created_by 가 NULL 인 시드 콘텐츠는 "만든 사람" 이 없으므로 자가 승인이 아니다.
-    const selfReview = to === 'published' && row.created_by !== null && row.created_by === actor.id;
-    if (selfReview && requireSeparateReviewer()) {
-      throw new HttpError(403, 'FORBIDDEN',
-        '본인이 만든 콘텐츠는 본인이 승인할 수 없습니다. 다른 검수자에게 요청하세요.',
-        { self_review: true });
-    }
-
-    await client.query(
-      `UPDATE content_items SET status = $1, updated_at = now(), updated_by = $2 WHERE id = $3`,
-      [to, actor.id, row.id],
-    );
-    await writeAudit(client, {
-      contentId: row.id, actorId: actor.id, action: 'status_change',
-      from: row.status, to,
-      note: selfReview ? `${SELF_REVIEW_TAG} ${note}`.trim() : note,
-    });
+    const selfReview = await transitionContent(client, actor, row, { to, note });
     return { content: await fetchContent(client, row.id), self_review: selfReview };
   });
 }
@@ -214,26 +219,104 @@ export async function changeStatus(actor, type, contentId, { to, note = '' } = {
 // draft·review 를 public 으로 올리려는 요청은 `canSetVisibility` 가 409 로 먼저 막는다.
 // DB 의 `content_items_public_ck`(23514)를 그대로 흘리면 fromPgError 가
 // 400 "값이 허용 범위를 벗어났습니다." 로 바꿔 내보내는데 사용자에게 아무 의미가 없다.
+async function changeVisibility(client, actor, row, { to, note = '' }) {
+  if (row.visibility === to) {
+    throw new HttpError(409, 'CONFLICT', `이미 ${to} 입니다.`, { visibility: to });
+  }
+  assertSetVisibility(row.status, to, actor.role);
+  await client.query(
+    `UPDATE content_items SET visibility = $1, updated_at = now(), updated_by = $2 WHERE id = $3`,
+    [to, actor.id, row.id],
+  );
+  await writeAudit(client, {
+    contentId: row.id, actorId: actor.id, action: 'visibility_change',
+    from: row.visibility, to, note,
+  });
+  row.visibility = to;
+}
+
 export async function setVisibility(actor, type, contentId, { to, note = '' } = {}) {
   await loadRoles();
   return withTx(async (client) => {
     const row = await lockContent(client, type, contentId);
-    // 같은 값 재전송은 409 다 — 통과시키면 "public → public" 같은 의미 없는 감사 행이 쌓여
-    // 로그가 읽히지 않게 된다(content-status.js 가 from===to 를 409 로 두는 것과 같은 이유).
-    // 상태를 먼저 보고 역할을 나중에 보는 순서도 그 모듈과 같다.
-    if (row.visibility === to) {
-      throw new HttpError(409, 'CONFLICT', `이미 ${to} 입니다.`, { visibility: to });
-    }
-    assertSetVisibility(row.status, to, actor.role);
-
-    await client.query(
-      `UPDATE content_items SET visibility = $1, updated_at = now(), updated_by = $2 WHERE id = $3`,
-      [to, actor.id, row.id],
-    );
-    await writeAudit(client, {
-      contentId: row.id, actorId: actor.id, action: 'visibility_change',
-      from: row.visibility, to, note,
-    });
+    await changeVisibility(client, actor, row, { to, note });
     return { content: await fetchContent(client, row.id) };
   });
+}
+
+// 검수 대상의 id 는 content_items.id 다 — 세 종류가 같은 키를 쓰고 레슨 초안만 선택적으로 붙는다.
+// payload/validation_errors 는 레슨 생성 기록 그대로, 나머지 유형은 NULL 이다.
+// generated_content 는 초안 행이 없는 시나리오·단어와 수기 레슨도 상세를 렌더할 수 있게 한다.
+export async function listDrafts(actor, { type, q, limit = 50, offset = 0 } = {}) {
+  await loadRoles();
+  const params = [];
+  const where = [...buildFilters({ type, q }, params), "c.status = 'review'"].join(' AND ');
+  const { rows: [{ total }] } = await pool.query(
+    `SELECT count(*)::int AS total FROM content_items c WHERE ${where}`, params,
+  );
+  params.push(limit, offset);
+  const { rows } = await pool.query(
+    `SELECT ${LIST_COLS}, ld.id AS draft_id, ld.job_id, ld.payload, ld.validation_errors,
+            ld.provider, ld.model, d.kind,
+            CASE c.type
+              WHEN 'lesson' THEN COALESCE(ld.payload,
+                to_jsonb(d) || jsonb_build_object('items',
+                  (SELECT COALESCE(jsonb_agg(to_jsonb(li) ORDER BY li.position), '[]'::jsonb)
+                   FROM lesson_items li WHERE li.content_id = c.id)))
+              WHEN 'scenario' THEN to_jsonb(sd)
+              WHEN 'vocab_set' THEN to_jsonb(vd)
+              ELSE NULL
+            END AS generated_content
+       FROM ${LIST_SOURCE}
+       LEFT JOIN lesson_drafts ld ON ld.published_content_id = c.id AND c.type = 'lesson'
+       LEFT JOIN lesson_details d ON d.content_id = c.id
+       LEFT JOIN scenario_details sd ON sd.content_id = c.id
+       LEFT JOIN vocab_set_details vd ON vd.content_id = c.id
+      WHERE ${where}
+      ORDER BY c.updated_at, c.id
+      LIMIT $${params.length - 1} OFFSET $${params.length}`,
+    params,
+  );
+  return {
+    drafts: rows.map((row) => {
+      const selfReview = row.created_by !== null && row.created_by === actor.id;
+      return {
+        ...row, cross_check: null, self_review: selfReview,
+        can_approve: canTransition(row.status, 'published', actor.role).ok
+          && !(selfReview && config.requireSeparateReviewer),
+        can_reject: canTransition(row.status, 'draft', actor.role).ok,
+      };
+    }),
+    total, require_separate_reviewer: config.requireSeparateReviewer,
+  };
+}
+
+async function reviewDraft(actor, contentId, { to, note, publish = false }) {
+  await loadRoles();
+  return withTx(async (client) => {
+    const row = await lockContent(client, null, contentId);
+    // 일반 전이표에는 draft→published 도 있지만 검수 버튼은 review 에서만 유효하다.
+    // 낡은 큐·동시 승인·반려 뒤 재클릭은 역할 검사보다 먼저 409 로 끝내야 중복 감사가 생기지 않는다.
+    if (row.status !== 'review') {
+      throw new HttpError(409, 'CONFLICT', '검토 대기 중인 콘텐츠만 승인하거나 반려할 수 있습니다.',
+        { from: row.status, to });
+    }
+    const selfReview = await transitionContent(client, actor, row, { to, note });
+    if (publish) await changeVisibility(client, actor, row, { to: 'public', note });
+    return { content: await fetchContent(client, row.id), self_review: selfReview };
+  });
+}
+
+export async function approveDraft(actor, contentId, { note = '', publish = false } = {}) {
+  if (typeof publish !== 'boolean') {
+    throw new HttpError(400, 'BAD_REQUEST', 'publish 는 true/false 여야 합니다.');
+  }
+  return reviewDraft(actor, contentId, { to: 'published', note, publish });
+}
+
+export async function rejectDraft(actor, contentId, { note } = {}) {
+  if (typeof note !== 'string' || !note.trim() || note.trim().length > 500) {
+    throw new HttpError(400, 'BAD_REQUEST', '반려 사유를 1~500자로 입력해 주세요.');
+  }
+  return reviewDraft(actor, contentId, { to: 'draft', note: note.trim() });
 }

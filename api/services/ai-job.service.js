@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { discoverable } from '../lib/content-scope.js';
 import { HttpError } from '../lib/errors.js';
 import { pool } from '../lib/pool.js';
+import { atLeast, loadRoles } from '../lib/roles.js';
 import { withTx } from '../lib/tx.js';
 import { registerPoolEntries } from './vocab.service.js';
 
@@ -34,6 +35,10 @@ export function normalizeJobInput(task, input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new HttpError(400, 'BAD_REQUEST', 'input 은 객체여야 합니다.');
   }
+  const publishTarget = input.publish_target === undefined ? 'personal' : input.publish_target;
+  if (!['personal', 'catalog'].includes(publishTarget)) {
+    throw new HttpError(400, 'BAD_REQUEST', 'input.publish_target 은 personal/catalog 중 하나여야 합니다.');
+  }
   const topicId = input.topic_id === undefined || input.topic_id === null
     ? null : intIn(input.topic_id, 'input.topic_id', 1, Number.MAX_SAFE_INTEGER);
   if (task === 'lesson_gen') {
@@ -46,6 +51,7 @@ export function normalizeJobInput(task, input) {
       : intIn(input.count, 'input.count', 3, 10, 5);
     return {
       part,
+      publish_target: publishTarget,
       difficulty: intIn(input.difficulty, 'input.difficulty', 1, 5, 3),
       topic: shortText(input.topic, 'input.topic', { min: 1, max: 80, fallback: '일반 비즈니스 및 사무 환경' }),
       count,
@@ -54,12 +60,14 @@ export function normalizeJobInput(task, input) {
   }
   if (task === 'scenario_gen') {
     return {
+      publish_target: publishTarget,
       difficulty: intIn(input.difficulty, 'input.difficulty', 1, 5, 3),
       topic: shortText(input.topic, 'input.topic', { min: 1, max: 80 }),
       ...(topicId ? { topic_id: topicId } : {}),
     };
   }
   return {
+    publish_target: publishTarget,
     topic: shortText(input.topic, 'input.topic', { min: 1, max: 80 }),
     count: 20,
     ...(topicId ? { topic_id: topicId } : {}),
@@ -113,6 +121,12 @@ async function assertTopicAccess(client, userId, topicId) {
 
 export async function createJob(user, { task, input, clientRequestId, provider, model }) {
   const normalized = normalizeJobInput(task, input);
+  // 입력 전체를 해시하므로 대상도 input 안에 보관한다. 재사용 조회보다 먼저 권한을 검사해야
+  // author 가 learner 로 바뀐 뒤 예전 catalog 작업을 다시 요청하는 우회도 막힌다.
+  await loadRoles();
+  if (normalized.publish_target === 'catalog' && !atLeast(user.role, 'author')) {
+    throw new HttpError(400, 'BAD_REQUEST', '카탈로그 생성은 저작자(author) 이상만 요청할 수 있습니다.');
+  }
   const hash = requestHash(task, normalized);
   return withTx(async (client) => {
     // 같은 사용자의 동일한 논리 요청은 한 트랜잭션씩만 판정한다.
@@ -294,6 +308,11 @@ export function validateGeneratedLesson(data, expectedCount, { part } = {}) {
   return errors;
 }
 
+// 예전 작업에는 publish_target 이 없다 — 재시작 복구 때도 개인 생성의 기존 동작을 유지한다.
+function generatedStatus(job) {
+  return job.input.publish_target === 'catalog' ? 'review' : 'published';
+}
+
 export async function saveGeneratedLesson(job, data, aiMeta) {
   const isLc = job.input.part === 'lc';
   const errors = validateGeneratedLesson(data, job.input.count, { part: job.input.part });
@@ -321,17 +340,13 @@ export async function saveGeneratedLesson(job, data, aiMeta) {
     const faq = isLc
       ? ['이 대화의 핵심 표현을 정리해 주세요', '놓치기 쉬운 발음·연음을 짚어 주세요']
       : ['틀린 보기의 문법적 차이를 설명해 주세요', '이 문항과 비슷한 예문을 만들어 주세요'];
-    // 카탈로그 상위 + 타입별 detail 1:1 (플랜 10.7 Phase 2). 생성물은 공개 상태이되 본인에게만 보인다.
-    // ★ status 를 반드시 **명시**한다(플랜 11 §2 결정 1 의 기본값 함정). content_items.status 의 DB
-    //   기본값은 'draft' 라, 지금처럼 visibility 만 적고 status 를 빼면 생성물이 draft 로 저장되고
-    //   discoverable(= status='published')에 걸려 **사용자가 방금 만든 자기 콘텐츠를 못 본다**.
-    //   'published' + 'private' = "정식 콘텐츠이되 만든 사람에게만 보인다" — 지금 동작 그대로다.
-    //   검수를 거쳐 카탈로그(public)로 올리는 publish_target 은 플랜 12 다. 여기서 넓히지 말 것.
+    // status 는 반드시 명시한다 — DB 기본값 draft 에 맡기면 개인 레슨도 학습 목록에서 사라진다.
+    // catalog 는 자동 검증 뒤에도 review/private 로 남아 사람이 승인하고 공개할 때까지 숨겨진다.
     const { rows: [lesson] } = await client.query(
       `INSERT INTO content_items (type, slug, title, difficulty, status, visibility, source, created_by)
-       VALUES ('lesson', $1, $2, $3, 'published', 'private', 'ai', $4)
+       VALUES ('lesson', $1, $2, $3, $5, 'private', 'ai', $4)
        RETURNING id`,
-      [slug, data.title, job.input.difficulty, job.user_id],
+      [slug, data.title, job.input.difficulty, job.user_id, generatedStatus(job)],
     );
     await client.query(
       `INSERT INTO lesson_details
@@ -375,9 +390,9 @@ export async function saveGeneratedScenario(job, data) {
     // status 명시는 saveGeneratedLesson 과 같은 이유다(결정 1 기본값 함정) — 빼면 draft 로 저장된다.
     const { rows: [row] } = await client.query(
       `INSERT INTO content_items (type, slug, title, description, difficulty, status, visibility, source, created_by)
-       VALUES ('scenario', $1, $2, $3, $4, 'published', 'private', 'ai', $5)
+       VALUES ('scenario', $1, $2, $3, $4, $6, 'private', 'ai', $5)
        RETURNING id`,
-      [slug, data.title, data.description, job.input.difficulty, job.user_id],
+      [slug, data.title, data.description, job.input.difficulty, job.user_id, generatedStatus(job)],
     );
     await client.query(
       `INSERT INTO scenario_details
@@ -406,9 +421,9 @@ export async function saveGeneratedVocabSet(job, data) {
     // status 명시는 saveGeneratedLesson 과 같은 이유다(결정 1 기본값 함정) — 빼면 draft 로 저장된다.
     const { rows: [row] } = await client.query(
       `INSERT INTO content_items (type, slug, title, description, status, visibility, source, created_by)
-       VALUES ('vocab_set', $1, $2, $3, 'published', 'private', 'ai', $4)
+       VALUES ('vocab_set', $1, $2, $3, $5, 'private', 'ai', $4)
        RETURNING id`,
-      [slug, data.title, data.description, job.user_id],
+      [slug, data.title, data.description, job.user_id, generatedStatus(job)],
     );
     await client.query(
       `INSERT INTO vocab_set_details (content_id, words) VALUES ($1, $2::jsonb)`,
@@ -423,6 +438,9 @@ export async function saveGeneratedVocabSet(job, data) {
     }
     return { vocab_set_id: row.id };
   });
+  // 공용 단어 풀은 content_items 의 가시성을 보지 않는다. 검수 중인 단어를 여기 등록하면
+  // 세트가 숨겨져도 학습 검색·퀴즈에 새어 나간다. catalog 는 공개 후 세트를 담을 때 등록된다.
+  if (job.input.publish_target === 'catalog') return result;
   // 플랜 09 Phase 1 — 세트 단어를 풀(vocab_words)에 자동 등록. 카드 미생성, 실패해도 세트 저장은 유지(로그만).
   try {
     await registerPoolEntries(data.words, { source: 'ai', createdBy: job.user_id });

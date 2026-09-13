@@ -46,7 +46,7 @@ export const TRANSITIONS = Object.freeze({
   }),
   review: Object.freeze({
     published: 'reviewer',  // 승인
-    draft: 'reviewer',      // 반려 — 사유는 content_audit_log.description 에 남긴다
+    draft: 'reviewer',      // 반려 — 사유는 content_audit_log.note 에 남긴다
   }),
   published: Object.freeze({
     archived: 'reviewer',   // 내림. visibility 는 건드리지 않는다(열린 질문 7 후보 A) —

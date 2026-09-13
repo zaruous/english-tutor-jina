@@ -5,6 +5,8 @@
 // DB 직접 검증(가짜 큐 주입·복구·정리)을 위해 api 모듈을 임포트한다 — .env 는 config 가 로드.
 import { pool } from '../api/lib/pool.js';
 import {
+  normalizeJobInput,
+  requestHash,
   recoverRunningJobs,
   saveGeneratedLesson,
   validateGeneratedLesson,
@@ -57,6 +59,16 @@ async function main() {
   t('topic_id=999999 → 404', badTopicId.status === 404);
   const missingJob = await fetch(`${API}/api/ai-jobs/999999999`, { headers: H });
   t('GET /api/ai-jobs/999999999 → 404', missingJob.status === 404);
+
+  // 플랜 12 — 대상은 input 안에 남아야 같은 입력의 개인/카탈로그 작업을 잘못 재사용하지 않는다.
+  const personal = normalizeJobInput('lesson_gen', { topic: '대상 검증' });
+  const catalog = normalizeJobInput('lesson_gen', { topic: '대상 검증', publish_target: 'catalog' });
+  t('publish_target 기본 personal · catalog input 보관', personal.publish_target === 'personal' && catalog.publish_target === 'catalog');
+  t('personal/catalog request_hash 분리', requestHash('lesson_gen', personal) !== requestHash('lesson_gen', catalog));
+  const badTarget = await postRes('/api/ai-jobs', {
+    task: 'lesson_gen', input: { publish_target: 'public' }, client_request_id: newReq(),
+  });
+  t('publish_target=public → 400', badTarget.status === 400);
 
   // ── B. 자동 검증 규칙 (validateGeneratedLesson 단위) ──
   const good = { title: '검증', subtitle: 's', items: [goodItem(1), goodItem(2), goodItem(3)] };
